@@ -19,6 +19,8 @@ const (
 	EnvJWESecret         = "JWE_SECRET"
 	EnvGeminiAPIKey      = "GEMINI_API_KEY"
 	EnvGeminiModel       = "GEMINI_MODEL"
+	EnvGeminiBaseURL     = "GEMINI_BASE_URL"
+	EnvGeminiRPM         = "GEMINI_RPM"
 	EnvPaymentSecret     = "MOCK_PAYMENT_WEBHOOK_SECRET"
 	EnvMigrateOnStart    = "MIGRATE_ON_START"
 	EnvEnvironment       = "APP_ENV"
@@ -48,6 +50,8 @@ type Config struct {
 	PaymentSecret    []byte
 	GeminiAPIKey     string // empty: the keyword classifier is used on its own
 	GeminiModel      string
+	GeminiBaseURL    string // empty: Google's endpoint; tests point it at a fake
+	GeminiRPM        int    // requests per minute to stay under; 0 = no pacing
 	MigrateOnStart   bool
 	Environment      Environment
 	CookieSecure     bool
@@ -69,6 +73,7 @@ func Load() (Config, error) {
 		PaymentSecret:  []byte(os.Getenv(EnvPaymentSecret)),
 		GeminiAPIKey:   os.Getenv(EnvGeminiAPIKey),
 		GeminiModel:    get(EnvGeminiModel, "gemini-2.5-flash"),
+		GeminiBaseURL:  os.Getenv(EnvGeminiBaseURL),
 		MigrateOnStart: get(EnvMigrateOnStart, "true") == "true",
 		Environment:    Environment(get(EnvEnvironment, string(EnvDevelopment))),
 		LogLevel:       get(EnvLogLevel, "info"),
@@ -87,6 +92,9 @@ func Load() (Config, error) {
 	c.RequestTimeout = time.Duration(secs) * time.Second
 
 	var problems []string
+	if c.GeminiRPM, err = strconv.Atoi(get(EnvGeminiRPM, "10")); err != nil || c.GeminiRPM < 0 {
+		problems = append(problems, EnvGeminiRPM+" must be a whole number, 0 or more")
+	}
 	if c.DatabaseURL == "" {
 		problems = append(problems, EnvDatabaseURL+" is required")
 	}

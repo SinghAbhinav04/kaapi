@@ -44,6 +44,7 @@ func TestConfig() config.Config {
 }
 
 type Server struct {
+	API    *api.API
 	t      *testing.T
 	Ctx    context.Context
 	Pool   *pgxpool.Pool
@@ -53,13 +54,17 @@ type Server struct {
 }
 
 // New seeds the database and starts the API.
-func New(t *testing.T) *Server {
+func New(t *testing.T) *Server { return NewWith(t, TestConfig()) }
+
+// NewWith starts the API with a custom config (e.g. pointing Gemini at a fake).
+func NewWith(t *testing.T, cfg config.Config) *Server {
 	t.Helper()
 	ctx, pool := testdb.Seeded(t)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := httptest.NewServer(api.New(TestConfig(), log, pool, Today).Router())
+	app := api.New(cfg, log, pool, Today)
+	srv := httptest.NewServer(app.Router())
 	t.Cleanup(srv.Close)
-	s := &Server{t: t, Ctx: ctx, Pool: pool, URL: srv.URL, router: loadContract(t)}
+	s := &Server{API: app, t: t, Ctx: ctx, Pool: pool, URL: srv.URL, router: loadContract(t)}
 	return s.NewSession()
 }
 

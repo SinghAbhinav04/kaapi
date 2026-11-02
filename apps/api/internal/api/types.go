@@ -10,6 +10,7 @@ import (
 	"kaapi/api/internal/booking"
 	"kaapi/api/internal/catalog"
 	"kaapi/api/internal/domain"
+	"kaapi/api/internal/enquiry"
 	"kaapi/api/internal/inventory"
 	"kaapi/api/internal/payment"
 	"kaapi/api/internal/pricing"
@@ -354,6 +355,167 @@ type UpdateRatesResponse struct {
 	NightsChanged int `json:"nights_changed"`
 }
 
+// ---- enquiries
+
+type EventDetailsDTO struct {
+	Type        string `json:"type"` // wedding, engagement, offsite, …
+	Date        string `json:"date"`
+	Month       string `json:"month"`
+	GuestCount  int    `json:"guest_count"`
+	Nights      int    `json:"nights"`
+	BudgetPaise int64  `json:"budget_paise"`
+}
+
+type CreateEnquiryRequest struct {
+	Name    string           `json:"name"`
+	Email   string           `json:"email"`
+	Phone   string           `json:"phone"`
+	Message string           `json:"message"`
+	Kind    string           `json:"kind"`
+	Event   *EventDetailsDTO `json:"event"`
+}
+
+type EnquiryCreatedResponse struct {
+	Ref string `json:"ref"`
+}
+
+type InboundMessageRequest struct {
+	Channel     string `json:"channel"`
+	SenderName  string `json:"sender_name"`
+	SenderEmail string `json:"sender_email"`
+	SenderPhone string `json:"sender_phone"`
+	Subject     string `json:"subject"`
+	Text        string `json:"text"`
+}
+
+type EnquirySummaryDTO struct {
+	Ref        string               `json:"ref"`
+	Channel    domain.Channel       `json:"channel"`
+	SenderName *string              `json:"sender_name"`
+	Snippet    string               `json:"snippet"`
+	ReceivedAt time.Time            `json:"received_at"`
+	Category   *domain.Category     `json:"category"`
+	Confidence *float64             `json:"confidence"`
+	Lane       domain.Lane          `json:"lane"`
+	Status     domain.EnquiryStatus `json:"status"`
+	Priority   domain.Priority      `json:"priority"`
+	AIStatus   domain.AIStatus      `json:"ai_status"`
+	NeedsCheck bool                 `json:"needs_check"`
+	HasDraft   bool                 `json:"has_draft"`
+}
+
+type EnquiriesResponse struct {
+	Enquiries []EnquirySummaryDTO `json:"enquiries"`
+}
+
+type ExtractedDTO struct {
+	CheckIn     *string `json:"check_in"`
+	CheckOut    *string `json:"check_out"`
+	Nights      *int    `json:"nights"`
+	Adults      *int    `json:"adults"`
+	Children    *int    `json:"children"`
+	Rooms       *int    `json:"rooms"`
+	GuestCount  *int    `json:"guest_count"`
+	BudgetPaise *int64  `json:"budget_paise"`
+	BudgetBasis *string `json:"budget_basis"`
+	EventMonth  *string `json:"event_month"`
+}
+
+type StaffRefDTO struct {
+	ID   uuid.UUID   `json:"id"`
+	Name string      `json:"name"`
+	Role domain.Role `json:"role"`
+}
+
+type DraftDTO struct {
+	Version       int        `json:"version"`
+	Body          string     `json:"body"`
+	Author        string     `json:"author"`
+	FlaggedReason *string    `json:"flagged_reason"`
+	QuoteFilled   bool       `json:"quote_filled"`
+	CreatedAt     time.Time  `json:"created_at"`
+	SentAt        *time.Time `json:"sent_at"`
+}
+
+type EnquiryEventDTO struct {
+	Type      domain.EnquiryEventType `json:"type"`
+	Actor     domain.Actor            `json:"actor"`
+	ActorName *string                 `json:"actor_name"`
+	From      map[string]any          `json:"from"`
+	To        map[string]any          `json:"to"`
+	CreatedAt time.Time               `json:"created_at"`
+}
+
+type EnquiryDTO struct {
+	Ref               string               `json:"ref"`
+	Channel           domain.Channel       `json:"channel"`
+	SenderName        *string              `json:"sender_name"`
+	SenderEmail       *string              `json:"sender_email"`
+	SenderPhone       *string              `json:"sender_phone"`
+	Subject           *string              `json:"subject"`
+	Text              string               `json:"text"`
+	ReceivedAt        time.Time            `json:"received_at"`
+	Language          *string              `json:"language"`
+	Category          *domain.Category     `json:"category"`
+	SecondaryCategory *domain.Category     `json:"secondary_category"`
+	Confidence        *float64             `json:"confidence"`
+	AIReason          string               `json:"ai_reason"`
+	Summary           *string              `json:"summary"`
+	Extracted         ExtractedDTO         `json:"extracted"`
+	Lane              domain.Lane          `json:"lane"`
+	AssignedTo        *StaffRefDTO         `json:"assigned_to"`
+	Priority          domain.Priority      `json:"priority"`
+	Status            domain.EnquiryStatus `json:"status"`
+	AIStatus          domain.AIStatus      `json:"ai_status"`
+	AIModel           *string              `json:"ai_model"`
+	FirstReplyAt      *time.Time           `json:"first_reply_at"`
+	Draft             *DraftDTO            `json:"draft"`
+	Events            []EnquiryEventDTO    `json:"events"`
+}
+
+type EnquiryResponse struct {
+	Enquiry EnquiryDTO `json:"enquiry"`
+}
+
+type RouteEnquiryRequest struct {
+	Lane     string `json:"lane"`
+	Category string `json:"category"`
+}
+
+type CorrectEnquiryRequest struct {
+	CheckIn    *string `json:"check_in"`
+	CheckOut   *string `json:"check_out"`
+	Adults     *int    `json:"adults"`
+	Children   *int    `json:"children"`
+	Rooms      *int    `json:"rooms"`
+	GuestCount *int    `json:"guest_count"`
+}
+
+type EditDraftRequest struct {
+	Body string `json:"body"`
+}
+
+type EnquiryStatusRequest struct {
+	Status string `json:"status"`
+}
+
+type DashboardResponse struct {
+	AIEnabled               bool                `json:"ai_enabled"`
+	MedianFirstReplyMinutes *float64            `json:"median_first_reply_minutes"`
+	FirstReplyTargetMinutes int                 `json:"first_reply_target_minutes"`
+	RepliedThisWeek         int                 `json:"replied_this_week"`
+	OpenByLane              map[domain.Lane]int `json:"open_by_lane"`
+	OpenComplaints          int                 `json:"open_complaints"`
+	AwaitingAI              int                 `json:"awaiting_ai"`
+	AICorrectionRate        *float64            `json:"ai_correction_rate"`
+	DirectBookingsThisWeek  int                 `json:"direct_bookings_this_week"`
+	DirectRevenueThisWeek   int64               `json:"direct_revenue_this_week_paise"`
+	Overbookings            int                 `json:"overbookings"`
+}
+
+// firstReplyTargetMinutes is the brief's success measure for enquiries.
+const firstReplyTargetMinutes = 30
+
 // ---- mappers
 
 func date(t time.Time) string { return t.Format(time.DateOnly) }
@@ -454,4 +616,58 @@ func ratesGridDTO(g admin.Grid) RatesGridResponse {
 		out.Rows[i] = row
 	}
 	return out
+}
+
+func enquirySummaryDTO(e enquiry.Summary) EnquirySummaryDTO {
+	return EnquirySummaryDTO{Ref: e.Ref, Channel: e.Channel, SenderName: e.SenderName, Snippet: e.Snippet, ReceivedAt: e.ReceivedAt,
+		Category: e.Category, Confidence: e.Confidence, Lane: e.Lane, Status: e.Status, Priority: e.Priority, AIStatus: e.AIStatus,
+		NeedsCheck: e.NeedsCheck, HasDraft: e.HasDraft}
+}
+
+func enquiryDTO(e enquiry.Enquiry) EnquiryDTO {
+	out := EnquiryDTO{Ref: e.Ref, Channel: e.Channel, SenderName: e.SenderName, SenderEmail: e.SenderEmail, SenderPhone: e.SenderPhone,
+		Subject: e.Subject, Text: e.Text, ReceivedAt: e.ReceivedAt, Language: e.Language, Category: e.Category,
+		SecondaryCategory: e.Secondary, Confidence: e.Confidence, AIReason: e.AIReason, Summary: e.Summary, Lane: e.Lane,
+		Priority: e.Priority, Status: e.Status, AIStatus: e.AIStatus, AIModel: e.AIModel, FirstReplyAt: e.FirstReply,
+		Events: make([]EnquiryEventDTO, len(e.Events))}
+	x := e.Extracted
+	day := func(t *time.Time) *string {
+		if t == nil {
+			return nil
+		}
+		s := date(*t)
+		return &s
+	}
+	out.Extracted = ExtractedDTO{CheckIn: day(x.CheckIn), CheckOut: day(x.CheckOut), Adults: x.Adults, Children: x.Children,
+		Rooms: x.Rooms, GuestCount: x.GuestCount, EventMonth: x.EventMonth}
+	if x.CheckIn != nil && x.CheckOut != nil {
+		n := domain.NightsBetween(*x.CheckIn, *x.CheckOut)
+		out.Extracted.Nights = &n
+	}
+	if x.BudgetINR != nil {
+		p := *x.BudgetINR * 100
+		out.Extracted.BudgetPaise = &p
+	}
+	if x.BudgetBasis != nil {
+		b := string(*x.BudgetBasis)
+		out.Extracted.BudgetBasis = &b
+	}
+	if e.AssignedTo != nil {
+		out.AssignedTo = &StaffRefDTO{ID: e.AssignedTo.ID, Name: e.AssignedTo.Name, Role: e.AssignedTo.Role}
+	}
+	if d := e.Draft; d != nil {
+		out.Draft = &DraftDTO{Version: d.Version, Body: d.Body, Author: d.Author, FlaggedReason: d.FlaggedReason,
+			QuoteFilled: d.QuoteFilled, CreatedAt: d.CreatedAt, SentAt: d.SentAt}
+	}
+	for i, ev := range e.Events {
+		out.Events[i] = EnquiryEventDTO{Type: ev.Type, Actor: ev.Actor, ActorName: ev.ActorName, From: ev.From, To: ev.To, CreatedAt: ev.CreatedAt}
+	}
+	return out
+}
+
+func dashboardDTO(s enquiry.Stats, aiEnabled bool) DashboardResponse {
+	return DashboardResponse{AIEnabled: aiEnabled, MedianFirstReplyMinutes: s.MedianFirstReplyMinutes,
+		FirstReplyTargetMinutes: firstReplyTargetMinutes, RepliedThisWeek: s.RepliedThisWeek, OpenByLane: s.OpenByLane,
+		OpenComplaints: s.OpenComplaints, AwaitingAI: s.AwaitingAI, AICorrectionRate: s.AICorrectionRate,
+		DirectBookingsThisWeek: s.DirectBookingsThisWeek, DirectRevenueThisWeek: s.DirectRevenueThisWeek, Overbookings: s.Overbookings}
 }

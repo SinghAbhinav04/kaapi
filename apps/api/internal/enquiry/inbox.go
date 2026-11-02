@@ -1,0 +1,458 @@
+package enquiry
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	"kaapi/api/internal/ai"
+	"kaapi/api/internal/domain"
+	"kaapi/api/internal/platform/apperr"
+	"kaapi/api/internal/platform/db"
+	"kaapi/api/internal/platform/idgen"
+)
+
+// List returns inbox rows, complaints first, then newest.
+func (s *Service) List(ctx context.Context, f ListFilter) ([]Summary, error) {
+	var where []string
+	var args []any
+	add := func(cond string, v any) {
+		args = append(args, v)
+		where = append(where, fmt.Sprintf(cond, len(args)))
+	}
+	if len(f.Lanes) > 0 {
+		add("e.lane = ANY($%d)", f.Lanes)
+	}
+	if f.Status != "" {
+		add("e.status = $%d", f.Status)
+	} else {
+		add("e.status <> ALL($%d)", []domain.EnquiryStatus{domain.EnquiryClosed, domain.EnquirySpam})
+	}
+	if q := strings.TrimSpace(f.Query); q != "" {
+		add("(e.raw_text ILIKE '%%' || $%[1]d || '%%' OR e.sender_name ILIKE '%%' || $%[1]d || '%%' OR e.ref ILIKE '%%' || $%[1]d || '%%')", q)
+	}
+	args = append(args, ai.UnsortedBelow, f.Limit)
+	q := fmt.Sprintf(`SELECT e.ref, e.channel, e.sender_name, e.raw_text, e.received_at, e.category, e.confidence::float8, e.lane,
+		e.status, e.priority, e.ai_status, e.category = 'ROOM' AND (e.extracted->>'check_in' IS NULL),
+		e.confidence < $%d, EXISTS (SELECT 1 FROM enquiry_drafts d WHERE d.enquiry_id = e.id)
+		FROM enquiries e WHERE %s
+		ORDER BY (e.priority = 'HIGH' AND e.status = 'NEW') DESC, e.received_at DESC LIMIT $%d`,
+		len(args)-1, strings.Join(where, " AND "), len(args))
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Summary, error) {
+		var x Summary
+		var text string
+		var noDates, unsure *bool
+		err := r.Scan(&x.Ref, &x.Channel, &x.SenderName, &text, &x.ReceivedAt, &x.Category, &x.Confidence, &x.Lane,
+			&x.Status, &x.Priority, &x.AIStatus, &noDates, &unsure, &x.HasDraft)
+		x.Snippet = snippet(text)
+		x.NeedsCheck = (noDates != nil && *noDates) || (unsure != nil && *unsure)
+		return x, err
+	})
+}
+
+// Get returns one enquiry with its latest draft and history.
+func (s *Service) Get(ctx context.Context, ref string) (Enquiry, error) {
+	var e Enquiry
+	var extracted []byte
+	var assignedID *uuid.UUID
+	var assignedName *string
+	var assignedRole *domain.Role
+	err := s.pool.QueryRow(ctx, `SELECT e.id, e.ref, e.channel, e.sender_name, e.sender_email, e.sender_phone, e.subject, e.raw_text,
+		e.received_at, e.language, e.category, e.secondary_category, e.confidence::float8, e.extracted, e.summary, e.lane, e.priority,
+		e.status, e.ai_status, e.ai_model, e.first_response_at, u.id, u.name, u.role
+		FROM enquiries e LEFT JOIN users u ON u.id = e.assigned_user_id WHERE e.ref = $1`, strings.ToUpper(ref)).
+		Scan(&e.ID, &e.Ref, &e.Channel, &e.SenderName, &e.SenderEmail, &e.SenderPhone, &e.Subject, &e.Text, &e.ReceivedAt,
+			&e.Language, &e.Category, &e.Secondary, &e.Confidence, &extracted, &e.Summary, &e.Lane, &e.Priority, &e.Status,
+			&e.AIStatus, &e.AIModel, &e.FirstReply, &assignedID, &assignedName, &assignedRole)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return e, ErrNotFound
+	}
+	if err != nil {
+		return e, err
+	}
+	e.Extracted = fromStored(extracted)
+	if assignedID != nil {
+		e.AssignedTo = &Staff{ID: *assignedID, Name: *assignedName, Role: *assignedRole}
+	}
+
+	var d Draft
+	var quote []byte
+	err = s.pool.QueryRow(ctx, `SELECT version, body_rendered, body_template, author, flagged_reason, quote, created_at, sent_at
+		FROM enquiry_drafts WHERE enquiry_id = $1 ORDER BY version DESC LIMIT 1`, e.ID).
+		Scan(&d.Version, &d.Body, &d.Template, &d.Author, &d.FlaggedReason, &quote, &d.CreatedAt, &d.SentAt)
+	if err == nil {
+		d.QuoteFilled = quote != nil
+		e.Draft = &d
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return e, err
+	}
+
+	rows, err := s.pool.Query(ctx, `SELECT ev.type, ev.actor, u.name, ev.from_value, ev.to_value, ev.created_at
+		FROM enquiry_events ev LEFT JOIN users u ON u.id = ev.actor_user_id WHERE ev.enquiry_id = $1 ORDER BY ev.created_at, ev.id`, e.ID)
+	if err != nil {
+		return e, err
+	}
+	e.Events, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (Event, error) {
+		var ev Event
+		var from, to []byte
+		err := r.Scan(&ev.Type, &ev.Actor, &ev.ActorName, &from, &to, &ev.CreatedAt)
+		_ = json.Unmarshal(from, &ev.From)
+		_ = json.Unmarshal(to, &ev.To)
+		return ev, err
+	})
+	if err != nil {
+		return e, err
+	}
+	for _, ev := range e.Events {
+		if ev.Type == domain.EventClassified {
+			if r, ok := ev.To["reason"].(string); ok {
+				e.AIReason = r
+			}
+		}
+	}
+	return e, nil
+}
+
+// Reroute moves an enquiry to another lane and optionally corrects its category. A changed
+// category gets a fresh draft. Every correction is logged; together they measure how often
+// staff disagree with the AI.
+func (s *Service) Reroute(ctx context.Context, ref string, actor uuid.UUID, lane domain.Lane, category *domain.Category) error {
+	if !lane.Valid() {
+		return ErrBadLane
+	}
+	if category != nil && !category.Valid() {
+		return ErrBadCategory
+	}
+	var oldCat *domain.Category
+	var text string
+	var sender *string
+	var extracted []byte
+	err := s.pool.QueryRow(ctx, `SELECT category, raw_text, sender_name, extracted FROM enquiries WHERE ref = $1`,
+		strings.ToUpper(ref)).Scan(&oldCat, &text, &sender, &extracted)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	owner, err := ownerFor(ctx, s.pool, lane)
+	if err != nil {
+		return err
+	}
+	recategorised := category != nil && (oldCat == nil || *oldCat != *category)
+	var p prose
+	if recategorised { // the new draft's wording is written before the transaction opens
+		if p, err = s.writeProse(ctx, s.pool, text, deref(sender), *category, fromStored(extracted), owner); err != nil {
+			return err
+		}
+	}
+	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var id uuid.UUID
+		var oldLane domain.Lane
+		var lockedCat *domain.Category
+		err := tx.QueryRow(ctx, `SELECT id, lane, category FROM enquiries WHERE ref = $1 FOR UPDATE`, strings.ToUpper(ref)).
+			Scan(&id, &oldLane, &lockedCat)
+		if err != nil {
+			return err
+		}
+		newCat := lockedCat
+		if category != nil {
+			newCat = category
+		}
+		if _, err := tx.Exec(ctx, `UPDATE enquiries SET lane = $2, category = $3, assigned_user_id = $4, routed_by = $5, updated_at = now()
+			WHERE id = $1`, id, lane, newCat, owner, domain.RoutedByHuman); err != nil {
+			return err
+		}
+		if oldLane != lane {
+			if err := addEvent(ctx, tx, id, domain.EventRerouted, domain.ActorUser, &actor,
+				map[string]any{"lane": oldLane}, map[string]any{"lane": lane}); err != nil {
+				return err
+			}
+		}
+		if !recategorised {
+			return nil
+		}
+		if err := addEvent(ctx, tx, id, domain.EventCategoryChanged, domain.ActorUser, &actor,
+			map[string]any{"category": lockedCat}, map[string]any{"category": category}); err != nil {
+			return err
+		}
+		next, err := nextVersion(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		return s.storeDraft(ctx, tx, id, next, p, text, deref(sender), *category, fromStored(extracted))
+	})
+}
+
+// Correct fixes what the AI extracted and re-renders the draft's quote with the new details.
+func (s *Service) Correct(ctx context.Context, ref string, actor uuid.UUID, c Corrections) error {
+	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var id uuid.UUID
+		var raw []byte
+		var text string
+		var sender *string
+		var cat *domain.Category
+		var owner *uuid.UUID
+		err := tx.QueryRow(ctx, `SELECT id, extracted, raw_text, sender_name, category, assigned_user_id FROM enquiries WHERE ref = $1 FOR UPDATE`,
+			strings.ToUpper(ref)).Scan(&id, &raw, &text, &sender, &cat, &owner)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		before := fromStored(raw)
+		after := before
+		changed := false
+		set := func(dst **time.Time, v *time.Time) {
+			if v != nil {
+				*dst, changed = v, true
+			}
+		}
+		setInt := func(dst **int, v *int) {
+			if v != nil {
+				*dst, changed = v, true
+			}
+		}
+		set(&after.CheckIn, c.CheckIn)
+		set(&after.CheckOut, c.CheckOut)
+		setInt(&after.Adults, c.Adults)
+		setInt(&after.Children, c.Children)
+		setInt(&after.Rooms, c.Rooms)
+		setInt(&after.GuestCount, c.GuestCount)
+		if !changed {
+			return ErrNothingToSave
+		}
+		if after.CheckIn != nil && after.CheckOut != nil && !after.CheckOut.After(*after.CheckIn) {
+			return apperr.Validation(map[string]string{"check_out": "must be after check-in"})
+		}
+		stored, _ := json.Marshal(toStored(after))
+		if _, err := tx.Exec(ctx, `UPDATE enquiries SET extracted = $2, updated_at = now() WHERE id = $1`, id, stored); err != nil {
+			return err
+		}
+		if err := addEvent(ctx, tx, id, domain.EventFieldsCorrected, domain.ActorUser, &actor,
+			anyMap(toStored(before)), anyMap(toStored(after))); err != nil {
+			return err
+		}
+		// Re-render the latest unsent draft with the corrected details (prose unchanged).
+		// A staff member's own text has no placeholders, so it is left exactly as they wrote it.
+		var template, author string
+		var version int
+		var sent *time.Time
+		err = tx.QueryRow(ctx, `SELECT body_template, author, version, sent_at FROM enquiry_drafts WHERE enquiry_id = $1 ORDER BY version DESC LIMIT 1`, id).
+			Scan(&template, &author, &version, &sent)
+		if errors.Is(err, pgx.ErrNoRows) || sent != nil || cat == nil || author == "USER" {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		staff, err := staffFor(ctx, tx, owner)
+		if err != nil {
+			return err
+		}
+		rendered, quote, err := s.render(ctx, tx, template, text, deref(sender), *cat, after, staff)
+		if err != nil {
+			return err
+		}
+		return s.saveDraft(ctx, tx, id, version+1, template, rendered, quote, "AI", nil, "")
+	})
+}
+
+// EditDraft stores the staff member's text as the next version.
+func (s *Service) EditDraft(ctx context.Context, ref string, actor uuid.UUID, body string) error {
+	body = strings.TrimSpace(body)
+	if body == "" || len([]rune(body)) > maxDraftRunes {
+		return apperr.Validation(map[string]string{"body": fmt.Sprintf("must be 1 to %d characters", maxDraftRunes)})
+	}
+	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		id, err := lockByRef(ctx, tx, ref)
+		if err != nil {
+			return err
+		}
+		next, err := nextVersion(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		return s.saveDraft(ctx, tx, id, next, body, body, nil, "USER", &actor, "")
+	})
+}
+
+// Send delivers the latest draft through the enquiry's channel (simulated: the outbox).
+// It's the only way anything reaches a guest, and it always needs a person to press it.
+func (s *Service) Send(ctx context.Context, ref string, actor uuid.UUID) error {
+	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var id uuid.UUID
+		var channel domain.Channel
+		var email, phone, subject *string
+		err := tx.QueryRow(ctx, `SELECT id, channel, sender_email, sender_phone, subject FROM enquiries WHERE ref = $1 FOR UPDATE`,
+			strings.ToUpper(ref)).Scan(&id, &channel, &email, &phone, &subject)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		var draftID uuid.UUID
+		var body string
+		var sent *time.Time
+		var version int
+		err = tx.QueryRow(ctx, `SELECT id, body_rendered, sent_at, version FROM enquiry_drafts WHERE enquiry_id = $1 ORDER BY version DESC LIMIT 1`, id).
+			Scan(&draftID, &body, &sent, &version)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNoDraft
+		}
+		if err != nil {
+			return err
+		}
+		if sent != nil {
+			return ErrAlreadySent
+		}
+		out, recipient := domain.OutboxEmail, deref(email)
+		if channel == domain.ChannelWhatsApp || recipient == "" {
+			out, recipient = domain.OutboxWhatsApp, deref(phone)
+		}
+		if recipient == "" {
+			return ErrNoRecipient
+		}
+		subj := "Re: your enquiry to Kaapi Estate"
+		if subject != nil {
+			subj = "Re: " + *subject
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, recipient, subject, body, enquiry_id, sent_by)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, idgen.New(), out, domain.OutboxEnquiryReply, recipient, subj, body, id, actor); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE enquiry_drafts SET sent_at = now(), sent_by = $2 WHERE id = $1`, draftID, actor); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE enquiries SET status = $2, first_response_at = coalesce(first_response_at, now()), updated_at = now()
+			WHERE id = $1`, id, domain.EnquiryReplied); err != nil {
+			return err
+		}
+		return addEvent(ctx, tx, id, domain.EventSent, domain.ActorUser, &actor, nil, map[string]any{"channel": out, "version": version})
+	})
+}
+
+// SetStatus closes, reopens or marks an enquiry as spam.
+func (s *Service) SetStatus(ctx context.Context, ref string, actor uuid.UUID, status domain.EnquiryStatus) error {
+	if !status.Valid() {
+		return apperr.Validation(map[string]string{"status": "is not an enquiry status"})
+	}
+	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		id, err := lockByRef(ctx, tx, ref)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE enquiries SET status = $2, updated_at = now() WHERE id = $1`, id, status); err != nil {
+			return err
+		}
+		return addEvent(ctx, tx, id, domain.EventClosed, domain.ActorUser, &actor, nil, map[string]any{"status": status})
+	})
+}
+
+// RetryAI queues an enquiry for classification again (after an outage, or a new model).
+func (s *Service) RetryAI(ctx context.Context, ref string) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE enquiries SET ai_status = $2, updated_at = now() WHERE ref = $1`, strings.ToUpper(ref), domain.AIPending)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	s.Wake()
+	return nil
+}
+
+// Stats are the dashboard numbers, measured against the brief's success targets.
+func (s *Service) Stats(ctx context.Context) (Stats, error) {
+	st := Stats{OpenByLane: map[domain.Lane]int{}}
+	since := s.now().Add(-statsWindow)
+	err := s.pool.QueryRow(ctx, `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM first_response_at - received_at) / 60),
+		count(*) FROM enquiries WHERE first_response_at IS NOT NULL AND first_response_at >= $1`, since).
+		Scan(&st.MedianFirstReplyMinutes, &st.RepliedThisWeek)
+	if err != nil {
+		return st, err
+	}
+	rows, err := s.pool.Query(ctx, `SELECT lane, count(*) FROM enquiries WHERE status IN ($1, $2) GROUP BY lane`,
+		domain.EnquiryNew, domain.EnquiryInProgress)
+	if err != nil {
+		return st, err
+	}
+	for rows.Next() {
+		var lane domain.Lane
+		var n int
+		if err := rows.Scan(&lane, &n); err != nil {
+			rows.Close()
+			return st, err
+		}
+		st.OpenByLane[lane] = n
+	}
+	rows.Close()
+	err = s.pool.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM enquiries WHERE category = $1 AND status IN ($2, $3)),
+		(SELECT count(*) FROM enquiries WHERE ai_status = $4),
+		(SELECT count(*) FROM bookings WHERE status = $5 AND confirmed_at >= $6 AND hold_id IS NOT NULL),
+		(SELECT coalesce(sum(total_paise), 0) FROM bookings WHERE status = $5 AND confirmed_at >= $6 AND hold_id IS NOT NULL),
+		(SELECT count(*) FROM night_inventory WHERE sold > allotment)`,
+		domain.CategoryComplaint, domain.EnquiryNew, domain.EnquiryInProgress, domain.AIPending, domain.BookingConfirmed, since).
+		Scan(&st.OpenComplaints, &st.AwaitingAI, &st.DirectBookingsThisWeek, &st.DirectRevenueThisWeek, &st.Overbookings)
+	if err != nil {
+		return st, err
+	}
+	var routed, corrected int
+	if err := s.pool.QueryRow(ctx, `SELECT
+		count(*) FILTER (WHERE type = $1), count(*) FILTER (WHERE type IN ($2, $3) AND actor = $4)
+		FROM enquiry_events WHERE created_at >= $5`,
+		domain.EventClassified, domain.EventRerouted, domain.EventCategoryChanged, domain.ActorUser, since).Scan(&routed, &corrected); err != nil {
+		return st, err
+	}
+	if routed > 0 {
+		r := float64(corrected) / float64(routed)
+		st.AICorrectionRate = &r
+	}
+	return st, nil
+}
+
+// ---- helpers
+
+func lockByRef(ctx context.Context, tx pgx.Tx, ref string) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := tx.QueryRow(ctx, `SELECT id FROM enquiries WHERE ref = $1 FOR UPDATE`, strings.ToUpper(ref)).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return id, ErrNotFound
+	}
+	return id, err
+}
+
+func nextVersion(ctx context.Context, tx pgx.Tx, id uuid.UUID) (int, error) {
+	var v int
+	err := tx.QueryRow(ctx, `SELECT coalesce(max(version), 0) + 1 FROM enquiry_drafts WHERE enquiry_id = $1`, id).Scan(&v)
+	return v, err
+}
+
+func snippet(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	r := []rune(text)
+	if len(r) <= snippetRunes {
+		return text
+	}
+	return string(r[:snippetRunes-1]) + "…"
+}
+
+func anyMap(v any) map[string]any {
+	b, _ := json.Marshal(v)
+	var m map[string]any
+	_ = json.Unmarshal(b, &m)
+	return m
+}

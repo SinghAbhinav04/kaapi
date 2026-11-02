@@ -31,6 +31,9 @@ const (
 	// the grace period still go through if the room is free.
 	sweepEvery = time.Minute
 	sweepGrace = 30 * time.Minute
+
+	// The enquiry worker wakes on every new message; this tick is only a safety net.
+	enquiryTick = 15 * time.Second
 )
 
 func main() {
@@ -61,6 +64,7 @@ func main() {
 
 	app := api.New(cfg, log, pool, time.Now)
 	go app.SweepBookings(ctx, sweepEvery, sweepGrace)
+	go app.RunEnquiryWorker(ctx, enquiryTick)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

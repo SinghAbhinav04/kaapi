@@ -14,9 +14,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"kaapi/api/internal/admin"
+	"kaapi/api/internal/ai"
 	"kaapi/api/internal/auth"
 	"kaapi/api/internal/booking"
 	"kaapi/api/internal/catalog"
+	"kaapi/api/internal/enquiry"
 	"kaapi/api/internal/inventory"
 	"kaapi/api/internal/outbox"
 	"kaapi/api/internal/platform/config"
@@ -32,11 +34,17 @@ type API struct {
 	auth      *auth.Service
 	bookings  *booking.Service
 	catalog   *catalog.Service
+	enquiries *enquiry.Service
 	inventory *inventory.Service
 	outbox    *outbox.Service
 }
 
 func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() time.Time) *API {
+	inv := inventory.NewService(pool, now)
+	var provider ai.Provider // nil: keyword rules and template drafts only
+	if cfg.GeminiAPIKey != "" {
+		provider = ai.NewGemini(cfg.GeminiAPIKey, cfg.GeminiModel, cfg.GeminiBaseURL, cfg.GeminiRPM)
+	}
 	return &API{
 		cfg:       cfg,
 		log:       log,
@@ -45,7 +53,8 @@ func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() tim
 		auth:      auth.NewService(pool, cfg.JWESecret, now),
 		bookings:  booking.NewService(pool, now),
 		catalog:   catalog.NewService(pool),
-		inventory: inventory.NewService(pool, now),
+		inventory: inv,
+		enquiries: enquiry.NewService(pool, provider, inv, now),
 		outbox:    outbox.NewService(pool),
 	}
 }
@@ -98,6 +107,9 @@ func (a *API) Router() http.Handler {
 		r.Post("/payments/{orderId}/simulate", h(a.simulatePayment))
 		r.Post("/payments/webhook", h(a.paymentWebhook))
 
+		// Enquiries from the website's forms.
+		r.Post("/enquiries", h(a.createEnquiry))
+
 		// Staff console. Each route names the permission it needs.
 		r.Route("/staff", func(r chi.Router) {
 			r.With(a.requirePermission(auth.PermOutboxRead)).Get("/outbox", h(a.listOutbox))
@@ -105,6 +117,20 @@ func (a *API) Router() http.Handler {
 			r.With(a.requirePermission(auth.PermBookingsExport)).Get("/bookings/export", h(a.exportBookings))
 			r.With(a.requirePermission(auth.PermRatesRead)).Get("/rates", h(a.ratesGrid))
 			r.With(a.requirePermission(auth.PermRatesRead)).Put("/rates", h(a.updateRates)) // the handler checks write permissions per field
+			r.With(a.requirePermission(auth.PermDashboardRead)).Get("/dashboard", h(a.dashboard))
+
+			r.Group(func(r chi.Router) {
+				r.Use(a.requirePermission(auth.PermEnquiriesRead))
+				r.Post("/inbound", h(a.simulateInbound))
+				r.Get("/enquiries", h(a.listEnquiries))
+				r.Get("/enquiries/{ref}", h(a.getEnquiry))
+				r.Patch("/enquiries/{ref}/fields", h(a.correctEnquiry))
+				r.Put("/enquiries/{ref}/draft", h(a.editDraft))
+				r.Post("/enquiries/{ref}/status", h(a.setEnquiryStatus))
+				r.Post("/enquiries/{ref}/retry-ai", h(a.retryAI))
+				r.With(a.requirePermission(auth.PermEnquiryReroute)).Post("/enquiries/{ref}/route", h(a.routeEnquiry))
+				r.With(a.requirePermission(auth.PermEnquirySend)).Post("/enquiries/{ref}/send", h(a.sendReply))
+			})
 		})
 	})
 	return r

@@ -21,6 +21,7 @@ tags:
   - name: auth
   - name: staff
   - name: payments
+  - name: enquiries
 
 paths:
   /healthz:
@@ -358,6 +359,174 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
+  /v1/enquiries:
+    post:
+      tags: [enquiries]
+      summary: The website's enquiry and event forms. The AI reads it within seconds; staff reply.
+      description: A repeat of the same message from the same sender within a day returns the first reference.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateEnquiryRequest" } } }
+      responses:
+        "201":
+          description: Received.
+          content: { application/json: { schema: { $ref: "#/components/schemas/EnquiryCreatedResponse" } } }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /v1/staff/inbound:
+    post:
+      tags: [enquiries]
+      summary: Simulated email or WhatsApp message. Enters the same pipeline a real webhook would feed.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/InboundMessageRequest" } } }
+      responses:
+        "201":
+          description: Received.
+          content: { application/json: { schema: { $ref: "#/components/schemas/EnquiryCreatedResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/staff/enquiries:
+    get:
+      tags: [enquiries]
+      summary: The inbox. Reservations and Sales see their own lane; the GM sees every lane, including Unsorted.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: lane, in: query, schema: { $ref: "#/components/schemas/Lane" } }
+        - { name: status, in: query, description: "Default: everything open (not closed or spam).", schema: { $ref: "#/components/schemas/EnquiryStatus" } }
+        - { name: q, in: query, description: "Search text, sender or reference.", schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 300, default: 100 } }
+      responses:
+        "200":
+          description: Complaints waiting for a reply first, then newest.
+          content: { application/json: { schema: { $ref: "#/components/schemas/EnquiriesResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/staff/enquiries/{ref}:
+    parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
+    get:
+      tags: [enquiries]
+      summary: One enquiry with the AI's reading, the latest draft and its history. Outside your lanes it is 404.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/EnquiryResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/staff/enquiries/{ref}/route:
+    parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
+    post:
+      tags: [enquiries]
+      summary: One-click re-route, optionally correcting the category (which writes a fresh draft).
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RouteEnquiryRequest" } } }
+      responses:
+        "200":
+          description: The enquiry after the change.
+          content: { application/json: { schema: { $ref: "#/components/schemas/EnquiryResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/staff/enquiries/{ref}/fields:
+    parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
+    patch:
+      tags: [enquiries]
+      summary: Correct what the AI extracted. The draft's quote is re-priced from the rate table.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CorrectEnquiryRequest" } } }
+      responses:
+        "200":
+          description: The enquiry after the change.
+          content: { application/json: { schema: { $ref: "#/components/schemas/EnquiryResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/staff/enquiries/{ref}/draft:
+    parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
+    put:
+      tags: [enquiries]
+      summary: Save the staff member's edit as the next draft version.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EditDraftRequest" } } }
+      responses:
+        "200":
+          description: The enquiry after the change.
+          content: { application/json: { schema: { $ref: "#/components/schemas/EnquiryResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/staff/enquiries/{ref}/send:
+    parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
+    post:
+      tags: [enquiries]
+      summary: Send the latest draft. The only way a reply reaches a guest; nothing is sent automatically.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: The enquiry after the change.
+          content: { application/json: { schema: { $ref: "#/components/schemas/EnquiryResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/staff/enquiries/{ref}/status:
+    parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
+    post:
+      tags: [enquiries]
+      summary: Close, reopen or mark as spam.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EnquiryStatusRequest" } } }
+      responses:
+        "200":
+          description: The enquiry after the change.
+          content: { application/json: { schema: { $ref: "#/components/schemas/EnquiryResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/staff/enquiries/{ref}/retry-ai:
+    parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
+    post:
+      tags: [enquiries]
+      summary: Queue the enquiry for the AI again (after an outage, or when it fell back to keyword rules).
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: The enquiry after the change.
+          content: { application/json: { schema: { $ref: "#/components/schemas/EnquiryResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/staff/dashboard:
+    get:
+      tags: [staff]
+      summary: The numbers behind the brief's success measures.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/DashboardResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     cookieAuth: { type: apiKey, in: cookie, name: kaapi_at, description: "Web. In production the cookie is __Host-kaapi_at." }
@@ -374,6 +543,12 @@ components:
       in: header
       description: Send `native` to receive tokens in the body instead of cookies.
       schema: { type: string, enum: [native] }
+    EnquiryRef:
+      name: ref
+      in: path
+      required: true
+      description: Case-insensitive.
+      schema: { type: string, pattern: "^[Ee][Nn][Qq]-[0-9]{4,}$" }
     Slug:
       name: slug
       in: path
@@ -830,3 +1005,215 @@ components:
       type: object
       required: [nights_changed]
       properties: { nights_changed: { type: integer } }
+
+    Category: { type: string, enum: [ROOM, WEDDING, OFFSITE, COMPLAINT, OTHER] }
+    Lane: { type: string, enum: [RESERVATIONS, SALES, GM, UNSORTED] }
+    EnquiryStatus: { type: string, enum: [NEW, IN_PROGRESS, REPLIED, CLOSED, SPAM] }
+    Channel: { type: string, enum: [WEB_FORM, EMAIL, WHATSAPP, EVENT_FORM] }
+    AIStatus:
+      type: string
+      enum: [PENDING, DONE, FALLBACK, FAILED]
+      description: "DONE: the model and keyword rules both ran. FALLBACK: keyword rules only (model off or unavailable)."
+
+    EventDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        type: { type: string, description: "wedding, engagement, offsite, …" }
+        date: { type: string }
+        month: { type: string, description: "YYYY-MM when there is no exact date." }
+        guest_count: { type: integer, minimum: 0 }
+        nights: { type: integer, minimum: 0 }
+        budget_paise: { type: integer, format: int64, minimum: 0 }
+
+    CreateEnquiryRequest:
+      type: object
+      additionalProperties: false
+      description: An email or a phone is required so we can reply. Kind EVENT uses `event`.
+      properties:
+        name: { type: string, maxLength: 120 }
+        email: { type: string }
+        phone: { type: string }
+        message: { type: string, maxLength: 5000 }
+        kind: { type: string, enum: [GENERAL, EVENT] }
+        event: { $ref: "#/components/schemas/EventDetails" }
+
+    EnquiryCreatedResponse:
+      type: object
+      required: [ref]
+      properties: { ref: { type: string } }
+
+    InboundMessageRequest:
+      type: object
+      required: [channel, text]
+      additionalProperties: false
+      properties:
+        channel: { type: string, enum: [EMAIL, WHATSAPP] }
+        sender_name: { type: string }
+        sender_email: { type: string }
+        sender_phone: { type: string }
+        subject: { type: string }
+        text: { type: string, maxLength: 5000 }
+
+    EnquirySummary:
+      type: object
+      required: [ref, channel, sender_name, snippet, received_at, category, confidence, lane, status, priority, ai_status,
+        needs_check, has_draft]
+      properties:
+        ref: { type: string }
+        channel: { $ref: "#/components/schemas/Channel" }
+        sender_name: { type: string, nullable: true }
+        snippet: { type: string }
+        received_at: { type: string, format: date-time }
+        category: { type: string, enum: [ROOM, WEDDING, OFFSITE, COMPLAINT, OTHER], nullable: true }
+        confidence: { type: number, minimum: 0, maximum: 1, nullable: true }
+        lane: { $ref: "#/components/schemas/Lane" }
+        status: { $ref: "#/components/schemas/EnquiryStatus" }
+        priority: { type: string, enum: [NORMAL, HIGH] }
+        ai_status: { $ref: "#/components/schemas/AIStatus" }
+        needs_check: { type: boolean, description: "The AI is unsure, or a stay enquiry has no dates." }
+        has_draft: { type: boolean }
+
+    EnquiriesResponse:
+      type: object
+      required: [enquiries]
+      properties: { enquiries: { type: array, items: { $ref: "#/components/schemas/EnquirySummary" } } }
+
+    Extracted:
+      type: object
+      required: [check_in, check_out, nights, adults, children, rooms, guest_count, budget_paise, budget_basis, event_month]
+      properties:
+        check_in: { type: string, format: date, nullable: true }
+        check_out: { type: string, format: date, nullable: true }
+        nights: { type: integer, nullable: true }
+        adults: { type: integer, nullable: true }
+        children: { type: integer, nullable: true }
+        rooms: { type: integer, nullable: true }
+        guest_count: { type: integer, nullable: true }
+        budget_paise: { type: integer, format: int64, nullable: true }
+        budget_basis: { type: string, enum: [PER_NIGHT, TOTAL], nullable: true }
+        event_month: { type: string, nullable: true }
+
+    Draft:
+      type: object
+      required: [version, body, author, flagged_reason, quote_filled, created_at, sent_at]
+      properties:
+        version: { type: integer, minimum: 1 }
+        body: { type: string, description: "Exactly what will be sent. Prices in it come from the rate table." }
+        author: { type: string, enum: [AI, USER] }
+        flagged_reason: { type: string, nullable: true, description: "Why the system changed the AI's text, e.g. it wrote a price itself." }
+        quote_filled: { type: boolean, description: "True when the body contains a live quote." }
+        created_at: { type: string, format: date-time }
+        sent_at: { type: string, format: date-time, nullable: true }
+
+    EnquiryEvent:
+      type: object
+      required: [type, actor, actor_name, from, to, created_at]
+      properties:
+        type:
+          type: string
+          enum: [RECEIVED, CLASSIFIED, REROUTED, CATEGORY_CHANGED, FIELDS_CORRECTED, ASSIGNED, DRAFT_CREATED, DRAFT_EDITED, SENT, ALERTED, CLOSED]
+        actor: { type: string, enum: [AI, SYSTEM, USER] }
+        actor_name: { type: string, nullable: true }
+        from: { type: object, nullable: true, additionalProperties: true }
+        to: { type: object, nullable: true, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+
+    Enquiry:
+      type: object
+      required: [ref, channel, sender_name, sender_email, sender_phone, subject, text, received_at, language, category,
+        secondary_category, confidence, ai_reason, summary, extracted, lane, assigned_to, priority, status, ai_status,
+        ai_model, first_reply_at, draft, events]
+      properties:
+        ref: { type: string }
+        channel: { $ref: "#/components/schemas/Channel" }
+        sender_name: { type: string, nullable: true }
+        sender_email: { type: string, nullable: true }
+        sender_phone: { type: string, nullable: true }
+        subject: { type: string, nullable: true }
+        text: { type: string }
+        received_at: { type: string, format: date-time }
+        language: { type: string, nullable: true }
+        category: { type: string, enum: [ROOM, WEDDING, OFFSITE, COMPLAINT, OTHER], nullable: true }
+        secondary_category: { type: string, enum: [ROOM, WEDDING, OFFSITE, COMPLAINT, OTHER], nullable: true }
+        confidence: { type: number, minimum: 0, maximum: 1, nullable: true }
+        ai_reason: { type: string, description: "Why the confidence is what it is." }
+        summary: { type: string, nullable: true }
+        extracted: { $ref: "#/components/schemas/Extracted" }
+        lane: { $ref: "#/components/schemas/Lane" }
+        assigned_to:
+          type: object
+          nullable: true
+          required: [id, name, role]
+          properties: { id: { type: string, format: uuid }, name: { type: string }, role: { type: string } }
+        priority: { type: string, enum: [NORMAL, HIGH] }
+        status: { $ref: "#/components/schemas/EnquiryStatus" }
+        ai_status: { $ref: "#/components/schemas/AIStatus" }
+        ai_model: { type: string, nullable: true }
+        first_reply_at: { type: string, format: date-time, nullable: true }
+        draft:
+          nullable: true
+          type: object
+          required: [version, body, author, flagged_reason, quote_filled, created_at, sent_at]
+          properties:
+            version: { type: integer, minimum: 1 }
+            body: { type: string }
+            author: { type: string, enum: [AI, USER] }
+            flagged_reason: { type: string, nullable: true }
+            quote_filled: { type: boolean }
+            created_at: { type: string, format: date-time }
+            sent_at: { type: string, format: date-time, nullable: true }
+        events: { type: array, items: { $ref: "#/components/schemas/EnquiryEvent" } }
+
+    EnquiryResponse:
+      type: object
+      required: [enquiry]
+      properties: { enquiry: { $ref: "#/components/schemas/Enquiry" } }
+
+    RouteEnquiryRequest:
+      type: object
+      required: [lane]
+      additionalProperties: false
+      properties:
+        lane: { $ref: "#/components/schemas/Lane" }
+        category: { $ref: "#/components/schemas/Category" }
+
+    CorrectEnquiryRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        check_in: { type: string, format: date }
+        check_out: { type: string, format: date }
+        adults: { type: integer, minimum: 1 }
+        children: { type: integer, minimum: 0 }
+        rooms: { type: integer, minimum: 1 }
+        guest_count: { type: integer, minimum: 1 }
+
+    EditDraftRequest:
+      type: object
+      required: [body]
+      additionalProperties: false
+      properties: { body: { type: string, minLength: 1, maxLength: 4000 } }
+
+    EnquiryStatusRequest:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties: { status: { $ref: "#/components/schemas/EnquiryStatus" } }
+
+    DashboardResponse:
+      type: object
+      required: [ai_enabled, median_first_reply_minutes, first_reply_target_minutes, replied_this_week, open_by_lane,
+        open_complaints, awaiting_ai, ai_correction_rate, direct_bookings_this_week, direct_revenue_this_week_paise, overbookings]
+      properties:
+        ai_enabled: { type: boolean }
+        median_first_reply_minutes: { type: number, nullable: true }
+        first_reply_target_minutes: { type: integer }
+        replied_this_week: { type: integer }
+        open_by_lane: { type: object, additionalProperties: { type: integer } }
+        open_complaints: { type: integer }
+        awaiting_ai: { type: integer }
+        ai_correction_rate: { type: number, nullable: true, description: "Share of AI routings staff changed this week." }
+        direct_bookings_this_week: { type: integer }
+        direct_revenue_this_week_paise: { $ref: "#/components/schemas/Paise" }
+        overbookings: { type: integer, description: "Nights where sold exceeds allotment. The database makes this impossible." }

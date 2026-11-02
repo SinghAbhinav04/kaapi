@@ -2,7 +2,6 @@ package seed
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 
 	"kaapi/api/internal/auth"
 	"kaapi/api/internal/domain"
+	"kaapi/api/internal/enquiry"
 	"kaapi/api/internal/platform/db"
 	"kaapi/api/internal/platform/idgen"
 	"kaapi/api/internal/pricing"
@@ -334,7 +334,7 @@ func insertEnquiry(ctx context.Context, tx pgx.Tx, e EnquiryFx) error {
 		(id, ref, channel, sender_name, sender_email, sender_phone, subject, raw_text, received_at, dedupe_hash, status, first_response_at, created_at, updated_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$9,$9)`,
 		newID(), e.Ref, e.Channel, nilIfEmpty(e.Sender.Name), nilIfEmpty(e.Sender.Email), nilIfEmpty(e.Sender.Phone),
-		nilIfEmpty(e.Subject), e.Text, received, DedupeHash(e.Text), e.SeedState.Status, firstResponse)
+		nilIfEmpty(e.Subject), e.Text, received, enquiry.DedupeHash(e.Text), e.SeedState.Status, firstResponse)
 	if err != nil {
 		return err
 	}
@@ -357,19 +357,6 @@ func checkInvariants(ctx context.Context, tx pgx.Tx) error {
 		return fmt.Errorf("invariant: %d nights where sold doesn't match booked nights", mismatched)
 	}
 	return nil
-}
-
-// DedupeHash identifies repeat messages: case, spacing and punctuation don't matter.
-func DedupeHash(text string) []byte {
-	var b strings.Builder
-	for _, r := range strings.ToLower(text) {
-		if r == ' ' || r == '\n' || r == '\t' || strings.ContainsRune(".,!?;:'\"-()", r) {
-			continue
-		}
-		b.WriteRune(r)
-	}
-	h := sha256.Sum256([]byte(b.String()))
-	return h[:]
 }
 
 // paymentFor is the payment state that goes with each seeded booking state.
