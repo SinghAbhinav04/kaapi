@@ -14,7 +14,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/auth"
+	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/domain"
 	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/platform/db"
+	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/platform/idgen"
 	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/pricing"
 )
 
@@ -88,7 +90,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, fx *Fixtures, opt Options) (Su
 		for _, u := range fx.Users {
 			id := newID()
 			var hash *string
-			if u.Role != "GUEST" {
+			if u.Role.IsStaff() {
 				hash = &staffHash
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO users (id, email, name, phone, role, password_hash) VALUES ($1,$2,$3,$4,$5,$6)`,
@@ -190,7 +192,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, fx *Fixtures, opt Options) (Su
 				return fmt.Errorf("booking %s: %w", b.Ref, err)
 			}
 			sum.Bookings++
-			if b.Status == "CONFIRMED" {
+			if b.Status == domain.BookingConfirmed {
 				sum.Confirmed++
 			}
 		}
@@ -256,9 +258,9 @@ func insertBooking(ctx context.Context, tx pgx.Tx, b BookingFx, rt RoomType, roo
 	}
 	var confirmedAt, cancelledAt *time.Time
 	switch b.Status {
-	case "CONFIRMED":
+	case domain.BookingConfirmed:
 		confirmedAt = ptr(created.Add(3 * time.Minute))
-	case "CANCELLED", "REFUND_PENDING", "REFUNDED":
+	case domain.BookingCancelled, domain.BookingRefundPending, domain.BookingRefunded:
 		confirmedAt = ptr(created.Add(3 * time.Minute))
 		cancelledAt = ptr(in.AddDate(0, 0, -10))
 	}
@@ -271,16 +273,16 @@ func insertBooking(ctx context.Context, tx pgx.Tx, b BookingFx, rt RoomType, roo
 		 room_type_id, rate_plan_id, check_in, check_out, special_requests, status,
 		 subtotal_paise, discount_paise, tax_paise, total_paise, price_breakdown, promo_code_id,
 		 consent_version, consent_at, source, created_at, updated_at, confirmed_at, cancelled_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,'DIRECT_WEB',$24,$24,$25,$26)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$27,$24,$24,$25,$26)`,
 		id, b.Ref, guestUser, b.Guest.Name, b.Guest.Email, b.Guest.Phone, b.Guest.Country, b.Adults, b.Children, b.Rooms,
 		roomID, planID, in, out, requests, b.Status,
 		q.SubtotalPaise, q.DiscountPaise, q.TaxPaise, q.TotalPaise, breakdown, promoID,
-		consentVersion, created, confirmedAt, cancelledAt); err != nil {
+		consentVersion, created, confirmedAt, cancelledAt, domain.BookingSourceDirectWeb); err != nil {
 		return err
 	}
 
 	// Only confirmed bookings hold inventory. The CHECK (sold <= allotment) would stop an oversold fixture here.
-	if b.Status == "CONFIRMED" {
+	if b.Status.HoldsInventory() {
 		for d := in; d.Before(out); d = d.AddDate(0, 0, 1) {
 			if _, err := tx.Exec(ctx, `INSERT INTO booking_nights (booking_id, date, room_type_id, rooms) VALUES ($1,$2,$3,$4)`,
 				id, d, roomID, b.Rooms); err != nil {
@@ -302,10 +304,7 @@ func insertBooking(ctx context.Context, tx pgx.Tx, b BookingFx, rt RoomType, roo
 		}
 	}
 
-	payStatus, reason, providerPay := map[string]string{
-		"CONFIRMED": "CAPTURED", "PAYMENT_FAILED": "FAILED", "REFUND_PENDING": "REFUND_PENDING",
-		"REFUNDED": "REFUNDED", "CANCELLED": "REFUNDED",
-	}[b.Status], (*string)(nil), ptr("pay_mock_"+strings.TrimPrefix(b.Ref, "KS-"))
+	payStatus, reason, providerPay := paymentFor[b.Status], (*string)(nil), ptr("pay_mock_"+strings.TrimPrefix(b.Ref, "KS-"))
 	if payStatus == "" {
 		return nil // EXPIRED: the guest never paid
 	}
@@ -317,8 +316,8 @@ func insertBooking(ctx context.Context, tx pgx.Tx, b BookingFx, rt RoomType, roo
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO payments
 		(id, booking_id, provider, provider_order_id, provider_payment_id, amount_paise, status, idempotency_key, failure_reason, created_at, updated_at)
-		VALUES ($1,$2,'MOCK',$3,$4,$5,$6,$7,$8,$9,$9)`,
-		newID(), id, "order_"+b.Ref, providerPay, q.TotalPaise, payStatus, "seed-"+b.Ref, reason, created.Add(2*time.Minute))
+		VALUES ($1,$2,$10,$3,$4,$5,$6,$7,$8,$9,$9)`,
+		newID(), id, "order_"+b.Ref, providerPay, q.TotalPaise, payStatus, "seed-"+b.Ref, reason, created.Add(2*time.Minute), domain.PaymentProviderMock)
 	return err
 }
 
@@ -340,7 +339,7 @@ func insertEnquiry(ctx context.Context, tx pgx.Tx, e EnquiryFx) error {
 		return err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO enquiry_events (id, enquiry_id, type, actor, created_at)
-		SELECT $1, id, 'RECEIVED', 'SYSTEM', received_at FROM enquiries WHERE ref = $2`, newID(), e.Ref)
+		SELECT $1, id, $3, $4, received_at FROM enquiries WHERE ref = $2`, newID(), e.Ref, domain.EventReceived, domain.ActorSystem)
 	return err
 }
 
@@ -373,7 +372,17 @@ func DedupeHash(text string) []byte {
 	return h[:]
 }
 
-func newID() uuid.UUID { return uuid.Must(uuid.NewV7()) }
+// paymentFor is the payment state that goes with each seeded booking state.
+// EXPIRED and PENDING_PAYMENT have no payment: the guest never paid.
+var paymentFor = map[domain.BookingStatus]domain.PaymentStatus{
+	domain.BookingConfirmed:     domain.PaymentCaptured,
+	domain.BookingPaymentFailed: domain.PaymentFailed,
+	domain.BookingRefundPending: domain.PaymentRefundPending,
+	domain.BookingRefunded:      domain.PaymentRefunded,
+	domain.BookingCancelled:     domain.PaymentRefunded,
+}
+
+func newID() uuid.UUID { return idgen.New() }
 
 func ptr[T any](v T) *T { return &v }
 

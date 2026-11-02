@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/domain"
 	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/pricing"
 )
 
@@ -44,22 +45,22 @@ type Property struct {
 }
 
 type RoomType struct {
-	Slug            string   `json:"slug"`
-	Name            string   `json:"name"`
-	Kind            string   `json:"kind"`
-	TotalKeys       int      `json:"total_keys"`
-	SizeSqm         int      `json:"size_sqm"`
-	Bed             string   `json:"bed"`
-	View            string   `json:"view"`
-	BaseOccupancy   int      `json:"base_occupancy"`
-	MaxAdults       int      `json:"max_adults"`
-	MaxChildren     int      `json:"max_children"`
-	ExtraAdultPaise int64    `json:"extra_adult_paise"`
-	ExtraChildPaise int64    `json:"extra_child_paise"`
-	Sort            int      `json:"sort"`
-	Summary         string   `json:"summary"`
-	Description     string   `json:"description"`
-	Amenities       []string `json:"amenities"`
+	Slug            string          `json:"slug"`
+	Name            string          `json:"name"`
+	Kind            domain.RoomKind `json:"kind"`
+	TotalKeys       int             `json:"total_keys"`
+	SizeSqm         int             `json:"size_sqm"`
+	Bed             string          `json:"bed"`
+	View            string          `json:"view"`
+	BaseOccupancy   int             `json:"base_occupancy"`
+	MaxAdults       int             `json:"max_adults"`
+	MaxChildren     int             `json:"max_children"`
+	ExtraAdultPaise int64           `json:"extra_adult_paise"`
+	ExtraChildPaise int64           `json:"extra_child_paise"`
+	Sort            int             `json:"sort"`
+	Summary         string          `json:"summary"`
+	Description     string          `json:"description"`
+	Amenities       []string        `json:"amenities"`
 	Photos          []struct {
 		Path string `json:"path"`
 		Alt  string `json:"alt"`
@@ -67,12 +68,12 @@ type RoomType struct {
 }
 
 type Plan struct {
-	Code               string   `json:"code"`
-	Name               string   `json:"name"`
-	Inclusions         []string `json:"inclusions"`
-	Refundable         bool     `json:"refundable"`
-	CancellationPolicy string   `json:"cancellation_policy"`
-	MinNights          int      `json:"min_nights"`
+	Code               string                    `json:"code"`
+	Name               string                    `json:"name"`
+	Inclusions         []string                  `json:"inclusions"`
+	Refundable         bool                      `json:"refundable"`
+	CancellationPolicy domain.CancellationPolicy `json:"cancellation_policy"`
+	MinNights          int                       `json:"min_nights"`
 	Modifier           struct {
 		AddPaisePerNight int64 `json:"add_paise_per_night"`
 		DiscountBps      int64 `json:"discount_bps"`
@@ -108,31 +109,31 @@ type RateRules struct {
 }
 
 type PromoFx struct {
-	Code        string   `json:"code"`
-	Type        string   `json:"type"`
-	Value       int64    `json:"value"`
-	Description string   `json:"description"`
-	StayFrom    string   `json:"stay_from"`
-	StayTo      string   `json:"stay_to"`
-	BookFrom    string   `json:"book_from"`
-	BookTo      string   `json:"book_to"`
-	MinNights   int      `json:"min_nights"`
-	MaxUses     *int     `json:"max_uses"`
-	RoomTypes   []string `json:"room_types"`
-	IsActive    bool     `json:"is_active"`
+	Code        string           `json:"code"`
+	Type        domain.PromoType `json:"type"`
+	Value       int64            `json:"value"`
+	Description string           `json:"description"`
+	StayFrom    string           `json:"stay_from"`
+	StayTo      string           `json:"stay_to"`
+	BookFrom    string           `json:"book_from"`
+	BookTo      string           `json:"book_to"`
+	MinNights   int              `json:"min_nights"`
+	MaxUses     *int             `json:"max_uses"`
+	RoomTypes   []string         `json:"room_types"`
+	IsActive    bool             `json:"is_active"`
 }
 
 type UserFx struct {
-	Email string  `json:"email"`
-	Name  string  `json:"name"`
-	Role  string  `json:"role"`
-	Phone *string `json:"phone"`
+	Email string      `json:"email"`
+	Name  string      `json:"name"`
+	Role  domain.Role `json:"role"`
+	Phone *string     `json:"phone"`
 }
 
 type EnquiryFx struct {
-	Ref        string `json:"ref"`
-	Channel    string `json:"channel"`
-	ReceivedAt string `json:"received_at"`
+	Ref        string         `json:"ref"`
+	Channel    domain.Channel `json:"channel"`
+	ReceivedAt string         `json:"received_at"`
 	Sender     struct {
 		Name  string `json:"name"`
 		Email string `json:"email"`
@@ -141,26 +142,26 @@ type EnquiryFx struct {
 	Subject   string `json:"subject"`
 	Text      string `json:"text"`
 	SeedState struct {
-		Status               string `json:"status"`
-		FirstResponseMinutes *int   `json:"first_response_minutes"`
+		Status               domain.EnquiryStatus `json:"status"`
+		FirstResponseMinutes *int                 `json:"first_response_minutes"`
 	} `json:"seed_state"`
 	Expected map[string]any `json:"expected"`
 	Tags     []string       `json:"tags"`
 }
 
 type BookingFx struct {
-	Ref       string `json:"ref"`
-	RoomType  string `json:"room_type"`
-	RatePlan  string `json:"rate_plan"`
-	CheckIn   string `json:"check_in"`
-	CheckOut  string `json:"check_out"`
-	Rooms     int    `json:"rooms"`
-	Adults    int    `json:"adults"`
-	Children  int    `json:"children"`
-	Status    string `json:"status"`
-	PromoCode string `json:"promo_code"`
-	CreatedAt string `json:"created_at"`
-	Requests  string `json:"special_requests"`
+	Ref       string               `json:"ref"`
+	RoomType  string               `json:"room_type"`
+	RatePlan  string               `json:"rate_plan"`
+	CheckIn   string               `json:"check_in"`
+	CheckOut  string               `json:"check_out"`
+	Rooms     int                  `json:"rooms"`
+	Adults    int                  `json:"adults"`
+	Children  int                  `json:"children"`
+	Status    domain.BookingStatus `json:"status"`
+	PromoCode string               `json:"promo_code"`
+	CreatedAt string               `json:"created_at"`
+	Requests  string               `json:"special_requests"`
 	Guest     struct {
 		Name    string `json:"name"`
 		Email   string `json:"email"`
@@ -168,9 +169,9 @@ type BookingFx struct {
 		Country string `json:"country"`
 	} `json:"guest"`
 	Payment *struct {
-		ProviderPaymentID string `json:"provider_payment_id"`
-		Status            string `json:"status"`
-		FailureReason     string `json:"failure_reason"`
+		ProviderPaymentID string               `json:"provider_payment_id"`
+		Status            domain.PaymentStatus `json:"status"`
+		FailureReason     string               `json:"failure_reason"`
 	} `json:"payment"`
 }
 
