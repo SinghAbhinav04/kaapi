@@ -1,0 +1,355 @@
+openapi: 3.0.3
+info:
+  title: Kaapi Estate API
+  version: 1.0.0
+  description: |
+    Direct booking and enquiry routing for a 76-key coffee-estate resort.
+
+    Conventions:
+    - Money is integer paise (₹1 = 100 paise). Dates are `YYYY-MM-DD`; timestamps are RFC 3339.
+    - Every error has the same envelope (`ErrorBody`), with a stable `code` to switch on.
+    - Every response carries `X-Request-Id`; quote it when reporting a problem.
+
+    This file is the contract. The API's contract test checks real responses against it,
+    and the web app's TypeScript types are generated from it.
+servers:
+  - url: /
+tags:
+  - name: health
+  - name: catalog
+  - name: booking
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      summary: The process is up.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Status" } } } }
+  /readyz:
+    get:
+      tags: [health]
+      summary: The database is reachable.
+      responses:
+        "200": { description: Ready, content: { application/json: { schema: { $ref: "#/components/schemas/Status" } } } }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /v1/property:
+    get:
+      tags: [catalog]
+      summary: Resort basics and the fact sheet.
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/PropertyResponse" } } }
+
+  /v1/rooms:
+    get:
+      tags: [catalog]
+      summary: Every room type with photos and rate plans.
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/RoomsResponse" } } }
+
+  /v1/rooms/{slug}:
+    get:
+      tags: [catalog]
+      parameters: [{ $ref: "#/components/parameters/Slug" }]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/RoomResponse" } } }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/rooms/{slug}/calendar:
+    get:
+      tags: [catalog]
+      summary: Nightly prices and rooms left, for the price calendar.
+      parameters:
+        - { $ref: "#/components/parameters/Slug" }
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, description: Exclusive. At most 42 days after `from`., schema: { type: string, format: date } }
+        - { name: plan, in: query, schema: { type: string, default: RO-FLEX } }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/CalendarResponse" } } }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/availability:
+    get:
+      tags: [booking]
+      summary: What can be booked for a stay, with prices for every plan.
+      parameters:
+        - { name: check_in, in: query, required: true, schema: { type: string, format: date } }
+        - { name: check_out, in: query, required: true, schema: { type: string, format: date } }
+        - { name: rooms, in: query, schema: { type: integer, minimum: 1, maximum: 4, default: 1 } }
+        - { name: adults, in: query, schema: { type: integer, minimum: 1, maximum: 16, default: 2 } }
+        - { name: children, in: query, schema: { type: integer, minimum: 0, maximum: 8, default: 0 } }
+        - { name: promo, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/AvailabilityResponse" } } }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/holds:
+    post:
+      tags: [booking]
+      summary: Hold rooms while the guest checks out.
+      description: |
+        Locks the stay's nights, re-checks capacity and freezes the price. Concurrent requests
+        for the last room are serialised; exactly one wins and the rest get `SOLD_OUT`, with
+        `details.nights` and `details.alternatives` (nearby check-in dates that work).
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateHoldRequest" } } }
+      responses:
+        "201":
+          description: Held
+          content: { application/json: { schema: { $ref: "#/components/schemas/HoldResponse" } } }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/holds/{id}:
+    delete:
+      tags: [booking]
+      summary: Give the rooms back early.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: X-Hold-Token, in: header, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Released }
+        "404": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+components:
+  parameters:
+    Slug:
+      name: slug
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" }
+
+  responses:
+    Error:
+      description: Something went wrong. `code` says what.
+      headers:
+        X-Request-Id: { schema: { type: string } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorBody" } } }
+
+  schemas:
+    Status:
+      type: object
+      required: [status]
+      properties: { status: { type: string } }
+
+    ErrorBody:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          additionalProperties: false
+          properties:
+            code: { $ref: "#/components/schemas/ErrorCode" }
+            message: { type: string, description: Safe to show to people. }
+            details: { type: object, additionalProperties: true }
+            request_id: { type: string }
+
+    ErrorCode:
+      type: string
+      enum: [BAD_REQUEST, VALIDATION_FAILED, PAYLOAD_TOO_LARGE, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND,
+        METHOD_NOT_ALLOWED, CONFLICT, RATE_LIMITED, IDEMPOTENCY_MISMATCH, INVALID_STAY, NOT_ON_SALE, SOLD_OUT,
+        STAY_RESTRICTED, PROMO_INVALID, TOO_MANY_GUESTS, HOLD_NOT_FOUND, HOLD_EXPIRED, ALLOTMENT_TOO_LOW,
+        CLIENT_CLOSED_REQUEST, TIMEOUT, SERVICE_UNAVAILABLE, INTERNAL]
+
+    Date: { type: string, format: date }
+    Paise: { type: integer, format: int64, minimum: 0, description: "Rupees × 100." }
+
+    Fact:
+      type: object
+      required: [key, category, question, answer]
+      properties:
+        key: { type: string }
+        category: { type: string }
+        question: { type: string }
+        answer: { type: string }
+
+    PropertyResponse:
+      type: object
+      required: [name, check_in_time, check_out_time, hold_minutes, facts]
+      properties:
+        name: { type: string }
+        check_in_time: { type: string, example: "14:00" }
+        check_out_time: { type: string, example: "11:00" }
+        hold_minutes: { type: integer }
+        facts: { type: array, items: { $ref: "#/components/schemas/Fact" } }
+
+    Photo:
+      type: object
+      required: [url, alt]
+      properties: { url: { type: string }, alt: { type: string } }
+
+    Plan:
+      type: object
+      required: [id, code, name, inclusions, refundable, cancellation_policy, min_nights]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, example: BB-FLEX }
+        name: { type: string }
+        inclusions: { type: array, items: { type: string } }
+        refundable: { type: boolean }
+        cancellation_policy: { type: string, enum: [FREE_UNTIL_7_DAYS, NON_REFUNDABLE] }
+        min_nights: { type: integer, minimum: 1 }
+
+    Room:
+      type: object
+      required: [id, slug, name, kind, size_sqm, bed, view, sleeps, extra_adult_paise, summary, description, amenities, photos, plans]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [ROOM, VILLA] }
+        size_sqm: { type: integer }
+        bed: { type: string }
+        view: { type: string }
+        sleeps:
+          type: object
+          required: [adults, children]
+          properties: { adults: { type: integer }, children: { type: integer } }
+        extra_adult_paise: { $ref: "#/components/schemas/Paise" }
+        summary: { type: string }
+        description: { type: string }
+        amenities: { type: array, items: { type: string } }
+        photos: { type: array, items: { $ref: "#/components/schemas/Photo" } }
+        plans: { type: array, items: { $ref: "#/components/schemas/Plan" } }
+
+    RoomsResponse:
+      type: object
+      required: [rooms]
+      properties: { rooms: { type: array, items: { $ref: "#/components/schemas/Room" } } }
+
+    RoomResponse:
+      type: object
+      required: [room]
+      properties: { room: { $ref: "#/components/schemas/Room" } }
+
+    CalendarDay:
+      type: object
+      required: [date, price_paise, left, min_stay, stop_sell, no_arrival, season]
+      properties:
+        date: { $ref: "#/components/schemas/Date" }
+        price_paise: { $ref: "#/components/schemas/Paise" }
+        left: { type: integer, minimum: 0 }
+        min_stay: { type: integer, minimum: 1 }
+        stop_sell: { type: boolean }
+        no_arrival: { type: boolean }
+        season: { type: boolean, description: Priced above the usual rate for that weekday. }
+
+    CalendarResponse:
+      type: object
+      required: [plan, days]
+      properties:
+        plan: { type: string }
+        days: { type: array, items: { $ref: "#/components/schemas/CalendarDay" } }
+
+    Stay:
+      type: object
+      required: [check_in, check_out, nights]
+      properties:
+        check_in: { $ref: "#/components/schemas/Date" }
+        check_out: { $ref: "#/components/schemas/Date" }
+        nights: { type: integer, minimum: 1 }
+
+    QuoteLine:
+      type: object
+      required: [date, room_paise, discount_paise, taxable_paise, gst_rate_bps, gst_paise, total_paise]
+      properties:
+        date: { $ref: "#/components/schemas/Date" }
+        room_paise: { $ref: "#/components/schemas/Paise" }
+        discount_paise: { $ref: "#/components/schemas/Paise" }
+        taxable_paise: { $ref: "#/components/schemas/Paise" }
+        gst_rate_bps: { type: integer, description: "500 = 5%, 1800 = 18%" }
+        gst_paise: { $ref: "#/components/schemas/Paise" }
+        total_paise: { $ref: "#/components/schemas/Paise" }
+
+    Quote:
+      type: object
+      required: [lines, subtotal_paise, discount_paise, tax_paise, total_paise, promo_code]
+      properties:
+        lines: { type: array, items: { $ref: "#/components/schemas/QuoteLine" } }
+        subtotal_paise: { $ref: "#/components/schemas/Paise" }
+        discount_paise: { $ref: "#/components/schemas/Paise" }
+        tax_paise: { $ref: "#/components/schemas/Paise" }
+        total_paise: { $ref: "#/components/schemas/Paise" }
+        promo_code: { type: string, nullable: true }
+
+    PlanQuote:
+      type: object
+      required: [plan_id, code, name, refundable, quote]
+      properties:
+        plan_id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        refundable: { type: boolean }
+        quote: { $ref: "#/components/schemas/Quote" }
+
+    Option:
+      type: object
+      required: [room_type_id, slug, name, status, left, reason, sold_out_nights, min_stay, promo_error, plans]
+      properties:
+        room_type_id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        status: { type: string, enum: [AVAILABLE, SOLD_OUT, RESTRICTED, TOO_MANY_GUESTS, NOT_ON_SALE] }
+        left: { type: integer, minimum: 0, description: Fewest website rooms free on any night. }
+        reason: { type: string, nullable: true }
+        sold_out_nights: { type: array, items: { $ref: "#/components/schemas/Date" } }
+        min_stay: { type: integer }
+        promo_error: { type: string, nullable: true }
+        plans: { type: array, items: { $ref: "#/components/schemas/PlanQuote" } }
+
+    AvailabilityResponse:
+      type: object
+      required: [stay, options]
+      properties:
+        stay: { $ref: "#/components/schemas/Stay" }
+        options: { type: array, items: { $ref: "#/components/schemas/Option" } }
+
+    CreateHoldRequest:
+      type: object
+      required: [room_type_id, rate_plan_id, check_in, check_out, adults]
+      additionalProperties: false
+      properties:
+        room_type_id: { type: string, format: uuid }
+        rate_plan_id: { type: string, format: uuid }
+        check_in: { $ref: "#/components/schemas/Date" }
+        check_out: { $ref: "#/components/schemas/Date" }
+        rooms: { type: integer, minimum: 1, maximum: 4, default: 1 }
+        adults: { type: integer, minimum: 1 }
+        children: { type: integer, minimum: 0, default: 0 }
+        promo_code: { type: string }
+
+    Hold:
+      type: object
+      required: [id, room_type_id, rate_plan_id, stay, rooms, expires_at, quote]
+      properties:
+        id: { type: string, format: uuid }
+        token: { type: string, description: Returned once. Send it as X-Hold-Token to book or release. }
+        room_type_id: { type: string, format: uuid }
+        rate_plan_id: { type: string, format: uuid }
+        stay: { $ref: "#/components/schemas/Stay" }
+        rooms: { type: integer }
+        expires_at: { type: string, format: date-time }
+        quote: { $ref: "#/components/schemas/Quote" }
+
+    HoldResponse:
+      type: object
+      required: [hold]
+      properties: { hold: { $ref: "#/components/schemas/Hold" } }
