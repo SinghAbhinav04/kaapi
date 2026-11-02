@@ -12,8 +12,10 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"kaapi/api/internal/auth"
 	"kaapi/api/internal/catalog"
 	"kaapi/api/internal/inventory"
+	"kaapi/api/internal/outbox"
 	"kaapi/api/internal/platform/config"
 	"kaapi/api/internal/platform/httpx"
 )
@@ -23,8 +25,10 @@ type API struct {
 	cfg       config.Config
 	log       *slog.Logger
 	pool      *pgxpool.Pool
+	auth      *auth.Service
 	catalog   *catalog.Service
 	inventory *inventory.Service
+	outbox    *outbox.Service
 }
 
 func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() time.Time) *API {
@@ -32,8 +36,10 @@ func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() tim
 		cfg:       cfg,
 		log:       log,
 		pool:      pool,
+		auth:      auth.NewService(pool, cfg.JWESecret, now),
 		catalog:   catalog.NewService(pool),
 		inventory: inventory.NewService(pool, now),
+		outbox:    outbox.NewService(pool),
 	}
 }
 
@@ -57,6 +63,17 @@ func (a *API) Router() http.Handler {
 	r.Get("/readyz", h(a.readyz))
 
 	r.Route("/v1", func(r chi.Router) {
+		// The gateway: identify the caller on every request, and refuse cross-site writes.
+		r.Use(a.authenticate)
+		r.Use(a.checkOrigin)
+
+		r.Post("/auth/staff/login", h(a.staffLogin))
+		r.Post("/auth/otp/request", h(a.otpRequest))
+		r.Post("/auth/otp/verify", h(a.otpVerify))
+		r.Post("/auth/refresh", h(a.refresh))
+		r.Post("/auth/logout", h(a.logout))
+		r.With(a.requireAuth).Get("/me", h(a.me))
+
 		// Public: anyone can browse and hold a room.
 		r.Get("/property", h(a.property))
 		r.Get("/rooms", h(a.listRooms))
@@ -65,6 +82,11 @@ func (a *API) Router() http.Handler {
 		r.Get("/availability", h(a.availability))
 		r.Post("/holds", h(a.createHold))
 		r.Delete("/holds/{id}", h(a.releaseHold))
+
+		// Staff console. Each route names the permission it needs.
+		r.Route("/staff", func(r chi.Router) {
+			r.With(a.requirePermission(auth.PermOutboxRead)).Get("/outbox", h(a.listOutbox))
+		})
 	})
 	return r
 }

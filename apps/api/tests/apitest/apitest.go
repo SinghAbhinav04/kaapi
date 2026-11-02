@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
 	"runtime"
@@ -38,6 +39,7 @@ func TestConfig() config.Config {
 		PaymentSecret:  []byte("test-only-payment-secret-0123456789ab"),
 		Environment:    config.EnvDevelopment,
 		RequestTimeout: 15 * time.Second,
+		DemoMode:       true,
 	}
 }
 
@@ -57,7 +59,19 @@ func New(t *testing.T) *Server {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv := httptest.NewServer(api.New(TestConfig(), log, pool, Today).Router())
 	t.Cleanup(srv.Close)
-	return &Server{t: t, Ctx: ctx, Pool: pool, URL: srv.URL, client: srv.Client(), router: loadContract(t)}
+	s := &Server{t: t, Ctx: ctx, Pool: pool, URL: srv.URL, router: loadContract(t)}
+	return s.NewSession()
+}
+
+// NewSession returns a client with its own cookie jar, like a separate browser.
+func (s *Server) NewSession() *Server {
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	c := *s
+	c.client = &http.Client{Jar: jar, Timeout: 30 * time.Second}
+	return &c
 }
 
 func loadContract(t *testing.T) routers.Router {

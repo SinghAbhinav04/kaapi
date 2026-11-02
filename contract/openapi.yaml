@@ -18,6 +18,8 @@ tags:
   - name: health
   - name: catalog
   - name: booking
+  - name: auth
+  - name: staff
 
 paths:
   /healthz:
@@ -126,8 +128,97 @@ paths:
         "410": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
+  /v1/auth/staff/login:
+    post:
+      tags: [auth]
+      summary: Staff sign in with email and password.
+      parameters: [{ $ref: "#/components/parameters/XClient" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/StaffLoginRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/SignedIn" }
+        "401": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/auth/otp/request:
+    post:
+      tags: [auth]
+      summary: Email a guest a 6-digit sign-in code.
+      description: Answers the same way whether or not the email has an account. In demo mode the code is also returned.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OTPRequest" } } }
+      responses:
+        "202":
+          description: Sent
+          content: { application/json: { schema: { $ref: "#/components/schemas/OTPRequestResponse" } } }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/auth/otp/verify:
+    post:
+      tags: [auth]
+      summary: Sign a guest in with the code.
+      parameters: [{ $ref: "#/components/parameters/XClient" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OTPVerifyRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/SignedIn" }
+        "401": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate the refresh token and issue a new access token.
+      description: |
+        Web: uses the refresh cookie. Native: send `X-Client: native` and `{"refresh_token": "..."}`.
+        Reusing an already-rotated refresh token revokes every session of that user.
+      parameters: [{ $ref: "#/components/parameters/XClient" }]
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/RefreshRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/SignedIn" }
+        "401": { $ref: "#/components/responses/Error" }
+  /v1/auth/logout:
+    post:
+      tags: [auth]
+      responses:
+        "204": { description: Signed out }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/me:
+    get:
+      tags: [auth]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/MeResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+  /v1/staff/outbox:
+    get:
+      tags: [staff]
+      summary: Messages the system has sent (email and WhatsApp are simulated).
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/OutboxResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
 components:
+  securitySchemes:
+    cookieAuth: { type: apiKey, in: cookie, name: kaapi_at, description: "Web. In production the cookie is __Host-kaapi_at." }
+    bearerAuth: { type: http, scheme: bearer, description: "Native app. Encrypted JWE access token, valid 15 minutes." }
+
   parameters:
+    XClient:
+      name: X-Client
+      in: header
+      description: Send `native` to receive tokens in the body instead of cookies.
+      schema: { type: string, enum: [native] }
     Slug:
       name: slug
       in: path
@@ -135,6 +226,9 @@ components:
       schema: { type: string, pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" }
 
   responses:
+    SignedIn:
+      description: Signed in. The web gets httpOnly cookies; the native app also gets tokens in the body.
+      content: { application/json: { schema: { $ref: "#/components/schemas/AuthResponse" } } }
     Error:
       description: Something went wrong. `code` says what.
       headers:
@@ -353,3 +447,70 @@ components:
       type: object
       required: [hold]
       properties: { hold: { $ref: "#/components/schemas/Hold" } }
+
+    User:
+      type: object
+      required: [id, email, name, role, permissions]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [GUEST, RESERVATIONS, SALES, GM, ADMIN] }
+        permissions: { type: array, items: { type: string } }
+
+    AuthResponse:
+      type: object
+      required: [user]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        access_token: { type: string }
+        access_expires_at: { type: string, format: date-time }
+        refresh_token: { type: string }
+
+    MeResponse:
+      type: object
+      required: [user]
+      properties: { user: { $ref: "#/components/schemas/User" } }
+
+    StaffLoginRequest:
+      type: object
+      required: [email, password]
+      properties: { email: { type: string }, password: { type: string } }
+
+    OTPRequest:
+      type: object
+      required: [email]
+      properties: { email: { type: string } }
+
+    OTPRequestResponse:
+      type: object
+      required: [sent]
+      properties:
+        sent: { type: boolean }
+        demo_code: { type: string, description: Only when DEMO_MODE is on. }
+
+    OTPVerifyRequest:
+      type: object
+      required: [email, code]
+      properties: { email: { type: string }, code: { type: string } }
+
+    RefreshRequest:
+      type: object
+      properties: { refresh_token: { type: string } }
+
+    OutboxMessage:
+      type: object
+      required: [id, channel, kind, recipient, subject, body, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        channel: { type: string, enum: [EMAIL, WHATSAPP, SMS] }
+        kind: { type: string, enum: [OTP, BOOKING_CONFIRMATION, ENQUIRY_REPLY, ALERT, REFUND_NOTICE] }
+        recipient: { type: string }
+        subject: { type: string, nullable: true }
+        body: { type: string }
+        created_at: { type: string, format: date-time }
+
+    OutboxResponse:
+      type: object
+      required: [messages]
+      properties: { messages: { type: array, items: { $ref: "#/components/schemas/OutboxMessage" } } }

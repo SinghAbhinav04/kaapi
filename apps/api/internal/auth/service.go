@@ -1,0 +1,300 @@
+package auth
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"math/big"
+	"net/mail"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"kaapi/api/internal/domain"
+	"kaapi/api/internal/platform/apperr"
+	"kaapi/api/internal/platform/db"
+	"kaapi/api/internal/platform/idgen"
+)
+
+type Service struct {
+	pool   *pgxpool.Pool
+	sealer *Sealer
+	key    []byte // HMAC key for OTP codes and IP hashes, derived from the token secret
+	now    func() time.Time
+}
+
+func NewService(pool *pgxpool.Pool, secret []byte, now func() time.Time) *Service {
+	if now == nil {
+		now = time.Now
+	}
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte("kaapi/otp-and-ip"))
+	return &Service{pool: pool, sealer: NewSealer(secret, now), key: mac.Sum(nil), now: now}
+}
+
+// Sealer exposes the token sealer to the gateway middleware.
+func (s *Service) Sealer() *Sealer { return s.sealer }
+
+var ErrInvalidEmail = apperr.Validation(map[string]string{"email": "must be a valid email address"})
+
+// dummyHash makes a login for an unknown email take as long as one for a real account,
+// so response timing doesn't reveal which emails exist.
+var dummyHash = sync.OnceValue(func() string {
+	h, _ := HashPassword("not-a-real-password-just-for-timing")
+	return h
+})
+
+// StaffLogin checks an email and password for a staff account.
+func (s *Service) StaffLogin(ctx context.Context, email, password string, client ClientInfo) (User, Tokens, error) {
+	var u User
+	var hash *string
+	var active bool
+	err := s.pool.QueryRow(ctx, `SELECT id, email, name, role, password_hash, is_active FROM users WHERE lower(email) = lower($1)`,
+		strings.TrimSpace(email)).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &hash, &active)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return User{}, Tokens{}, err
+	}
+	if err != nil || hash == nil || !active || !u.Role.IsStaff() {
+		_, _ = CheckPassword(dummyHash(), password)
+		return User{}, Tokens{}, ErrBadCredentials
+	}
+	ok, err := CheckPassword(*hash, password)
+	if err != nil || !ok {
+		return User{}, Tokens{}, ErrBadCredentials
+	}
+	var t Tokens
+	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var err error
+		t, _, err = s.newSession(ctx, tx, u, client)
+		return err
+	})
+	return u, t, err
+}
+
+// RequestOTP creates a sign-in code for a guest and "emails" it (to the outbox).
+// It answers the same way whether or not the email has an account. The code is
+// returned so demo mode can show it on screen; production never sends it to the client.
+func (s *Service) RequestOTP(ctx context.Context, email string) (string, error) {
+	email, err := normaliseEmail(email)
+	if err != nil {
+		return "", err
+	}
+	code, err := randomDigits(OTPLength)
+	if err != nil {
+		return "", err
+	}
+	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var recent int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM otp_codes WHERE lower(email) = $1 AND created_at > now() - make_interval(secs => $2)`,
+			email, OTPWindow.Seconds()).Scan(&recent); err != nil {
+			return err
+		}
+		if recent >= OTPMaxPerWindow {
+			return ErrOTPRateLimited
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO otp_codes (id, email, purpose, code_hash, expires_at)
+			VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))`,
+			idgen.New(), email, domain.OTPGuestLogin, s.otpHash(email, code), OTPTTL.Seconds()); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, recipient, subject, body) VALUES ($1,$2,$3,$4,$5,$6)`,
+			idgen.New(), domain.OutboxEmail, domain.OutboxOTP, email, "Your Kaapi Estate sign-in code",
+			fmt.Sprintf("Your sign-in code is %s. It expires in %d minutes. If you didn't ask for it, you can ignore this email.",
+				code, int(OTPTTL.Minutes())))
+		return err
+	})
+	return code, err
+}
+
+// VerifyOTP signs a guest in with a code, creating their guest account on first use.
+func (s *Service) VerifyOTP(ctx context.Context, email, code string, client ClientInfo) (User, Tokens, error) {
+	email, err := normaliseEmail(email)
+	if err != nil {
+		return User{}, Tokens{}, err
+	}
+	var u User
+	var t Tokens
+	wrongCode := false
+	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var id uuid.UUID
+		var stored []byte
+		var attempts int
+		err := tx.QueryRow(ctx, `SELECT id, code_hash, attempts FROM otp_codes
+			WHERE lower(email) = $1 AND purpose = $2 AND consumed_at IS NULL AND expires_at > now()
+			ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, email, domain.OTPGuestLogin).Scan(&id, &stored, &attempts)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrOTPInvalid
+		}
+		if err != nil {
+			return err
+		}
+		if attempts >= OTPMaxAttempts || subtle.ConstantTimeCompare(stored, s.otpHash(email, strings.TrimSpace(code))) != 1 {
+			// Count the attempt and commit it, then report the failure outside the transaction.
+			wrongCode = true
+			_, err := tx.Exec(ctx, `UPDATE otp_codes SET attempts = least(attempts + 1, $2) WHERE id = $1`, id, OTPMaxAttempts)
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE otp_codes SET consumed_at = now() WHERE id = $1`, id); err != nil {
+			return err
+		}
+		if u, err = s.guestFor(ctx, tx, email); err != nil {
+			return err
+		}
+		t, _, err = s.newSession(ctx, tx, u, client)
+		return err
+	})
+	if wrongCode {
+		return User{}, Tokens{}, ErrOTPInvalid
+	}
+	return u, t, err
+}
+
+// guestFor finds or creates the guest account for an email. A staff email can't sign in
+// this way: staff use their password, and a code must never grant staff access.
+func (s *Service) guestFor(ctx context.Context, tx pgx.Tx, email string) (User, error) {
+	var u User
+	var active bool
+	err := tx.QueryRow(ctx, `SELECT id, email, name, role, is_active FROM users WHERE lower(email) = $1`, email).
+		Scan(&u.ID, &u.Email, &u.Name, &u.Role, &active)
+	switch {
+	case err == nil && (u.Role != domain.RoleGuest || !active):
+		return User{}, ErrOTPInvalid
+	case err == nil:
+		return u, nil
+	case !errors.Is(err, pgx.ErrNoRows):
+		return User{}, err
+	}
+	u = User{ID: idgen.New(), Email: email, Name: strings.SplitN(email, "@", 2)[0], Role: domain.RoleGuest}
+	_, err = tx.Exec(ctx, `INSERT INTO users (id, email, name, role) VALUES ($1,$2,$3,$4)`, u.ID, u.Email, u.Name, u.Role)
+	return u, err
+}
+
+// Refresh rotates a refresh token. Presenting one that was already rotated means it
+// leaked (the real client has moved on), so every session of that user is revoked.
+func (s *Service) Refresh(ctx context.Context, refreshToken string, client ClientInfo) (User, Tokens, error) {
+	if refreshToken == "" {
+		return User{}, Tokens{}, ErrTokenInvalid
+	}
+	sum := sha256.Sum256([]byte(refreshToken))
+	var u User
+	var t Tokens
+	reused := false
+	err := db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var sid uuid.UUID
+		var expired, active bool
+		var revokedAt *time.Time
+		var replacedBy *uuid.UUID
+		err := tx.QueryRow(ctx, `SELECT s.id, s.expires_at <= now(), s.revoked_at, s.replaced_by, u.id, u.email, u.name, u.role, u.is_active
+			FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.refresh_hash = $1 FOR UPDATE OF s`, sum[:]).
+			Scan(&sid, &expired, &revokedAt, &replacedBy, &u.ID, &u.Email, &u.Name, &u.Role, &active)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrTokenInvalid
+		}
+		if err != nil {
+			return err
+		}
+		if revokedAt != nil {
+			if replacedBy != nil {
+				reused = true
+				_, err := tx.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, u.ID)
+				return err
+			}
+			return ErrTokenInvalid
+		}
+		if expired || !active {
+			return ErrTokenInvalid
+		}
+		var newSID uuid.UUID
+		if t, newSID, err = s.newSession(ctx, tx, u, client); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE sessions SET revoked_at = now(), replaced_by = $2 WHERE id = $1`, sid, newSID)
+		return err
+	})
+	if reused {
+		return User{}, Tokens{}, ErrTokenInvalid
+	}
+	return u, t, err
+}
+
+// Logout ends a session. Its access token stays valid until it expires (at most AccessTTL).
+func (s *Service) Logout(ctx context.Context, sessionID uuid.UUID) error {
+	_, err := s.pool.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`, sessionID)
+	return err
+}
+
+// Me returns the signed-in user.
+func (s *Service) Me(ctx context.Context, userID uuid.UUID) (User, error) {
+	var u User
+	err := s.pool.QueryRow(ctx, `SELECT id, email, name, role FROM users WHERE id = $1 AND is_active`, userID).
+		Scan(&u.ID, &u.Email, &u.Name, &u.Role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return u, ErrTokenInvalid
+	}
+	return u, err
+}
+
+func (s *Service) newSession(ctx context.Context, tx pgx.Tx, u User, client ClientInfo) (Tokens, uuid.UUID, error) {
+	raw := make([]byte, refreshTokenBytes)
+	if _, err := rand.Read(raw); err != nil {
+		return Tokens{}, uuid.Nil, err
+	}
+	refresh := base64.RawURLEncoding.EncodeToString(raw)
+	sum := sha256.Sum256([]byte(refresh))
+	sid := idgen.New()
+	refreshExp := s.now().Add(RefreshTTL)
+	ua := client.UserAgent
+	if len(ua) > userAgentMaxLen {
+		ua = ua[:userAgentMaxLen]
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO sessions (id, user_id, refresh_hash, user_agent, ip_hash, expires_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+		sid, u.ID, sum[:], ua, s.mac(client.IP), refreshExp); err != nil {
+		return Tokens{}, uuid.Nil, err
+	}
+	access, accessExp, err := s.sealer.issue(u, sid)
+	if err != nil {
+		return Tokens{}, uuid.Nil, err
+	}
+	return Tokens{Access: access, AccessExpiresAt: accessExp, Refresh: refresh, RefreshExpiresAt: refreshExp}, sid, nil
+}
+
+// otpHash binds a code to its email under a server-side key, so a leaked table can't be
+// brute-forced offline (there are only a million 6-digit codes).
+func (s *Service) otpHash(email, code string) []byte { return s.mac(email + "|" + code) }
+
+func (s *Service) mac(v string) []byte {
+	m := hmac.New(sha256.New, s.key)
+	m.Write([]byte(v))
+	return m.Sum(nil)
+}
+
+func normaliseEmail(email string) (string, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	addr, err := mail.ParseAddress(email)
+	if err != nil || addr.Address != email || !strings.Contains(email[strings.LastIndex(email, "@"):], ".") {
+		return "", ErrInvalidEmail
+	}
+	return email, nil
+}
+
+func randomDigits(n int) (string, error) {
+	var b strings.Builder
+	ten := big.NewInt(10)
+	for i := 0; i < n; i++ {
+		d, err := rand.Int(rand.Reader, ten)
+		if err != nil {
+			return "", err
+		}
+		b.WriteByte(byte('0' + d.Int64()))
+	}
+	return b.String(), nil
+}

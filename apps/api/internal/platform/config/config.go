@@ -26,6 +26,7 @@ const (
 	EnvLogLevel          = "LOG_LEVEL"
 	EnvNativeAppOrigins  = "NATIVE_APP_ORIGINS"
 	EnvRequestTimeoutSec = "REQUEST_TIMEOUT_SECONDS"
+	EnvDemoMode          = "DEMO_MODE"
 )
 
 type Environment string
@@ -52,6 +53,8 @@ type Config struct {
 	CookieSecure     bool
 	LogLevel         string
 	RequestTimeout   time.Duration
+	// DemoMode shows guest sign-in codes on screen, because the demo has no real email.
+	DemoMode bool
 }
 
 func (c Config) IsProduction() bool { return c.Environment == EnvProduction }
@@ -69,6 +72,7 @@ func Load() (Config, error) {
 		MigrateOnStart: get(EnvMigrateOnStart, "true") == "true",
 		Environment:    Environment(get(EnvEnvironment, string(EnvDevelopment))),
 		LogLevel:       get(EnvLogLevel, "info"),
+		DemoMode:       get(EnvDemoMode, "false") == "true",
 	}
 	c.CookieSecure = get(EnvCookieSecure, strconv.FormatBool(c.IsProduction())) == "true"
 	for _, o := range strings.Split(os.Getenv(EnvNativeAppOrigins), ",") {
