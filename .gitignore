@@ -30,3 +30,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# local embedded postgres
+apps/api/.devdata/
