@@ -18,9 +18,13 @@ const (
 	EnvAppOrigin         = "APP_ORIGIN"
 	EnvJWESecret         = "JWE_SECRET"
 	EnvGeminiAPIKey      = "GEMINI_API_KEY"
-	EnvGeminiModel       = "GEMINI_MODEL"
+	EnvGeminiModels      = "GEMINI_MODELS" // optional, comma-separated; empty = every text model the key can use
 	EnvGeminiBaseURL     = "GEMINI_BASE_URL"
-	EnvGeminiRPM         = "GEMINI_RPM"
+	EnvGeminiRPM         = "GEMINI_RPM" // per model
+	EnvGroqAPIKey        = "GROQ_API_KEY"
+	EnvGroqModels        = "GROQ_MODELS"
+	EnvGroqBaseURL       = "GROQ_BASE_URL"
+	EnvGroqRPM           = "GROQ_RPM"
 	EnvPaymentSecret     = "MOCK_PAYMENT_WEBHOOK_SECRET"
 	EnvMigrateOnStart    = "MIGRATE_ON_START"
 	EnvEnvironment       = "APP_ENV"
@@ -48,10 +52,7 @@ type Config struct {
 	NativeAppOrigins []string // Capacitor shells allowed by CORS
 	JWESecret        []byte
 	PaymentSecret    []byte
-	GeminiAPIKey     string // empty: the keyword classifier is used on its own
-	GeminiModel      string
-	GeminiBaseURL    string // empty: Google's endpoint; tests point it at a fake
-	GeminiRPM        int    // requests per minute to stay under; 0 = no pacing
+	AI               AI
 	MigrateOnStart   bool
 	Environment      Environment
 	CookieSecure     bool
@@ -71,9 +72,6 @@ func Load() (Config, error) {
 		AppOrigin:      strings.TrimRight(get(EnvAppOrigin, "http://localhost:3000"), "/"),
 		JWESecret:      []byte(os.Getenv(EnvJWESecret)),
 		PaymentSecret:  []byte(os.Getenv(EnvPaymentSecret)),
-		GeminiAPIKey:   os.Getenv(EnvGeminiAPIKey),
-		GeminiModel:    get(EnvGeminiModel, "gemini-2.5-flash"),
-		GeminiBaseURL:  os.Getenv(EnvGeminiBaseURL),
 		MigrateOnStart: get(EnvMigrateOnStart, "true") == "true",
 		Environment:    Environment(get(EnvEnvironment, string(EnvDevelopment))),
 		LogLevel:       get(EnvLogLevel, "info"),
@@ -92,9 +90,9 @@ func Load() (Config, error) {
 	c.RequestTimeout = time.Duration(secs) * time.Second
 
 	var problems []string
-	if c.GeminiRPM, err = strconv.Atoi(get(EnvGeminiRPM, "10")); err != nil || c.GeminiRPM < 0 {
-		problems = append(problems, EnvGeminiRPM+" must be a whole number, 0 or more")
-	}
+	var aiProblems []string
+	c.AI, aiProblems = LoadAI()
+	problems = append(problems, aiProblems...)
 	if c.DatabaseURL == "" {
 		problems = append(problems, EnvDatabaseURL+" is required")
 	}
@@ -118,4 +116,47 @@ func get(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// AI configures the model chain. With no keys, enquiries use the keyword rules and templates.
+type AI struct {
+	GeminiKey     string
+	GeminiModels  []string // empty: discover
+	GeminiBaseURL string   // empty: Google's endpoint; tests point it at a fake
+	GeminiRPM     int      // per model; 0 = no pacing
+	GroqKey       string
+	GroqModels    []string
+	GroqBaseURL   string
+	GroqRPM       int
+}
+
+func (a AI) Enabled() bool { return a.GeminiKey != "" || a.GroqKey != "" }
+
+// LoadAI reads the AI settings; the eval command uses it without the rest of the config.
+func LoadAI() (AI, []string) {
+	a := AI{
+		GeminiKey: os.Getenv(EnvGeminiAPIKey), GeminiModels: list(os.Getenv(EnvGeminiModels)), GeminiBaseURL: os.Getenv(EnvGeminiBaseURL),
+		GroqKey: os.Getenv(EnvGroqAPIKey), GroqModels: list(os.Getenv(EnvGroqModels)), GroqBaseURL: os.Getenv(EnvGroqBaseURL),
+	}
+	var problems []string
+	rpm := func(env, fallback string) int {
+		n, err := strconv.Atoi(get(env, fallback))
+		if err != nil || n < 0 {
+			problems = append(problems, env+" must be a whole number, 0 or more")
+		}
+		return n
+	}
+	// Free-tier limits: about 10 requests a minute per Gemini model, 30 per Groq model.
+	a.GeminiRPM, a.GroqRPM = rpm(EnvGeminiRPM, "10"), rpm(EnvGroqRPM, "30")
+	return a, problems
+}
+
+func list(v string) []string {
+	var out []string
+	for _, s := range strings.Split(v, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }

@@ -35,6 +35,7 @@ type Classification struct {
 	Confidence float64 // 0..1, the classifier's own estimate
 	Language   string  // en, hi, hinglish, kn-en, de …
 	Summary    string
+	AnsweredBy string // which model answered, e.g. gemini:gemini-2.5-flash
 	Extracted  Extracted
 }
 
@@ -71,12 +72,9 @@ const (
 
 // Tuning. The unsorted threshold is chosen from the evaluation report (cmd/eval).
 const (
-	PromptVersion        = "2026-11-03.1"
-	UnsortedBelow        = 0.6
-	agreementBonus       = 0.05
-	disagreementPenalty  = 0.25
-	missingFieldsPenalty = 0.1
-	maxMessageRunes      = 4000
-	maxGuests            = 2000
-	maxNightsInMessage   = 60
+	PromptVersion      = "2026-11-03.1"
+	UnsortedBelow      = 0.6
+	maxMessageRunes    = 4000
+	maxGuests          = 2000
+	maxNightsInMessage = 60
 )

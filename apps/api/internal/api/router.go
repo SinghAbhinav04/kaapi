@@ -42,8 +42,17 @@ type API struct {
 func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() time.Time) *API {
 	inv := inventory.NewService(pool, now)
 	var provider ai.Provider // nil: keyword rules and template drafts only
-	if cfg.GeminiAPIKey != "" {
-		provider = ai.NewGemini(cfg.GeminiAPIKey, cfg.GeminiModel, cfg.GeminiBaseURL, cfg.GeminiRPM)
+	if cfg.AI.Enabled() {
+		ctx, cancel := context.WithTimeout(context.Background(), aiDiscoveryTimeout)
+		chain, warnings := ai.Build(ctx, AIOptions(cfg.AI))
+		cancel()
+		for _, w := range warnings {
+			log.Warn("ai", "warning", w)
+		}
+		if chain != nil {
+			provider = chain
+			log.Info("ai chain ready", "models", chain.Models())
+		}
 	}
 	return &API{
 		cfg:       cfg,
@@ -153,4 +162,13 @@ func (a *API) SweepBookings(ctx context.Context, every, grace time.Duration) {
 			}
 		}
 	}
+}
+
+// aiDiscoveryTimeout bounds the start-up call that lists the models each key can use.
+const aiDiscoveryTimeout = 10 * time.Second
+
+// AIOptions maps config onto the chain's options.
+func AIOptions(c config.AI) ai.Options {
+	return ai.Options{GeminiKey: c.GeminiKey, GeminiBaseURL: c.GeminiBaseURL, GeminiModels: c.GeminiModels, GeminiRPM: c.GeminiRPM,
+		GroqKey: c.GroqKey, GroqBaseURL: c.GroqBaseURL, GroqModels: c.GroqModels, GroqRPM: c.GroqRPM}
 }

@@ -9,9 +9,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"kaapi/api/internal/api"
 	"kaapi/api/internal/domain"
+	"kaapi/api/internal/platform/config"
 	"kaapi/api/tests/apitest"
 )
 
@@ -37,8 +39,9 @@ func newFakeGemini(t *testing.T) *fakeGemini {
 		f.mu.Lock()
 		f.bodies = append(f.bodies, string(raw))
 		f.mu.Unlock()
-		if f.down.Load() {
-			http.Error(w, "overloaded", http.StatusServiceUnavailable)
+		if f.down.Load() { // the free tier's usual failure: out of quota, retry in a second
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"code":429,"details":[{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"1s"}]}}`))
 			return
 		}
 		var req struct {
@@ -92,7 +95,7 @@ func (f *fakeGemini) sawText(s string) bool {
 func withGemini(t *testing.T) (*apitest.Server, *fakeGemini) {
 	f := newFakeGemini(t)
 	cfg := apitest.TestConfig()
-	cfg.GeminiAPIKey, cfg.GeminiModel, cfg.GeminiBaseURL = "test-key", "gemini-test", f.URL
+	cfg.AI = config.AI{GeminiKey: "test-key", GeminiModels: []string{"gemini-test"}, GeminiBaseURL: f.URL}
 	return apitest.NewWith(t, cfg), f
 }
 
@@ -200,6 +203,7 @@ func TestModelOutageFallsBackAndRetries(t *testing.T) {
 	}
 
 	gem.down.Store(false)
+	time.Sleep(1100 * time.Millisecond) // the model rests for the retryDelay it asked for
 	if res := s.Do(http.MethodPost, "/v1/staff/enquiries/enq-4411/retry-ai", nil, nil); res.Status != http.StatusOK {
 		t.Fatalf("%d %s", res.Status, res.Body)
 	}

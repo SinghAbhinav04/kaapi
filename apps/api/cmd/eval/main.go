@@ -2,7 +2,7 @@
 // seed/data/enquiries.json and writes docs/ai-eval-report.md.
 //
 //	go run ./cmd/eval                          # keyword rules only
-//	GEMINI_API_KEY=… go run ./cmd/eval         # Gemini + rules, compared with rules alone
+//	GEMINI_API_KEY=… GROQ_API_KEY=… go run ./cmd/eval   # model chain + rules, compared with rules alone
 //
 // It reports what matters for this resort: how often a message is auto-routed to the
 // wrong team (costly), how often it waits in Unsorted (safe but slower), and whether every
@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"kaapi/api/internal/ai"
+	"kaapi/api/internal/api"
 	"kaapi/api/internal/domain"
 	"kaapi/api/internal/enquiry"
 	"kaapi/api/internal/platform/config"
@@ -61,10 +62,20 @@ func main() {
 
 	runs := []run{classify(ctx, "Keyword rules only", ai.NewClassifier(nil), fx.Enquiries, today)}
 	model := ""
-	if key := os.Getenv(config.EnvGeminiAPIKey); key != "" {
-		model = envOr(config.EnvGeminiModel, "gemini-2.5-flash")
-		g := ai.NewGemini(key, model, os.Getenv(config.EnvGeminiBaseURL), 10)
-		runs = append(runs, classify(ctx, "Gemini ("+model+") + keyword rules", ai.NewClassifier(g), fx.Enquiries, today))
+	settings, problems := config.LoadAI()
+	if len(problems) > 0 {
+		log.Fatal(strings.Join(problems, "; "))
+	}
+	if settings.Enabled() {
+		chain, warnings := ai.Build(ctx, api.AIOptions(settings))
+		for _, w := range warnings {
+			log.Print(w)
+		}
+		if chain != nil {
+			model = strings.Join(chain.Models(), ", ")
+			both := classify(ctx, "Model chain + keyword rules", ai.NewClassifier(chain), fx.Enquiries, today)
+			runs = append(runs, modelAlone(both), both)
+		}
 	}
 
 	report := render(runs, today, model)
@@ -203,7 +214,9 @@ func render(runs []run, today time.Time, model string) string {
 	w("(reference date %s). Labels were written by hand before the classifier was built; they include the brief's ", today.Format("2 Jan 2006"))
 	w("ENQ-4410/4411/4412, Hinglish and Kannada-English messages, a politely disguised complaint, mixed intent, one-word messages and spam.\n\n")
 	if model == "" {
-		w("> This run had no `GEMINI_API_KEY`, so only the keyword rules were measured. Set the key and re-run to compare.\n\n")
+		w("> This run had no `GEMINI_API_KEY` or `GROQ_API_KEY`, so only the keyword rules were measured. Set a key and re-run to compare.\n\n")
+	} else {
+		w("Models in the chain, in calling order: %s.\n\n", model)
 	}
 	w("Routing outcomes matter more than raw accuracy. A message routed to the **wrong team** is costly (it sits with people ")
 	w("who won't act on it); one sent to **Unsorted** is safe (the GM sorts it in one click). Every complaint must reach the GM.\n\n")
@@ -215,6 +228,33 @@ func render(runs []run, today time.Time, model string) string {
 		m := measure(r, ai.UnsortedBelow)
 		w("| %s | %d/%d (%.0f%%) | %d | %d | **%d** | **%d/%d** | %d |\n", r.name, m.correct, m.total, pct(m.correct, m.total),
 			m.routedOK, m.unsorted, m.misrouted, m.complaintsCaught, m.complaints, m.falseAlerts)
+	}
+
+	for _, r := range runs {
+		by := map[string]int{}
+		for _, o := range r.outcomes {
+			who := o.res.AnsweredBy
+			if who == "" {
+				who = "keyword rules (fallback)"
+			}
+			by[who]++
+		}
+		if len(by) == 1 && by["keyword rules (fallback)"] > 0 {
+			continue
+		}
+		keys := make([]string, 0, len(by))
+		for k := range by {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		w("\n**%s: who answered.** ", r.name)
+		for i, k := range keys {
+			if i > 0 {
+				w(", ")
+			}
+			w("`%s` %d", k, by[k])
+		}
+		w(". Calls go round-robin across models and fall over to the next on a rate limit or error.\n")
 	}
 
 	w("\n## Choosing the Unsorted threshold\n\n")
@@ -277,6 +317,10 @@ func render(runs []run, today time.Time, model string) string {
 	w("- **The keyword score is in-sample and optimistic.** The word lists were written after reading these 60 messages, so they ")
 	w("partly memorise this set; on new messages expect noticeably lower accuracy. The model's prompt contains none of these ")
 	w("messages, so its score is the fairer estimate. A larger held-out set of real enquiries is the first thing to add in production.\n")
+	w("- **Why the keyword rules stay, and what was cut.** An earlier version raised or lowered the model's confidence ")
+	w("depending on whether the keyword rules agreed. On this set that changed no routing, so it was removed: the model's own ")
+	w("confidence now decides Unsorted. The rules keep two cheap jobs where mistakes are expensive: answering when every model ")
+	w("is down, and alerting the GM about any complaint a model misses. Compare the 'alone' and '+ keyword rules' rows to see what they add.\n")
 	w("- The keyword rules don't extract dates or months (blank by design); the model does. Staff can correct any extracted field, ")
 	w("and the draft's quote is re-priced from the rate table when they do.\n")
 	w("- The keyword rules always run, as a cross-check and as the fallback when the model is unavailable, so the first row is the floor the system never drops below.\n")
@@ -320,4 +364,18 @@ func envOr(k, v string) string {
 		return s
 	}
 	return v
+}
+
+// modelAlone replays the model's answers without the keyword cross-check: its own
+// confidence, and a complaint alert only when the model itself saw one.
+func modelAlone(r run) run {
+	out := run{name: "Model chain alone (no keyword cross-check)"}
+	for _, o := range r.outcomes {
+		if o.res.Status != domain.AIDone {
+			continue // the keyword rules answered this one; it says nothing about the model
+		}
+		o.res.Confidence, o.res.ComplaintHit = o.res.ModelConfidence, o.res.ModelComplaint
+		out.outcomes = append(out.outcomes, o)
+	}
+	return out
 }

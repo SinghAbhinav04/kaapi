@@ -17,8 +17,12 @@ type Result struct {
 	Model        string
 	LatencyMS    int
 	KeywordSaid  domain.Category
-	ComplaintHit bool   // either classifier saw a complaint: always alert the GM
-	Reason       string // why the confidence is what it is, shown next to the chip
+	ComplaintHit bool // either classifier saw a complaint: always alert the GM
+	// What the model said before the keyword cross-check, kept so the evaluation can show
+	// whether the cross-check earns its place.
+	ModelConfidence float64
+	ModelComplaint  bool
+	Reason          string // why the confidence is what it is, shown next to the chip
 }
 
 // Classifier runs the model (when configured) and the keyword rules, validates the model's
@@ -47,13 +51,13 @@ func (c *Classifier) Classify(ctx context.Context, text, senderName string, toda
 		latency := int(time.Since(start).Milliseconds())
 		if err == nil {
 			Validate(&m, today)
-			return blend(m, kw, c.provider.Name(), latency), nil
+			return combine(m, kw, m.AnsweredBy, latency), nil
 		}
 		if errors.Is(err, context.Canceled) {
 			return Result{}, err
 		}
 		r := fallback(kw)
-		r.Model, r.LatencyMS, r.Reason = c.provider.Name(), latency, "AI unavailable, keyword rules only"
+		r.LatencyMS, r.Reason = latency, "every AI model unavailable, keyword rules only"
 		return r, nil
 	}
 	r := fallback(kw)
@@ -68,29 +72,25 @@ func fallback(kw Classification) Result {
 	return r
 }
 
-// blend adjusts the model's self-reported confidence, which is poorly calibrated on its own:
-// agreement with the rules raises it, a confident disagreement lowers it, and missing
-// details for a stay lower it a little.
-func blend(m, kw Classification, model string, latency int) Result {
+// combine takes the model's answer and its own confidence. An earlier version adjusted the
+// confidence by agreement with the keyword rules; the evaluation showed it changed no
+// routing, so it was removed (docs/ai-eval-report.md). The rules still do two jobs: they
+// answer when every model is down, and a complaint either side sees alerts the GM.
+// Disagreement is shown to staff as a hint, not folded into the number.
+func combine(m, kw Classification, model string, latency int) Result {
 	r := Result{Classification: m, Status: domain.AIDone, Model: model, LatencyMS: latency, KeywordSaid: kw.Category}
-	conf := clamp(m.Confidence)
+	r.Confidence = clamp(m.Confidence)
 	switch {
 	case kw.Category == m.Category:
-		conf += agreementBonus
 		r.Reason = "AI and keyword rules agree"
 	case kw.Confidence >= 0.6 && kw.Category != domain.CategoryOther:
-		conf -= disagreementPenalty
 		r.Reason = "AI and keyword rules disagree (rules said " + strings.ToLower(string(kw.Category)) + ")"
 	default:
 		r.Reason = "AI only; keyword rules had no strong view"
 	}
-	if m.Category == domain.CategoryRoom && (m.Extracted.CheckIn == nil || m.Extracted.CheckOut == nil) {
-		conf -= missingFieldsPenalty
-		r.Reason += "; dates missing"
-	}
-	r.Confidence = clamp(conf)
-	r.ComplaintHit = m.Category == domain.CategoryComplaint || kw.Category == domain.CategoryComplaint ||
-		(m.Secondary != nil && *m.Secondary == domain.CategoryComplaint)
+	r.ModelConfidence = r.Confidence
+	r.ModelComplaint = m.Category == domain.CategoryComplaint || (m.Secondary != nil && *m.Secondary == domain.CategoryComplaint)
+	r.ComplaintHit = r.ModelComplaint || kw.Category == domain.CategoryComplaint
 	return r
 }
 

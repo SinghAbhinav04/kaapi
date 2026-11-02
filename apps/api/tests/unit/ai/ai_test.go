@@ -126,17 +126,17 @@ func TestComplaintHitByEitherClassifier(t *testing.T) {
 	if !r.ComplaintHit {
 		t.Fatalf("a complaint either side sees must alert the GM: %+v", r)
 	}
-	if r.Confidence >= 0.9 {
-		t.Fatalf("disagreement should lower confidence: %.2f", r.Confidence)
+	if r.Confidence != 0.9 || !strings.Contains(r.Reason, "disagree") {
+		t.Fatalf("confidence is the model's own; disagreement is shown as a reason: %+v", r)
 	}
 }
 
-func TestAgreementRaisesConfidence(t *testing.T) {
+func TestModelAnswerIsUsedWhenItWorks(t *testing.T) {
 	in, out := today.AddDate(0, 0, 12), today.AddDate(0, 0, 14)
-	cl := ai.NewClassifier(fakeProvider{c: ai.Classification{Category: domain.CategoryRoom, Confidence: 0.8,
+	cl := ai.NewClassifier(fakeProvider{c: ai.Classification{Category: domain.CategoryRoom, Confidence: 0.8, AnsweredBy: "fake:1",
 		Extracted: ai.Extracted{CheckIn: &in, CheckOut: &out}}})
 	r, _ := cl.Classify(context.Background(), "Is a villa free 14-16 Nov for 2 adults?", "", today)
-	if r.Status != domain.AIDone || r.Confidence <= 0.8 {
+	if r.Status != domain.AIDone || r.Confidence != 0.8 || r.Model != "fake:1" || r.Reason != "AI and keyword rules agree" {
 		t.Fatalf("%+v", r)
 	}
 }
