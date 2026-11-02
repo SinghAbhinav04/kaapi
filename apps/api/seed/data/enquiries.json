@@ -1,0 +1,1308 @@
+{
+  "_note": "60 realistic enquiries. 'expected' is the human label used by the AI evaluation (cmd/eval). ENQ-4410/4411/4412 are verbatim from the brief. 'seed_state' gives the inbox some history; AI fields are computed by the classifier when seeding, not stored here. Senders are fictional (.test domains, 90000-series numbers).",
+  "reference_now": "2026-11-02T14:00:00+05:30",
+  "enquiries": [
+    {
+      "ref": "ENQ-4410",
+      "channel": "WEB_FORM",
+      "received_at": "2026-10-23T08:15:00+05:30",
+      "sender": {
+        "name": "Priya Nair",
+        "email": "priya.nair@example.test",
+        "phone": "+91 90000 10001"
+      },
+      "text": "Venue for my sister's wedding in Feb 2027, about 250 guests, 2 nights",
+      "expected": {
+        "category": "WEDDING",
+        "guest_count": 250,
+        "event_month": "2027-02",
+        "nights": 2
+      },
+      "tags": [
+        "brief_sample"
+      ],
+      "seed_state": {
+        "status": "REPLIED",
+        "first_response_minutes": 22
+      }
+    },
+    {
+      "ref": "ENQ-4411",
+      "channel": "WHATSAPP",
+      "received_at": "2026-10-23T12:30:44+05:30",
+      "sender": {
+        "name": "Arjun Menon",
+        "phone": "+91 90000 10002"
+      },
+      "text": "Is a villa free 14-16 Nov for 2 adults and a child?",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2026-11-14",
+        "check_out": "2026-11-16",
+        "adults": 2,
+        "children": 1
+      },
+      "tags": [
+        "brief_sample"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4412",
+      "channel": "EMAIL",
+      "received_at": "2026-10-23T16:46:28+05:30",
+      "sender": {
+        "name": "Sneha Kulkarni",
+        "email": "sneha.kulkarni@example.test"
+      },
+      "subject": "January offsite enquiry",
+      "text": "Team of 45 wants a January offsite with a conference hall",
+      "expected": {
+        "category": "OFFSITE",
+        "guest_count": 45,
+        "event_month": "2027-01"
+      },
+      "tags": [
+        "brief_sample"
+      ],
+      "seed_state": {
+        "status": "REPLIED",
+        "first_response_minutes": 41
+      }
+    },
+    {
+      "ref": "ENQ-4413",
+      "channel": "WHATSAPP",
+      "received_at": "2026-10-23T21:02:12+05:30",
+      "sender": {
+        "name": "Rahul Verma",
+        "phone": "+91 90000 10004"
+      },
+      "text": "Hi, 21 Nov ko 2 raat ke liye room milega? Hum 2 log hain, breakfast ke saath kitna hoga?",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2026-11-21",
+        "check_out": "2026-11-23",
+        "adults": 2
+      },
+      "tags": [
+        "hinglish"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4414",
+      "channel": "EMAIL",
+      "received_at": "2026-10-24T00:37:56+05:30",
+      "sender": {
+        "name": "Vikram Joshi",
+        "email": "vikram.joshi@example.test"
+      },
+      "subject": "Very disappointed",
+      "text": "Stayed last weekend in room 214. Hot water didn't work both mornings and nobody came despite 3 calls to reception. Very disappointed for the price we paid.",
+      "expected": {
+        "category": "COMPLAINT"
+      },
+      "tags": [],
+      "seed_state": {
+        "status": "IN_PROGRESS",
+        "first_response_minutes": 9
+      }
+    },
+    {
+      "ref": "ENQ-4415",
+      "channel": "WEB_FORM",
+      "received_at": "2026-10-24T04:53:40+05:30",
+      "sender": {
+        "name": "Lakshmi Raman",
+        "email": "lakshmi.raman@example.test",
+        "phone": "+91 90000 10006"
+      },
+      "text": "Planning a trip for Christmas with my parents. Need 2 rooms from 24th to 27th Dec, 4 adults in total. Do you have estate view rooms?",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2026-12-24",
+        "check_out": "2026-12-27",
+        "adults": 4,
+        "rooms": 2
+      },
+      "tags": [
+        "peak_season"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4416",
+      "channel": "EMAIL",
+      "received_at": "2026-10-24T09:09:24+05:30",
+      "sender": {
+        "name": "Aisha Khan",
+        "email": "aisha.khan@example.test"
+      },
+      "subject": "Destination wedding packages",
+      "text": "We're looking at destination wedding venues for Nov/Dec 2027. Roughly 180 guests, need about 40 rooms for 2 nights: mehendi, wedding and reception. Can you share packages?",
+      "expected": {
+        "category": "WEDDING",
+        "guest_count": 180,
+        "event_month": null
+      },
+      "tags": [
+        "ambiguous_date"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4417",
+      "channel": "WHATSAPP",
+      "received_at": "2026-10-24T12:45:08+05:30",
+      "sender": {
+        "name": "Unknown",
+        "phone": "+91 90000 10008"
+      },
+      "text": "price?",
+      "expected": {
+        "category": "OTHER"
+      },
+      "tags": [
+        "vague"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4418",
+      "channel": "EMAIL",
+      "received_at": "2026-10-24T17:00:52+05:30",
+      "sender": {
+        "name": "RankBoost Media",
+        "email": "rankboost.media@example.test"
+      },
+      "subject": "Get #1 on Google in 7 days!!!",
+      "text": "Boost your hotel's Google ranking to #1 in 7 days! SEO packages from $99. Reply YES to get started.",
+      "expected": {
+        "category": "OTHER"
+      },
+      "tags": [
+        "spam"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4419",
+      "channel": "WEB_FORM",
+      "received_at": "2026-10-24T21:16:36+05:30",
+      "sender": {
+        "name": "Nikhil Bhat",
+        "email": "nikhil.bhat@example.test",
+        "phone": "+91 90000 10010"
+      },
+      "text": "HR from a Bengaluru fintech here. 28 people, 2 nights in mid-March, need a hall for workshops and some team activities like a plantation trek. Budget around 12 lakh all inclusive.",
+      "expected": {
+        "category": "OFFSITE",
+        "guest_count": 28,
+        "event_month": "2027-03",
+        "budget_inr": 1200000,
+        "budget_basis": "TOTAL"
+      },
+      "tags": [
+        "budget_lakh"
+      ],
+      "seed_state": {
+        "status": "REPLIED",
+        "first_response_minutes": 55
+      }
+    },
+    {
+      "ref": "ENQ-4420",
+      "channel": "EMAIL",
+      "received_at": "2026-10-25T01:32:20+05:30",
+      "sender": {
+        "name": "Farhan Ali",
+        "email": "farhan.ali@example.test"
+      },
+      "subject": "Card statement question",
+      "text": "Just wondering if it's normal that we were charged twice for the dinner on 20 Oct? I can see two entries on my card statement.",
+      "expected": {
+        "category": "COMPLAINT"
+      },
+      "tags": [
+        "disguised_complaint",
+        "billing"
+      ],
+      "seed_state": {
+        "status": "IN_PROGRESS",
+        "first_response_minutes": 18
+      }
+    },
+    {
+      "ref": "ENQ-4421",
+      "channel": "WHATSAPP",
+      "received_at": "2026-10-25T05:08:04+05:30",
+      "sender": {
+        "name": "Kavya Reddy",
+        "phone": "+91 90000 10012"
+      },
+      "text": "Pool villa available for new year? 30 Dec to 2 Jan, 2 couples",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2026-12-30",
+        "check_out": "2027-01-02",
+        "adults": 4
+      },
+      "tags": [
+        "peak_season"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4422",
+      "channel": "WHATSAPP",
+      "received_at": "2026-10-25T09:23:48+05:30",
+      "sender": {
+        "name": "Suresh Agarwal",
+        "phone": "+91 90000 10013"
+      },
+      "text": "Bhaiya meri beti ki shaadi hai April 2027 mein, around 300 log. Lawn aur 30 rooms chahiye 2 din ke liye. Rate batao",
+      "expected": {
+        "category": "WEDDING",
+        "guest_count": 300,
+        "event_month": "2027-04",
+        "nights": 2
+      },
+      "tags": [
+        "hinglish"
+      ],
+      "seed_state": {
+        "status": "REPLIED",
+        "first_response_minutes": 64
+      }
+    },
+    {
+      "ref": "ENQ-4423",
+      "channel": "EMAIL",
+      "received_at": "2026-10-25T13:39:32+05:30",
+      "sender": {
+        "name": "Gauri Deshpande",
+        "email": "gauri.deshpande@example.test"
+      },
+      "subject": "Family stay in December",
+      "text": "Hello, we're a family of 5 (3 adults, 2 kids aged 6 and 9) visiting from Pune, 8-11 December. Which room would fit us?",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2026-12-08",
+        "check_out": "2026-12-11",
+        "adults": 3,
+        "children": 2
+      },
+      "tags": [
+        "occupancy_fit"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4424",
+      "channel": "WEB_FORM",
+      "received_at": "2026-10-25T17:15:16+05:30",
+      "sender": {
+        "name": "Sanjay Pillai",
+        "email": "sanjay.pillai@example.test",
+        "phone": "+91 90000 10015"
+      },
+      "text": "The staff at the restaurant were rude to my elderly father when he asked for less spicy food. I expected better hospitality.",
+      "expected": {
+        "category": "COMPLAINT"
+      },
+      "tags": [],
+      "seed_state": {
+        "status": "REPLIED",
+        "first_response_minutes": 12
+      }
+    },
+    {
+      "ref": "ENQ-4425",
+      "channel": "EMAIL",
+      "received_at": "2026-10-25T21:31:00+05:30",
+      "sender": {
+        "name": "Ritu Malhotra",
+        "email": "ritu.malhotra@example.test"
+      },
+      "subject": "Leadership retreat, Feb",
+      "text": "Leadership retreat for 12 senior managers, 3 nights, first week of February. Need privacy, good wifi and a boardroom. Can we book all the pool villas and heritage suites?",
+      "expected": {
+        "category": "OFFSITE",
+        "secondary_category": "ROOM",
+        "guest_count": 12,
+        "event_month": "2027-02",
+        "nights": 3
+      },
+      "tags": [
+        "mixed_intent"
+      ],
+      "seed_state": {
+        "status": "REPLIED",
+        "first_response_minutes": 38
+      }
+    },
+    {
+      "ref": "ENQ-4427",
+      "channel": "EMAIL",
+      "received_at": "2026-10-26T05:22:28+05:30",
+      "sender": {
+        "name": "Tanya Kapoor",
+        "email": "tanya.kapoor@example.test"
+      },
+      "subject": "Collaboration proposal",
+      "text": "Hi, I'm a travel blogger with 85k followers on Instagram. I'd love to collaborate on a complimentary stay in exchange for content.",
+      "expected": {
+        "category": "OTHER"
+      },
+      "tags": [
+        "influencer"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4428",
+      "channel": "WEB_FORM",
+      "received_at": "2026-10-26T09:38:12+05:30",
+      "sender": {
+        "name": "Aditya Rao",
+        "email": "aditya.rao@example.test",
+        "phone": "+91 90000 10019"
+      },
+      "text": "Honeymoon! Arriving 18 Jan, leaving 22 Jan. Something private with a nice view, budget ~80k for the stay.",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2027-01-18",
+        "check_out": "2027-01-22",
+        "adults": 2,
+        "budget_inr": 80000,
+        "budget_basis": "TOTAL"
+      },
+      "tags": [],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4429",
+      "channel": "EMAIL",
+      "received_at": "2026-10-26T13:53:56+05:30",
+      "sender": {
+        "name": "Neha Saxena",
+        "email": "neha.saxena@example.test"
+      },
+      "subject": "Refund still pending: KS-4M8Q2T",
+      "text": "Booking ref KS-4M8Q2T: I cancelled 10 days before arrival and still haven't received my refund after 3 weeks. Please escalate.",
+      "expected": {
+        "category": "COMPLAINT"
+      },
+      "tags": [
+        "refund"
+      ],
+      "seed_state": {
+        "status": "REPLIED",
+        "first_response_minutes": 27
+      }
+    },
+    {
+      "ref": "ENQ-4430",
+      "channel": "WHATSAPP",
+      "received_at": "2026-10-26T18:09:40+05:30",
+      "sender": {
+        "name": "Manoj Tiwari",
+        "phone": "+91 90000 10021"
+      },
+      "text": "Sir hamari company ka annual offsite hai Jan end, 60 log, conference hall + stay chahiye. Quote bhejo",
+      "expected": {
+        "category": "OFFSITE",
+        "guest_count": 60,
+        "event_month": "2027-01"
+      },
+      "tags": [
+        "hinglish"
+      ],
+      "seed_state": {
+        "status": "REPLIED",
+        "first_response_minutes": 47
+      }
+    },
+    {
+      "ref": "ENQ-4431",
+      "channel": "EMAIL",
+      "received_at": "2026-10-26T21:45:24+05:30",
+      "sender": {
+        "name": "Isabel Fernandes",
+        "email": "isabel.fernandes@example.test"
+      },
+      "subject": "Intimate wedding, 12 March 2027",
+      "text": "Enquiring about a small, intimate wedding: 60 guests at the Valley Deck on 12 March 2027. We would need 20 rooms for 2 nights.",
+      "expected": {
+        "category": "WEDDING",
+        "guest_count": 60,
+        "event_month": "2027-03",
+        "nights": 2
+      },
+      "tags": [],
+      "seed_state": {
+        "status": "REPLIED",
+        "first_response_minutes": 33
+      }
+    },
+    {
+      "ref": "ENQ-4432",
+      "channel": "WHATSAPP",
+      "received_at": "2026-10-27T02:01:08+05:30",
+      "sender": {
+        "name": "Ravi",
+        "phone": "+91 90000 10023"
+      },
+      "text": "2 rooms for 15th nov one night",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2026-11-15",
+        "check_out": "2026-11-16",
+        "rooms": 2
+      },
+      "tags": [
+        "terse"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4433",
+      "channel": "WEB_FORM",
+      "received_at": "2026-10-27T06:16:52+05:30",
+      "sender": {
+        "name": "Emma Wilson",
+        "email": "emma.wilson@example.test",
+        "phone": "+91 90000 10024"
+      },
+      "text": "Do you sell your estate coffee online? We loved the filter coffee during our stay.",
+      "expected": {
+        "category": "OTHER"
+      },
+      "tags": [
+        "general_question"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4434",
+      "channel": "EMAIL",
+      "received_at": "2026-10-27T09:52:36+05:30",
+      "sender": {
+        "name": "Pooja Hegde",
+        "email": "pooja.hegde@example.test"
+      },
+      "subject": "Feedback and a new booking",
+      "text": "We loved the stay overall, but the room smelled of damp and there were ants near the bed. Also, can I book again for Feb with a different room?",
+      "expected": {
+        "category": "COMPLAINT",
+        "secondary_category": "ROOM"
+      },
+      "tags": [
+        "mixed_intent"
+      ],
+      "seed_state": {
+        "status": "REPLIED",
+        "first_response_minutes": 15
+      }
+    },
+    {
+      "ref": "ENQ-4435",
+      "channel": "WHATSAPP",
+      "received_at": "2026-10-27T14:08:20+05:30",
+      "sender": {
+        "name": "Prakash Gowda",
+        "phone": "+91 90000 10026"
+      },
+      "text": "Namaskara, Dec 5 ge 2 days ge room beku, 2 adults. Rate eshtu?",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2026-12-05",
+        "check_out": "2026-12-07",
+        "adults": 2
+      },
+      "tags": [
+        "kannada_mix"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4436",
+      "channel": "EMAIL",
+      "received_at": "2026-10-27T18:24:04+05:30",
+      "sender": {
+        "name": "Shalini Dutta",
+        "email": "shalini.dutta@example.test"
+      },
+      "subject": "Board meeting and field visit",
+      "text": "We're an NGO planning a 2-day board meeting and field visit for 18 people around 20 Nov. Do you offer non-profit rates?",
+      "expected": {
+        "category": "OFFSITE",
+        "guest_count": 18,
+        "event_month": "2026-11"
+      },
+      "tags": [],
+      "seed_state": {
+        "status": "REPLIED",
+        "first_response_minutes": 72
+      }
+    },
+    {
+      "ref": "ENQ-4437",
+      "channel": "WEB_FORM",
+      "received_at": "2026-10-27T21:59:48+05:30",
+      "sender": {
+        "name": "Studio Frames",
+        "email": "studio.frames@example.test",
+        "phone": "+91 90000 10028"
+      },
+      "text": "Pre-wedding photoshoot at the estate in December, a crew of 6, 1 day. Is that allowed and what are the charges?",
+      "expected": {
+        "category": "WEDDING",
+        "guest_count": 6,
+        "event_month": "2026-12"
+      },
+      "tags": [
+        "edge_case"
+      ],
+      "seed_state": {
+        "status": "REPLIED",
+        "first_response_minutes": 51
+      }
+    },
+    {
+      "ref": "ENQ-4438",
+      "channel": "EMAIL",
+      "received_at": "2026-10-28T02:15:32+05:30",
+      "sender": {
+        "name": "Anil Kumar",
+        "email": "anil.kumar@example.test"
+      },
+      "subject": "Application: Front Office Associate",
+      "text": "I'd like to apply for a front office position. My CV is attached.",
+      "expected": {
+        "category": "OTHER"
+      },
+      "tags": [
+        "job"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4439",
+      "channel": "WHATSAPP",
+      "received_at": "2026-10-28T06:31:16+05:30",
+      "sender": {
+        "name": "Rekha Singh",
+        "phone": "+91 90000 10030"
+      },
+      "text": "Kal raat 11 baje tak party wale side se loud music chal raha tha, bacche so nahi paye. Kya ye normal hai?",
+      "expected": {
+        "category": "COMPLAINT"
+      },
+      "tags": [
+        "hinglish",
+        "disguised_complaint"
+      ],
+      "seed_state": {
+        "status": "REPLIED",
+        "first_response_minutes": 8
+      }
+    },
+    {
+      "ref": "ENQ-4440",
+      "channel": "EMAIL",
+      "received_at": "2026-10-28T10:47:00+05:30",
+      "sender": {
+        "name": "Corporate Travel Desk",
+        "email": "corporate.travel.desk@example.test"
+      },
+      "subject": "3 rooms for directors, 9-11 Nov",
+      "text": "Corporate booking: 3 Estate View Rooms for our directors, 9-11 Nov. A GST invoice in the company name is required.",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2026-11-09",
+        "check_out": "2026-11-11",
+        "rooms": 3
+      },
+      "tags": [
+        "gst_invoice"
+      ],
+      "seed_state": {
+        "status": "REPLIED",
+        "first_response_minutes": 24
+      }
+    },
+    {
+      "ref": "ENQ-4442",
+      "channel": "EMAIL",
+      "received_at": "2026-10-28T18:38:28+05:30",
+      "sender": {
+        "name": "Mehak Arora",
+        "email": "mehak.arora@example.test"
+      },
+      "subject": "Extra rooms for our wedding",
+      "text": "Our wedding is booked with you on 14-15 Jan (buyout). Can we add 10 more rooms for guests arriving on the 13th?",
+      "expected": {
+        "category": "WEDDING",
+        "secondary_category": "ROOM",
+        "check_in": "2027-01-13",
+        "check_out": "2027-01-14",
+        "rooms": 10
+      },
+      "tags": [
+        "existing_event"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4443",
+      "channel": "WHATSAPP",
+      "received_at": "2026-10-28T22:54:12+05:30",
+      "sender": {
+        "name": "Unknown",
+        "phone": "+91 90000 10034"
+      },
+      "text": "ok thanks",
+      "expected": {
+        "category": "OTHER"
+      },
+      "tags": [
+        "vague"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4444",
+      "channel": "EMAIL",
+      "received_at": "2026-10-29T02:29:56+05:30",
+      "sender": {
+        "name": "Ashwin Prabhu",
+        "email": "ashwin.prabhu@example.test"
+      },
+      "subject": "Team outing, December",
+      "text": "Need a quote for a 1-day team outing (no stay) for 35 people: lunch, plantation walk and coffee tasting, any Saturday in December.",
+      "expected": {
+        "category": "OFFSITE",
+        "guest_count": 35,
+        "event_month": "2026-12"
+      },
+      "tags": [
+        "day_event"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4445",
+      "channel": "WEB_FORM",
+      "received_at": "2026-10-29T06:45:40+05:30",
+      "sender": {
+        "name": "Varun Nair",
+        "email": "varun.nair@example.test",
+        "phone": "+91 90000 10036"
+      },
+      "text": "Your website showed a villa available but after paying, the booking failed and the money was debited. Payment id pay_mock_88123.",
+      "expected": {
+        "category": "COMPLAINT"
+      },
+      "tags": [
+        "payment"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4446",
+      "channel": "EMAIL",
+      "received_at": "2026-10-29T11:01:24+05:30",
+      "sender": {
+        "name": "Sunita Menon",
+        "email": "sunita.menon@example.test"
+      },
+      "subject": "Accessibility question",
+      "text": "Is the heritage suite suitable for a wheelchair user? I want to book 2-5 Feb for my mother and me.",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2027-02-02",
+        "check_out": "2027-02-05",
+        "adults": 2
+      },
+      "tags": [
+        "accessibility"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4447",
+      "channel": "WHATSAPP",
+      "received_at": "2026-10-29T14:37:08+05:30",
+      "sender": {
+        "name": "Rohit Jain",
+        "phone": "+91 90000 10038"
+      },
+      "text": "Engagement function for 120 guests in Jan, Valley Deck possible?",
+      "expected": {
+        "category": "WEDDING",
+        "guest_count": 120,
+        "event_month": "2027-01"
+      },
+      "tags": [],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4448",
+      "channel": "EMAIL",
+      "received_at": "2026-10-29T18:52:52+05:30",
+      "sender": {
+        "name": "Comfort Linen Co.",
+        "email": "comfort.linen.co@example.test"
+      },
+      "subject": "Wholesale linen offer",
+      "text": "Dear Sir/Madam, we supply premium bedsheets and towels at wholesale prices. Catalogue attached.",
+      "expected": {
+        "category": "OTHER"
+      },
+      "tags": [
+        "vendor"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4449",
+      "channel": "WEB_FORM",
+      "received_at": "2026-10-29T23:08:36+05:30",
+      "sender": {
+        "name": "Siddharth Rao",
+        "email": "siddharth.rao@example.test",
+        "phone": "+91 90000 10040"
+      },
+      "text": "We're 6 friends and want 3 rooms for 2 nights around Republic Day (Jan 25-27).",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2027-01-25",
+        "check_out": "2027-01-27",
+        "adults": 6,
+        "rooms": 3
+      },
+      "tags": [],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4450",
+      "channel": "EMAIL",
+      "received_at": "2026-10-30T03:24:20+05:30",
+      "sender": {
+        "name": "Deepa Krishnan",
+        "email": "deepa.krishnan@example.test"
+      },
+      "subject": "Charged for breakfast",
+      "text": "I booked a breakfast-included rate but was asked to pay for breakfast at checkout. This is not acceptable.",
+      "expected": {
+        "category": "COMPLAINT"
+      },
+      "tags": [
+        "billing"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4451",
+      "channel": "WHATSAPP",
+      "received_at": "2026-10-30T07:00:04+05:30",
+      "sender": {
+        "name": "Imran Shaikh",
+        "phone": "+91 90000 10042"
+      },
+      "text": "Bhai 2 adult 1 bachha, 28 se 30 Nov, villa ka rate kya hai?",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2026-11-28",
+        "check_out": "2026-11-30",
+        "adults": 2,
+        "children": 1
+      },
+      "tags": [
+        "hinglish"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4452",
+      "channel": "EMAIL",
+      "received_at": "2026-10-30T11:15:48+05:30",
+      "sender": {
+        "name": "Laura Becker",
+        "email": "laura.becker@example.test"
+      },
+      "subject": "Global team summit, April 2027",
+      "text": "We are planning a global team summit for 70 delegates from 8 countries, 4 nights in late April 2027. We need a full-day hall, an interpretation-friendly setup and airport transfers from Bengaluru.",
+      "expected": {
+        "category": "OFFSITE",
+        "guest_count": 70,
+        "event_month": "2027-04",
+        "nights": 4
+      },
+      "tags": [
+        "foreign"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4453",
+      "channel": "WEB_FORM",
+      "received_at": "2026-10-30T15:31:32+05:30",
+      "sender": {
+        "name": "Kabir Malhotra",
+        "email": "kabir.malhotra@example.test",
+        "phone": "+91 90000 10044"
+      },
+      "text": "Destination wedding for 400 guests. We would need the entire property for 3 nights in December 2027. Budget is flexible.",
+      "expected": {
+        "category": "WEDDING",
+        "guest_count": 400,
+        "event_month": "2027-12",
+        "nights": 3
+      },
+      "tags": [
+        "buyout"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4454",
+      "channel": "EMAIL",
+      "received_at": "2026-10-30T19:07:16+05:30",
+      "sender": {
+        "name": "Jonas Müller",
+        "email": "jonas.mu.ller@example.test"
+      },
+      "subject": "Stay in February",
+      "text": "Hello from Germany! We are 2 adults travelling in India in February. Could we stay 3 nights from 14 Feb? Do you need our passport details now?",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2027-02-14",
+        "check_out": "2027-02-17",
+        "adults": 2
+      },
+      "tags": [
+        "foreign",
+        "passport"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4455",
+      "channel": "WHATSAPP",
+      "received_at": "2026-10-30T23:23:00+05:30",
+      "sender": {
+        "name": "Geeta Bose",
+        "phone": "+91 90000 10046"
+      },
+      "text": "The driver you arranged never showed up at Kadur station. We waited 1.5 hours and had to take an auto.",
+      "expected": {
+        "category": "COMPLAINT"
+      },
+      "tags": [],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4456",
+      "channel": "EMAIL",
+      "received_at": "2026-10-31T03:38:44+05:30",
+      "sender": {
+        "name": "Ankit Goel",
+        "email": "ankit.goel@example.test"
+      },
+      "subject": "December weather",
+      "text": "What's the weather like in December? Should we carry woollens?",
+      "expected": {
+        "category": "OTHER"
+      },
+      "tags": [
+        "general_question"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4457",
+      "channel": "WEB_FORM",
+      "received_at": "2026-10-31T07:14:28+05:30",
+      "sender": {
+        "name": "Batch of 2006",
+        "email": "batch.of.2006@example.test",
+        "phone": "+91 90000 10048"
+      },
+      "text": "School alumni reunion: 50 people, one evening dinner and 20 rooms for the night of 19 Dec.",
+      "expected": {
+        "category": "OFFSITE",
+        "secondary_category": "ROOM",
+        "guest_count": 50,
+        "event_month": "2026-12",
+        "check_in": "2026-12-19",
+        "check_out": "2026-12-20",
+        "rooms": 20
+      },
+      "tags": [
+        "edge_case"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4458",
+      "channel": "EMAIL",
+      "received_at": "2026-10-31T11:30:12+05:30",
+      "sender": {
+        "name": "Swati Mishra",
+        "email": "swati.mishra@example.test"
+      },
+      "subject": "Change dates: KS-9P2L7D",
+      "text": "Can I change my booking KS-9P2L7D from 20-22 Nov to 27-29 Nov?",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2026-11-27",
+        "check_out": "2026-11-29"
+      },
+      "tags": [
+        "modification"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4459",
+      "channel": "WHATSAPP",
+      "received_at": "2026-10-31T15:45:56+05:30",
+      "sender": {
+        "name": "Unknown",
+        "phone": "+91 90000 10050"
+      },
+      "text": "Congratulations! You have won Rs 25,00,000 in the KBC lottery. Send your bank details to claim.",
+      "expected": {
+        "category": "OTHER"
+      },
+      "tags": [
+        "spam"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4460",
+      "channel": "EMAIL",
+      "received_at": "2026-10-31T20:01:40+05:30",
+      "sender": {
+        "name": "Rajesh Iyer",
+        "email": "rajesh.iyer@example.test"
+      },
+      "subject": "Misleading photos",
+      "text": "The pool villa photos on your website show a big infinity pool, but the actual pool was a small plunge pool. We felt misled.",
+      "expected": {
+        "category": "COMPLAINT"
+      },
+      "tags": [],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4461",
+      "channel": "WEB_FORM",
+      "received_at": "2026-10-31T23:37:24+05:30",
+      "sender": {
+        "name": "Nisha Patel",
+        "email": "nisha.patel@example.test",
+        "phone": "+91 90000 10052"
+      },
+      "text": "Looking for something under 10k per night for 2 people, 3 nights in mid Jan.",
+      "expected": {
+        "category": "ROOM",
+        "adults": 2,
+        "budget_inr": 10000,
+        "budget_basis": "PER_NIGHT"
+      },
+      "tags": [
+        "budget_per_night",
+        "ambiguous_date"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4462",
+      "channel": "EMAIL",
+      "received_at": "2026-11-01T03:53:08+05:30",
+      "sender": {
+        "name": "Ramesh Chandra",
+        "email": "ramesh.chandra@example.test"
+      },
+      "subject": "विवाह स्थल की जानकारी",
+      "text": "नमस्ते, हम मार्च 2027 में अपने बेटे की शादी के लिए जगह देख रहे हैं। लगभग 200 मेहमान होंगे। कृपया पैकेज भेजें।",
+      "expected": {
+        "category": "WEDDING",
+        "guest_count": 200,
+        "event_month": "2027-03"
+      },
+      "tags": [
+        "hindi"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4463",
+      "channel": "WHATSAPP",
+      "received_at": "2026-11-01T08:08:52+05:30",
+      "sender": {
+        "name": "Kiran",
+        "phone": "+91 90000 10054"
+      },
+      "text": "corporate offsite 25 pax feb",
+      "expected": {
+        "category": "OFFSITE",
+        "guest_count": 25,
+        "event_month": "2027-02"
+      },
+      "tags": [
+        "terse"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4464",
+      "channel": "EMAIL",
+      "received_at": "2026-11-01T11:44:36+05:30",
+      "sender": {
+        "name": "Mohan Das",
+        "email": "mohan.das@example.test"
+      },
+      "subject": "THIRD EMAIL: damaged luggage",
+      "text": "This is my third email. If I don't get a response about the damaged luggage by Friday, I will post reviews everywhere and take legal action.",
+      "expected": {
+        "category": "COMPLAINT"
+      },
+      "tags": [
+        "escalation"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4465",
+      "channel": "WEB_FORM",
+      "received_at": "2026-11-01T16:00:20+05:30",
+      "sender": {
+        "name": "Arvind Kumar",
+        "email": "arvind.kumar@example.test",
+        "phone": "+91 90000 10056"
+      },
+      "text": "Anniversary surprise for my wife: 1 night on 12 Dec in your best room. Can you arrange a cake and flowers?",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2026-12-12",
+        "check_out": "2026-12-13",
+        "adults": 2
+      },
+      "tags": [
+        "special_request"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4426",
+      "channel": "WHATSAPP",
+      "received_at": "2026-11-01T18:42:00+05:30",
+      "sender": {
+        "name": "Dev Sharma",
+        "phone": "+91 90000 10017"
+      },
+      "text": "Do you allow dogs? Want to come with my labrador for 2 nights next weekend",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2026-11-07",
+        "check_out": "2026-11-09"
+      },
+      "tags": [
+        "relative_date",
+        "pets"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4466",
+      "channel": "EMAIL",
+      "received_at": "2026-11-01T20:16:04+05:30",
+      "sender": {
+        "name": "Zoya Siddiqui",
+        "email": "zoya.siddiqui@example.test"
+      },
+      "subject": "EV charging",
+      "text": "Do you have an EV charger at the property?",
+      "expected": {
+        "category": "OTHER"
+      },
+      "tags": [
+        "general_question"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4468",
+      "channel": "EMAIL",
+      "received_at": "2026-11-02T04:07:32+05:30",
+      "sender": {
+        "name": "Priyanka Sethi",
+        "email": "priyanka.sethi@example.test"
+      },
+      "subject": "Sales conference + engagement",
+      "text": "We'd like to host a 2-day sales conference (40 pax) and our MD's daughter's engagement on the second evening for 100 guests. Can these be combined?",
+      "expected": {
+        "category": "OFFSITE",
+        "secondary_category": "WEDDING",
+        "guest_count": 40
+      },
+      "tags": [
+        "mixed_intent"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4469",
+      "channel": "WEB_FORM",
+      "received_at": "2026-11-02T08:23:16+05:30",
+      "sender": {
+        "name": "S. Rao",
+        "email": "s.rao@example.test",
+        "phone": "+91 90000 10060"
+      },
+      "text": "Hi, please call me back.",
+      "expected": {
+        "category": "OTHER"
+      },
+      "tags": [
+        "vague"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4441",
+      "channel": "WEB_FORM",
+      "received_at": "2026-11-02T09:05:00+05:30",
+      "sender": {
+        "name": "Harsh Vardhan",
+        "email": "harsh.vardhan@example.test",
+        "phone": "+91 90000 10032"
+      },
+      "text": "Weekend getaway, any availability this Friday to Sunday?",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2026-11-06",
+        "check_out": "2026-11-08"
+      },
+      "tags": [
+        "relative_date"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    },
+    {
+      "ref": "ENQ-4467",
+      "channel": "WHATSAPP",
+      "received_at": "2026-11-02T13:20:00+05:30",
+      "sender": {
+        "name": "Naveen",
+        "phone": "+91 90000 10058"
+      },
+      "text": "Need 1 room tonight, 2 adults, arriving around 9pm",
+      "expected": {
+        "category": "ROOM",
+        "check_in": "2026-11-02",
+        "check_out": "2026-11-03",
+        "adults": 2
+      },
+      "tags": [
+        "same_day",
+        "relative_date"
+      ],
+      "seed_state": {
+        "status": "NEW"
+      }
+    }
+  ]
+}

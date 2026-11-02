@@ -1,0 +1,32 @@
+{
+  "_note": "Every room type gets these three plans. Nightly prices come from rates_rules.json: base price × season/weekend uplift, then the plan modifier.",
+  "plans": [
+    {
+      "code": "RO-FLEX",
+      "name": "Room only",
+      "inclusions": [],
+      "refundable": true,
+      "cancellation_policy": "FREE_UNTIL_7_DAYS",
+      "min_nights": 1,
+      "modifier": { "add_paise_per_night": 0, "discount_bps": 0 }
+    },
+    {
+      "code": "BB-FLEX",
+      "name": "Breakfast included",
+      "inclusions": ["Breakfast for registered guests", "Morning estate walk"],
+      "refundable": true,
+      "cancellation_policy": "FREE_UNTIL_7_DAYS",
+      "min_nights": 1,
+      "modifier": { "add_paise_per_night": 120000, "discount_bps": 0 }
+    },
+    {
+      "code": "BB-NRF",
+      "name": "Breakfast included, non-refundable",
+      "inclusions": ["Breakfast for registered guests", "Morning estate walk"],
+      "refundable": false,
+      "cancellation_policy": "NON_REFUNDABLE",
+      "min_nights": 2,
+      "modifier": { "add_paise_per_night": 120000, "discount_bps": 1000 }
+    }
+  ]
+}

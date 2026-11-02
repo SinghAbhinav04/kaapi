@@ -1,0 +1,34 @@
+{
+  "_note": "The seeder expands these rules into one night_inventory row per room type per date, and one night_rates row per plan per date. Uplifts compound: base × (1 + season) × (1 + weekend). Results are rounded to the nearest ₹100.",
+  "window": { "from": "2026-11-01", "to": "2027-04-30" },
+  "rounding_paise": 10000,
+  "weekend_nights": ["FRI", "SAT"],
+  "weekend_uplift_bps": 1500,
+  "base_rates_paise": {
+    "plantation-room": 680000,
+    "estate-view-room": 840000,
+    "heritage-suite": 1250000,
+    "coffee-villa": 1750000,
+    "pool-villa": 2400000
+  },
+  "website_allotment": {
+    "plantation-room": 8,
+    "estate-view-room": 5,
+    "heritage-suite": 3,
+    "coffee-villa": 2,
+    "pool-villa": 1
+  },
+  "seasons": [
+    { "name": "Diwali long weekend", "from": "2026-11-06", "to": "2026-11-09", "uplift_bps": 2000, "min_stay": 2 },
+    { "name": "Christmas and New Year", "from": "2026-12-20", "to": "2027-01-03", "uplift_bps": 4000, "min_stay": 2, "closed_to_arrival": ["2026-12-31"] },
+    { "name": "Republic Day weekend", "from": "2027-01-22", "to": "2027-01-26", "uplift_bps": 1500 },
+    { "name": "Coffee blossom", "from": "2027-02-20", "to": "2027-03-10", "uplift_bps": 1000 },
+    { "name": "Summer holidays", "from": "2027-04-01", "to": "2027-04-30", "uplift_bps": 1000 }
+  ],
+  "allotment_overrides": [
+    { "room_type": "*", "from": "2027-01-14", "to": "2027-01-15", "stop_sell": true, "reason": "Full-property wedding buyout" },
+    { "room_type": "pool-villa", "from": "2026-12-01", "to": "2026-12-04", "stop_sell": true, "reason": "Pool resurfacing" },
+    { "room_type": "plantation-room", "from": "2026-12-20", "to": "2027-01-03", "allotment": 5, "reason": "Peak-season agency commitments" },
+    { "room_type": "estate-view-room", "from": "2026-12-20", "to": "2027-01-03", "allotment": 3, "reason": "Peak-season agency commitments" }
+  ]
+}

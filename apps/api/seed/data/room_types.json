@@ -1,0 +1,116 @@
+{
+  "_note": "Five room types, 64 rooms + 12 villas = 76 keys. Photo paths are local; sources and credits are tracked in apps/web/public/images/CREDITS.md.",
+  "room_types": [
+    {
+      "slug": "plantation-room",
+      "name": "Plantation Room",
+      "kind": "ROOM",
+      "total_keys": 30,
+      "size_sqm": 28,
+      "bed": "King or twin",
+      "view": "Coffee and silver-oak canopy",
+      "base_occupancy": 2,
+      "max_adults": 3,
+      "max_children": 1,
+      "extra_adult_paise": 150000,
+      "extra_child_paise": 80000,
+      "sort": 1,
+      "summary": "A calm room under the silver oaks, with a sit-out over the coffee rows.",
+      "description": "Wooden floors, a planter's chair on the sit-out and a rain shower. You wake to bulbuls and the smell of drying coffee in season.",
+      "amenities": ["Private sit-out", "Rain shower", "Tea and coffee tray with estate coffee", "Wi-Fi", "Heater"],
+      "photos": [
+        { "path": "/images/rooms/plantation-room-1.avif", "alt": "Plantation Room with a king bed and a wooden sit-out facing coffee rows" },
+        { "path": "/images/rooms/plantation-room-2.avif", "alt": "Rain shower in a stone-finished bathroom" },
+        { "path": "/images/rooms/plantation-room-3.avif", "alt": "Planter's chair on the sit-out at dawn" }
+      ]
+    },
+    {
+      "slug": "estate-view-room",
+      "name": "Estate View Room",
+      "kind": "ROOM",
+      "total_keys": 20,
+      "size_sqm": 34,
+      "bed": "King",
+      "view": "Valley and Mullayanagiri ridge",
+      "base_occupancy": 2,
+      "max_adults": 3,
+      "max_children": 1,
+      "extra_adult_paise": 150000,
+      "extra_child_paise": 80000,
+      "sort": 2,
+      "summary": "Floor-to-ceiling glass over the valley, where the mist rolls in by four.",
+      "description": "Upper-floor rooms with a long window seat, a deep tub and a balcony facing the Mullayanagiri ridge.",
+      "amenities": ["Valley-facing balcony", "Window seat", "Bathtub", "Tea and coffee tray with estate coffee", "Wi-Fi", "Heater"],
+      "photos": [
+        { "path": "/images/rooms/estate-view-room-1.avif", "alt": "Estate View Room with a window seat looking over a misty valley" },
+        { "path": "/images/rooms/estate-view-room-2.avif", "alt": "Balcony with two chairs facing hills" }
+      ]
+    },
+    {
+      "slug": "heritage-suite",
+      "name": "Heritage Planter's Suite",
+      "kind": "ROOM",
+      "total_keys": 14,
+      "size_sqm": 52,
+      "bed": "King",
+      "view": "Estate gardens",
+      "base_occupancy": 2,
+      "max_adults": 3,
+      "max_children": 2,
+      "extra_adult_paise": 180000,
+      "extra_child_paise": 90000,
+      "sort": 3,
+      "summary": "Suites in the restored 1920s planter's bungalow, with a separate sitting room.",
+      "description": "High ceilings, Mangalore-tile roofs, a fireplace sitting room and a verandah onto the old garden.",
+      "amenities": ["Separate sitting room", "Fireplace", "Verandah", "Bathtub", "Butler on call", "Wi-Fi"],
+      "photos": [
+        { "path": "/images/rooms/heritage-suite-1.avif", "alt": "Heritage suite sitting room with a fireplace and wooden beams" },
+        { "path": "/images/rooms/heritage-suite-2.avif", "alt": "Verandah of an old planter's bungalow" }
+      ]
+    },
+    {
+      "slug": "coffee-villa",
+      "name": "Coffee Villa",
+      "kind": "VILLA",
+      "total_keys": 8,
+      "size_sqm": 85,
+      "bed": "King + day bed",
+      "view": "Private garden inside the estate",
+      "base_occupancy": 2,
+      "max_adults": 4,
+      "max_children": 2,
+      "extra_adult_paise": 200000,
+      "extra_child_paise": 100000,
+      "sort": 4,
+      "summary": "A standalone villa in the coffee, with a garden, outdoor shower and space for a family.",
+      "description": "Each villa sits on its own path through the plantation. It has a living room with a day bed, an outdoor shower and a garden deck. Pets are welcome.",
+      "amenities": ["Private garden deck", "Outdoor shower", "Living room with day bed", "Pet friendly", "Kitchenette", "Wi-Fi"],
+      "photos": [
+        { "path": "/images/rooms/coffee-villa-1.avif", "alt": "Standalone villa with a sloping tiled roof among coffee plants" },
+        { "path": "/images/rooms/coffee-villa-2.avif", "alt": "Villa living room with a day bed and garden doors" }
+      ]
+    },
+    {
+      "slug": "pool-villa",
+      "name": "Pool Villa",
+      "kind": "VILLA",
+      "total_keys": 4,
+      "size_sqm": 120,
+      "bed": "King + twin room",
+      "view": "Infinity pool over the valley",
+      "base_occupancy": 2,
+      "max_adults": 4,
+      "max_children": 2,
+      "extra_adult_paise": 250000,
+      "extra_child_paise": 120000,
+      "sort": 5,
+      "summary": "Two bedrooms and a heated plunge pool on the edge of the valley.",
+      "description": "Our most private stay: a heated infinity plunge pool, two bedrooms, a pavilion for dining in and a dedicated host.",
+      "amenities": ["Heated plunge pool", "Two bedrooms", "Dining pavilion", "Dedicated host", "Bathtub", "Wi-Fi"],
+      "photos": [
+        { "path": "/images/rooms/pool-villa-1.avif", "alt": "Infinity plunge pool overlooking misty hills" },
+        { "path": "/images/rooms/pool-villa-2.avif", "alt": "Open dining pavilion beside a villa pool at dusk" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "promos": [
+    {
+      "code": "DIRECT10",
+      "type": "PERCENT",
+      "value": 1000,
+      "description": "10% off for booking direct, stays of 2 nights or more",
+      "stay_from": "2026-11-01",
+      "stay_to": "2027-03-31",
+      "book_from": "2026-10-01",
+      "book_to": "2027-03-31",
+      "min_nights": 2,
+      "max_uses": 200,
+      "room_types": null,
+      "is_active": true
+    },
+    {
+      "code": "STAYLONGER",
+      "type": "FLAT",
+      "value": 300000,
+      "description": "₹3,000 off stays of 4 nights or more in villas",
+      "stay_from": "2026-11-01",
+      "stay_to": "2027-04-30",
+      "book_from": "2026-10-15",
+      "book_to": "2027-04-30",
+      "min_nights": 4,
+      "max_uses": 25,
+      "room_types": ["coffee-villa", "pool-villa"],
+      "is_active": true
+    },
+    {
+      "code": "MONSOON26",
+      "type": "FLAT",
+      "value": 200000,
+      "description": "Monsoon offer (expired; shows the expired-code state)",
+      "stay_from": "2026-06-01",
+      "stay_to": "2026-09-30",
+      "book_from": "2026-05-15",
+      "book_to": "2026-09-30",
+      "min_nights": 2,
+      "max_uses": 100,
+      "room_types": null,
+      "is_active": true
+    }
+  ]
+}

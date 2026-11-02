@@ -1,0 +1,11 @@
+{
+  "_note": "Demo accounts only, under the reserved .test domain. There are no passwords here: the seeder hashes SEED_DEMO_PASSWORD (see docs/deployment.md). Guests sign in with an email OTP that is delivered to the simulated outbox.",
+  "users": [
+    { "email": "gm@kaapiestate.test", "name": "Anitha Gowda", "role": "GM", "phone": "+91 90000 00001" },
+    { "email": "reservations@kaapiestate.test", "name": "Rohan Shetty", "role": "RESERVATIONS", "phone": "+91 90000 00002" },
+    { "email": "reservations2@kaapiestate.test", "name": "Divya Hegde", "role": "RESERVATIONS", "phone": "+91 90000 00003" },
+    { "email": "sales@kaapiestate.test", "name": "Karthik Rao", "role": "SALES", "phone": "+91 90000 00004" },
+    { "email": "admin@kaapiestate.test", "name": "System Admin", "role": "ADMIN", "phone": null },
+    { "email": "guest@example.test", "name": "Meera Iyer", "role": "GUEST", "phone": "+91 90000 00101" }
+  ]
+}

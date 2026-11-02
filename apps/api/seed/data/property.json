@@ -1,0 +1,45 @@
+{
+  "name": "Kaapi Estate",
+  "tagline": "A working coffee estate in the Baba Budan hills",
+  "location": "Chikkamagaluru, Karnataka",
+  "timezone": "Asia/Kolkata",
+  "currency": "INR",
+  "check_in_time": "14:00",
+  "check_out_time": "11:00",
+  "hold_minutes": 10,
+  "max_nights": 14,
+  "max_rooms_per_booking": 4,
+  "child_age_max": 11,
+  "gst_slabs": [
+    { "max_tariff_paise_per_night": 750000, "rate_bps": 500, "note": "Up to ₹7,500 per night: 5% (no ITC)" },
+    { "max_tariff_paise_per_night": null, "rate_bps": 1800, "note": "Above ₹7,500 per night: 18%" }
+  ],
+  "gst_slab_basis": "TRANSACTION_VALUE_PER_NIGHT",
+  "assumptions": [
+    "A-01: The brief's 'Company A' is shown as 'Kaapi Estate' (working name).",
+    "A-02: GST slab is chosen per night on the amount actually charged after discounts. To confirm with the client's CA.",
+    "A-03: The website sells only the admin-set allotment, about 25% of physical keys; agencies keep the rest.",
+    "A-04: Distances and facility capacities in kb_facts are plausible placeholders, to be confirmed by the GM."
+  ],
+  "lanes": {
+    "ROOM": "RESERVATIONS",
+    "WEDDING": "SALES",
+    "OFFSITE": "SALES",
+    "COMPLAINT": "GM",
+    "OTHER": "UNSORTED"
+  },
+  "kb_facts": [
+    { "key": "check_in_out", "category": "STAY", "question": "What are the check-in and check-out times?", "answer": "Check-in is from 2 pm and check-out is by 11 am. Early check-in or late check-out depends on availability on the day." },
+    { "key": "children", "category": "STAY", "question": "What is the policy for children?", "answer": "Children up to 11 years stay free in the parents' room using existing bedding. An extra mattress for a child is chargeable." },
+    { "key": "extra_bed", "category": "STAY", "question": "Can you add an extra bed?", "answer": "Plantation Rooms and Estate View Rooms can take one extra adult on a rollaway bed. Villas sleep up to four adults." },
+    { "key": "pets", "category": "STAY", "question": "Are pets allowed?", "answer": "Pets are welcome in the Coffee Villas only, with prior notice. They are not allowed in the dining areas." },
+    { "key": "getting_here", "category": "TRAVEL", "question": "How do I get to the resort?", "answer": "The nearest railhead is Kadur (about 40 km) and the nearest airport is Mangaluru (about 150 km). Bengaluru is roughly a 5 to 6 hour drive. We can arrange pick-ups on request." },
+    { "key": "estate_walk", "category": "EXPERIENCE", "question": "Is there a coffee estate walk?", "answer": "A guided estate walk runs every morning at 7 am and covers the coffee and pepper plantation, the pulping unit and a tasting at the roastery." },
+    { "key": "dining", "category": "DINING", "question": "What food do you serve?", "answer": "Our kitchen serves Malnad and South Indian dishes, with North Indian and continental options. Jain and vegan meals are available with notice." },
+    { "key": "wedding_lawns", "category": "EVENTS", "question": "How big are the wedding lawns?", "answer": "The Estate Lawn hosts up to 400 guests and the Valley Deck up to 120 guests for smaller ceremonies. Full-property buyouts are available for weddings." },
+    { "key": "conference", "category": "EVENTS", "question": "Do you have a conference hall?", "answer": "The Planters' Hall seats up to 80 people theatre-style or 50 classroom-style. It has a projector, sound system and high-speed Wi-Fi." },
+    { "key": "wifi_power", "category": "STAY", "question": "Is there Wi-Fi and power backup?", "answer": "Wi-Fi covers the rooms and common areas. Mobile signal can be patchy in the valley. Full power backup is available." },
+    { "key": "cancellation", "category": "POLICY", "question": "What is the cancellation policy?", "answer": "Flexible rates can be cancelled free up to 7 days before arrival. After that, one night is charged. Non-refundable rates cannot be cancelled or changed." },
+    { "key": "id_form_c", "category": "POLICY", "question": "What ID do I need?", "answer": "Indian guests need a government photo ID at check-in. Foreign guests show their passport and visa at check-in for Form C. We never ask for passport details online." }
+  ]
+}

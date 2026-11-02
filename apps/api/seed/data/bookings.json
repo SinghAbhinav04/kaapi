@@ -1,0 +1,810 @@
+{
+  "_note": "Booking inputs only. The seeder prices each one with the real pricing engine and derives night_inventory.sold from CONFIRMED bookings, so totals and inventory can never disagree with the code. This file is validated against the allotment rules when generated.",
+  "bookings": [
+    {
+      "ref": "KS-2A7F4Q",
+      "room_type": "plantation-room",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-11-01",
+      "check_out": "2026-11-03",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Meera Iyer",
+        "email": "guest@example.test",
+        "phone": "+91 90000 20001",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-12T09:00:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-3B8G5R",
+      "room_type": "estate-view-room",
+      "rate_plan": "RO-FLEX",
+      "check_in": "2026-11-02",
+      "check_out": "2026-11-04",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Abhishek Rao",
+        "email": "abhishek.rao@example.test",
+        "phone": "+91 90000 20002",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-20T10:13:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-4C9H6S",
+      "room_type": "coffee-villa",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-11-06",
+      "check_out": "2026-11-09",
+      "rooms": 1,
+      "adults": 3,
+      "children": 1,
+      "guest": {
+        "name": "Shreya Banerjee",
+        "email": "shreya.banerjee@example.test",
+        "phone": "+91 90000 20003",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-05T11:26:00+05:30",
+      "special_requests": "Travelling with a beagle"
+    },
+    {
+      "ref": "KS-5D2J7T",
+      "room_type": "plantation-room",
+      "rate_plan": "BB-NRF",
+      "check_in": "2026-11-06",
+      "check_out": "2026-11-08",
+      "rooms": 2,
+      "adults": 4,
+      "children": 0,
+      "guest": {
+        "name": "Karan Mehta",
+        "email": "karan.mehta@example.test",
+        "phone": "+91 90000 20004",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-14T12:39:00+05:30",
+      "special_requests": "Adjacent rooms if possible"
+    },
+    {
+      "ref": "KS-6E3K8U",
+      "room_type": "pool-villa",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-11-07",
+      "check_out": "2026-11-09",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Oliver Grant",
+        "email": "oliver.grant@example.test",
+        "phone": "+91 90000 20005",
+        "country": "GB"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-09-28T13:52:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-7F4L9V",
+      "room_type": "heritage-suite",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-11-07",
+      "check_out": "2026-11-10",
+      "rooms": 1,
+      "adults": 2,
+      "children": 1,
+      "guest": {
+        "name": "Ananya Krishnan",
+        "email": "ananya.krishnan@example.test",
+        "phone": "+91 90000 20006",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-18T14:05:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-8G5M2W",
+      "room_type": "estate-view-room",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-11-09",
+      "check_out": "2026-11-11",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Vivek Sinha",
+        "email": "vivek.sinha@example.test",
+        "phone": "+91 90000 20007",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-25T15:18:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-9P2L7D",
+      "room_type": "plantation-room",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-11-20",
+      "check_out": "2026-11-22",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Swati Mishra",
+        "email": "swati.mishra@example.test",
+        "phone": "+91 90000 20008",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-21T16:31:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-4M8Q2T",
+      "room_type": "heritage-suite",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-11-13",
+      "check_out": "2026-11-15",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Neha Saxena",
+        "email": "neha.saxena@example.test",
+        "phone": "+91 90000 20009",
+        "country": "IN"
+      },
+      "status": "REFUND_PENDING",
+      "promo_code": null,
+      "created_at": "2026-09-30T17:44:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-2N3R4X",
+      "room_type": "coffee-villa",
+      "rate_plan": "RO-FLEX",
+      "check_in": "2026-11-14",
+      "check_out": "2026-11-16",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Harini Subramanian",
+        "email": "harini.subramanian@example.test",
+        "phone": "+91 90000 20010",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-27T18:57:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-3P4S5Y",
+      "room_type": "plantation-room",
+      "rate_plan": "RO-FLEX",
+      "check_in": "2026-11-14",
+      "check_out": "2026-11-15",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Gaurav Saini",
+        "email": "gaurav.saini@example.test",
+        "phone": "+91 90000 20011",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-30T09:10:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-4Q5T6Z",
+      "room_type": "estate-view-room",
+      "rate_plan": "BB-NRF",
+      "check_in": "2026-11-21",
+      "check_out": "2026-11-23",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Tara Fernandes",
+        "email": "tara.fernandes@example.test",
+        "phone": "+91 90000 20012",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": "DIRECT10",
+      "created_at": "2026-10-29T10:23:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-5R6U7A",
+      "room_type": "pool-villa",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-11-21",
+      "check_out": "2026-11-24",
+      "rooms": 1,
+      "adults": 2,
+      "children": 2,
+      "guest": {
+        "name": "Rakesh Nambiar",
+        "email": "rakesh.nambiar@example.test",
+        "phone": "+91 90000 20013",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-16T11:36:00+05:30",
+      "special_requests": "Pool heated for the kids, please"
+    },
+    {
+      "ref": "KS-6S7V8B",
+      "room_type": "heritage-suite",
+      "rate_plan": "RO-FLEX",
+      "check_in": "2026-11-27",
+      "check_out": "2026-11-29",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Emily Clarke",
+        "email": "emily.clarke@example.test",
+        "phone": "+91 90000 20014",
+        "country": "US"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-31T12:49:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-7T8W9C",
+      "room_type": "coffee-villa",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-11-28",
+      "check_out": "2026-12-02",
+      "rooms": 1,
+      "adults": 2,
+      "children": 1,
+      "guest": {
+        "name": "Siddharth Joshi",
+        "email": "siddharth.joshi@example.test",
+        "phone": "+91 90000 20015",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": "STAYLONGER",
+      "created_at": "2026-10-22T13:02:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-8U9X2D",
+      "room_type": "plantation-room",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-12-05",
+      "check_out": "2026-12-07",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Nandini Rao",
+        "email": "nandini.rao@example.test",
+        "phone": "+91 90000 20016",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-11-01T14:15:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-9V2Y3E",
+      "room_type": "plantation-room",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-12-12",
+      "check_out": "2026-12-14",
+      "rooms": 2,
+      "adults": 4,
+      "children": 0,
+      "guest": {
+        "name": "Akash Patil",
+        "email": "akash.patil@example.test",
+        "phone": "+91 90000 20017",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-28T15:28:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-2W3Z4F",
+      "room_type": "estate-view-room",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-12-12",
+      "check_out": "2026-12-13",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Ishaan Chopra",
+        "email": "ishaan.chopra@example.test",
+        "phone": "+91 90000 20018",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-30T16:41:00+05:30",
+      "special_requests": "Anniversary"
+    },
+    {
+      "ref": "KS-3X4A5G",
+      "room_type": "pool-villa",
+      "rate_plan": "BB-NRF",
+      "check_in": "2026-12-18",
+      "check_out": "2026-12-21",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Sophie Martin",
+        "email": "sophie.martin@example.test",
+        "phone": "+91 90000 20019",
+        "country": "FR"
+      },
+      "status": "CONFIRMED",
+      "promo_code": "DIRECT10",
+      "created_at": "2026-10-19T17:54:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-4Y5B6H",
+      "room_type": "plantation-room",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-12-24",
+      "check_out": "2026-12-27",
+      "rooms": 2,
+      "adults": 4,
+      "children": 0,
+      "guest": {
+        "name": "Manish Agarwal",
+        "email": "manish.agarwal@example.test",
+        "phone": "+91 90000 20020",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-09-15T18:07:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-5Z6C7J",
+      "room_type": "estate-view-room",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-12-24",
+      "check_out": "2026-12-27",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Ritika Sharma",
+        "email": "ritika.sharma@example.test",
+        "phone": "+91 90000 20021",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-09-20T09:20:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-6A7D8K",
+      "room_type": "coffee-villa",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-12-24",
+      "check_out": "2026-12-28",
+      "rooms": 1,
+      "adults": 4,
+      "children": 0,
+      "guest": {
+        "name": "Daniel Thomas",
+        "email": "daniel.thomas@example.test",
+        "phone": "+91 90000 20022",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-08-30T10:33:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-7B8E9L",
+      "room_type": "coffee-villa",
+      "rate_plan": "BB-NRF",
+      "check_in": "2026-12-29",
+      "check_out": "2027-01-02",
+      "rooms": 1,
+      "adults": 2,
+      "children": 2,
+      "guest": {
+        "name": "Pallavi Kamath",
+        "email": "pallavi.kamath@example.test",
+        "phone": "+91 90000 20023",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-09-02T11:46:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-8C9F2M",
+      "room_type": "pool-villa",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-12-30",
+      "check_out": "2027-01-02",
+      "rooms": 1,
+      "adults": 4,
+      "children": 0,
+      "guest": {
+        "name": "Aryan Khanna",
+        "email": "aryan.khanna@example.test",
+        "phone": "+91 90000 20024",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-08-11T12:59:00+05:30",
+      "special_requests": "New Year's Eve dinner in the pavilion"
+    },
+    {
+      "ref": "KS-9D2G3N",
+      "room_type": "heritage-suite",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-12-30",
+      "check_out": "2027-01-01",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Lucy Evans",
+        "email": "lucy.evans@example.test",
+        "phone": "+91 90000 20025",
+        "country": "GB"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-09-25T13:12:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-2E3H4P",
+      "room_type": "plantation-room",
+      "rate_plan": "BB-NRF",
+      "check_in": "2026-12-30",
+      "check_out": "2027-01-01",
+      "rooms": 3,
+      "adults": 6,
+      "children": 0,
+      "guest": {
+        "name": "Rohan Kulkarni",
+        "email": "rohan.kulkarni@example.test",
+        "phone": "+91 90000 20026",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-02T14:25:00+05:30",
+      "special_requests": "Group of friends, rooms close together"
+    },
+    {
+      "ref": "KS-3F4J5Q",
+      "room_type": "estate-view-room",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-12-30",
+      "check_out": "2027-01-02",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Anjali Varma",
+        "email": "anjali.varma@example.test",
+        "phone": "+91 90000 20027",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-08T15:38:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-4G5K6R",
+      "room_type": "plantation-room",
+      "rate_plan": "RO-FLEX",
+      "check_in": "2027-01-09",
+      "check_out": "2027-01-11",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Sameer Kaul",
+        "email": "sameer.kaul@example.test",
+        "phone": "+91 90000 20028",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-26T16:51:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-5H6L7S",
+      "room_type": "heritage-suite",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2027-01-23",
+      "check_out": "2027-01-26",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Divya Menon",
+        "email": "divya.menon@example.test",
+        "phone": "+91 90000 20029",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-17T17:04:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-6J7M8T",
+      "room_type": "estate-view-room",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2027-01-23",
+      "check_out": "2027-01-25",
+      "rooms": 2,
+      "adults": 4,
+      "children": 0,
+      "guest": {
+        "name": "Pranav Desai",
+        "email": "pranav.desai@example.test",
+        "phone": "+91 90000 20030",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-24T18:17:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-7K8N9U",
+      "room_type": "coffee-villa",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2027-02-12",
+      "check_out": "2027-02-15",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Hannah Weber",
+        "email": "hannah.weber@example.test",
+        "phone": "+91 90000 20031",
+        "country": "DE"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-09T09:30:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-8L9P2V",
+      "room_type": "pool-villa",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2027-02-13",
+      "check_out": "2027-02-15",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Rahul Bhatia",
+        "email": "rahul.bhatia@example.test",
+        "phone": "+91 90000 20032",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-10-29T10:43:00+05:30",
+      "special_requests": "Proposal planned, please keep it quiet"
+    },
+    {
+      "ref": "KS-9M2Q3W",
+      "room_type": "plantation-room",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2027-02-26",
+      "check_out": "2027-03-01",
+      "rooms": 1,
+      "adults": 2,
+      "children": 1,
+      "guest": {
+        "name": "Meera Iyer",
+        "email": "guest@example.test",
+        "phone": "+91 90000 20033",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": null,
+      "created_at": "2026-11-01T11:56:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-2N3R4Y",
+      "room_type": "heritage-suite",
+      "rate_plan": "BB-NRF",
+      "check_in": "2027-03-05",
+      "check_out": "2027-03-08",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Kunal Shah",
+        "email": "kunal.shah@example.test",
+        "phone": "+91 90000 20034",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": "DIRECT10",
+      "created_at": "2026-10-30T12:09:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-3P4S5Z",
+      "room_type": "coffee-villa",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2027-04-10",
+      "check_out": "2027-04-14",
+      "rooms": 1,
+      "adults": 4,
+      "children": 0,
+      "guest": {
+        "name": "Vandana Reddy",
+        "email": "vandana.reddy@example.test",
+        "phone": "+91 90000 20035",
+        "country": "IN"
+      },
+      "status": "CONFIRMED",
+      "promo_code": "STAYLONGER",
+      "created_at": "2026-10-31T13:22:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-4Q5T6A",
+      "room_type": "coffee-villa",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-11-14",
+      "check_out": "2026-11-16",
+      "rooms": 1,
+      "adults": 2,
+      "children": 1,
+      "guest": {
+        "name": "Varun Nair",
+        "email": "varun.nair@example.test",
+        "phone": "+91 90000 20036",
+        "country": "IN"
+      },
+      "status": "PAYMENT_FAILED",
+      "promo_code": null,
+      "created_at": "2026-10-26T14:35:00+05:30",
+      "special_requests": null,
+      "payment": {
+        "provider_payment_id": "pay_mock_88123",
+        "status": "FAILED",
+        "failure_reason": "Bank timeout after debit (simulated)"
+      }
+    },
+    {
+      "ref": "KS-5R6U7B",
+      "room_type": "plantation-room",
+      "rate_plan": "RO-FLEX",
+      "check_in": "2026-11-21",
+      "check_out": "2026-11-22",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Nitin Gupta",
+        "email": "nitin.gupta@example.test",
+        "phone": "+91 90000 20037",
+        "country": "IN"
+      },
+      "status": "EXPIRED",
+      "promo_code": null,
+      "created_at": "2026-10-28T15:48:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-6S7V8C",
+      "room_type": "estate-view-room",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-12-24",
+      "check_out": "2026-12-26",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Aarti Joshi",
+        "email": "aarti.joshi@example.test",
+        "phone": "+91 90000 20038",
+        "country": "IN"
+      },
+      "status": "EXPIRED",
+      "promo_code": null,
+      "created_at": "2026-10-30T16:01:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-7T8W9D",
+      "room_type": "heritage-suite",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2026-11-20",
+      "check_out": "2026-11-22",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Mohit Arora",
+        "email": "mohit.arora@example.test",
+        "phone": "+91 90000 20039",
+        "country": "IN"
+      },
+      "status": "CANCELLED",
+      "promo_code": null,
+      "created_at": "2026-10-10T17:14:00+05:30",
+      "special_requests": null
+    },
+    {
+      "ref": "KS-8U9X2E",
+      "room_type": "pool-villa",
+      "rate_plan": "BB-FLEX",
+      "check_in": "2027-01-16",
+      "check_out": "2027-01-18",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0,
+      "guest": {
+        "name": "Claire Dubois",
+        "email": "claire.dubois@example.test",
+        "phone": "+91 90000 20040",
+        "country": "FR"
+      },
+      "status": "REFUNDED",
+      "promo_code": null,
+      "created_at": "2026-09-18T18:27:00+05:30",
+      "special_requests": null
+    }
+  ]
+}
