@@ -1,4 +1,4 @@
-module github.com/SinghAbhinav04/kaapi-estate/apps/api
+module kaapi/api
 
 go 1.27.3
 

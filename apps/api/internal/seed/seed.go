@@ -13,11 +13,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/auth"
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/domain"
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/platform/db"
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/platform/idgen"
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/pricing"
+	"kaapi/api/internal/auth"
+	"kaapi/api/internal/domain"
+	"kaapi/api/internal/platform/db"
+	"kaapi/api/internal/platform/idgen"
+	"kaapi/api/internal/pricing"
 )
 
 // Options controls a seed run.
@@ -179,7 +179,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, fx *Fixtures, opt Options) (Su
 			}
 			promoIDs[p.Code] = id
 			promoRules[p.Code] = pricing.PromoRule{
-				Promo:    pricing.Promo{Code: p.Code, Type: pricing.PromoType(p.Type), Value: p.Value},
+				Promo:    pricing.Promo{Code: p.Code, Type: p.Type, Value: p.Value},
 				StayFrom: mustDay(p.StayFrom), StayTo: mustDay(p.StayTo), BookFrom: mustDay(p.BookFrom), BookTo: mustDay(p.BookTo),
 				MinNights: p.MinNights, MaxUses: p.MaxUses, RoomTypeIDs: rtIDs, Active: p.IsActive,
 			}
@@ -236,14 +236,14 @@ func insertBooking(ctx context.Context, tx pgx.Tx, b BookingFx, rt RoomType, roo
 			return fmt.Errorf("unknown promo %s", b.PromoCode)
 		}
 		bookedOn := time.Date(created.Year(), created.Month(), created.Day(), 0, 0, 0, 0, time.UTC)
-		if err := pricing.Eligible(rule, in, out, bookedOn, roomID); err != nil {
+		if err := pricing.Eligible(rule, domain.Stay{CheckIn: in, CheckOut: out}, bookedOn, roomID); err != nil {
 			return fmt.Errorf("promo %s: %w", b.PromoCode, err)
 		}
 		promo, promoID = &rule.Promo, ptr(promoIDs[b.PromoCode])
 	}
 
 	q, err := pricing.Price(pricing.Input{
-		Nights: nights, Rooms: b.Rooms, Adults: b.Adults, Children: b.Children, Promo: promo, Slabs: slabs,
+		Nights: nights, Party: domain.Party{Rooms: b.Rooms, Adults: b.Adults, Children: b.Children}, Promo: promo, Slabs: slabs,
 		Room: pricing.Room{BaseOccupancy: rt.BaseOccupancy, MaxAdults: rt.MaxAdults, MaxChildren: rt.MaxChildren, ExtraAdultPaise: rt.ExtraAdultPaise},
 	})
 	if err != nil {

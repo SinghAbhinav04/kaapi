@@ -11,9 +11,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/inventory"
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/platform/idgen"
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/testdb"
+	"kaapi/api/internal/inventory"
+	"kaapi/api/internal/platform/idgen"
+	"kaapi/api/tests/testdb"
+
+	"kaapi/api/internal/domain"
 )
 
 // "Today" for every test is the date the seed data was written for.
@@ -41,7 +43,9 @@ func lookup(t *testing.T, ctx context.Context, pool *pgxpool.Pool, slug, plan st
 }
 
 func req(x ids, in, out string, rooms, adults, children int) inventory.HoldRequest {
-	return inventory.HoldRequest{RoomTypeID: x.room, RatePlanID: x.plan, CheckIn: day(in), CheckOut: day(out), Rooms: rooms, Adults: adults, Children: children}
+	return inventory.HoldRequest{RoomTypeID: x.room, RatePlanID: x.plan,
+		Stay:  domain.Stay{CheckIn: day(in), CheckOut: day(out)},
+		Party: domain.Party{Rooms: rooms, Adults: adults, Children: children}}
 }
 
 // The headline guarantee: 25 guests try to hold the last Pool Villa at the same moment.
@@ -103,7 +107,7 @@ func TestOverlappingStaysNeverOversell(t *testing.T) {
 			in := day(starts[i%len(starts)])
 			<-start
 			_, err := svc.CreateHold(ctx, inventory.HoldRequest{RoomTypeID: cv.room, RatePlanID: cv.plan,
-				CheckIn: in, CheckOut: in.AddDate(0, 0, 2), Rooms: 1, Adults: 2})
+				Stay: domain.Stay{CheckIn: in, CheckOut: in.AddDate(0, 0, 2)}, Party: domain.Party{Rooms: 1, Adults: 2}})
 			if err == nil {
 				mu.Lock()
 				won++
@@ -289,7 +293,7 @@ func TestSearchAndAlternatives(t *testing.T) {
 	ctx, pool := testdb.Seeded(t)
 	svc := inventory.NewService(pool, today)
 
-	opts, err := svc.Search(ctx, inventory.SearchRequest{CheckIn: day("2026-11-14"), CheckOut: day("2026-11-16"), Rooms: 1, Adults: 2, Children: 1})
+	opts, err := svc.Search(ctx, inventory.SearchRequest{Stay: domain.Stay{CheckIn: day("2026-11-14"), CheckOut: day("2026-11-16")}, Party: domain.Party{Rooms: 1, Adults: 2, Children: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +309,7 @@ func TestSearchAndAlternatives(t *testing.T) {
 		t.Fatalf("plantation room only %d, want ₹16,344", pr.Plans[0].Quote.TotalPaise)
 	}
 
-	nye, err := svc.Search(ctx, inventory.SearchRequest{CheckIn: day("2026-12-30"), CheckOut: day("2027-01-01"), Rooms: 1, Adults: 2})
+	nye, err := svc.Search(ctx, inventory.SearchRequest{Stay: domain.Stay{CheckIn: day("2026-12-30"), CheckOut: day("2027-01-01")}, Party: domain.Party{Rooms: 1, Adults: 2}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +342,7 @@ func TestAllotmentCannotDropBelowSoldOrHeld(t *testing.T) {
 	}
 	check := func(from, to string, n int) error {
 		return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-			return inventory.CheckAllotment(ctx, tx, cv.room, day(from), day(to), n)
+			return inventory.CheckAllotment(ctx, tx, cv.room, domain.Stay{CheckIn: day(from), CheckOut: day(to)}, n)
 		})
 	}
 	var ae *inventory.AllotmentError

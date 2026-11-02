@@ -8,50 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/domain"
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/pricing"
+	"kaapi/api/internal/domain"
 )
-
-type Status string
-
-const (
-	Available     Status = "AVAILABLE"
-	SoldOut       Status = "SOLD_OUT"
-	Restricted    Status = "RESTRICTED"
-	TooManyGuests Status = "TOO_MANY_GUESTS"
-	NotYetOnSale  Status = "NOT_ON_SALE"
-)
-
-type SearchRequest struct {
-	CheckIn, CheckOut       time.Time
-	Rooms, Adults, Children int
-	PromoCode               string
-}
-
-type PlanQuote struct {
-	PlanID     uuid.UUID
-	Code, Name string
-	Refundable bool
-	Quote      pricing.Quote
-}
-
-type Option struct {
-	RoomTypeID    uuid.UUID
-	Slug, Name    string
-	Status        Status
-	Left          int // fewest rooms free on any night of the stay, website allotment only
-	Reason        string
-	SoldOutNights []time.Time
-	MinStay       int
-	Plans         []PlanQuote
-	PromoError    string // set when the code doesn't apply to this room; prices are shown without it
-}
-
-type nightAvail struct {
-	date          time.Time
-	left, minStay int
-	stopSell, cta bool
-}
 
 // Search answers "what can I book for these dates?" for every room type, with prices for
 // every plan. It never locks anything; the hold re-checks under lock.
@@ -60,8 +18,7 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) ([]Option, erro
 	if err != nil {
 		return nil, err
 	}
-	hreq := HoldRequest{CheckIn: req.CheckIn, CheckOut: req.CheckOut, Rooms: req.Rooms, Adults: req.Adults, Children: req.Children}
-	if err := validateStay(hreq, st, s.today(st)); err != nil {
+	if err := validateStay(req.Stay, req.Party, st, s.today(st)); err != nil {
 		return nil, err
 	}
 
@@ -87,7 +44,7 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) ([]Option, erro
 		return nil, err
 	}
 
-	nights := nightsBetween(req.CheckIn, req.CheckOut)
+	nights := req.Nights()
 	out := make([]Option, 0, len(rooms))
 	for _, rt := range rooms {
 		opt := Option{RoomTypeID: rt.id, Slug: rt.slug, Name: rt.name, Status: Available}
@@ -141,8 +98,7 @@ func (s *Service) attachQuotes(ctx context.Context, opt *Option, req SearchReque
 		return err
 	}
 	for _, p := range plans {
-		hr := HoldRequest{RoomTypeID: opt.RoomTypeID, RatePlanID: p.PlanID, CheckIn: req.CheckIn, CheckOut: req.CheckOut,
-			Rooms: req.Rooms, Adults: req.Adults, Children: req.Children, PromoCode: req.PromoCode}
+		hr := HoldRequest{RoomTypeID: opt.RoomTypeID, RatePlanID: p.PlanID, Stay: req.Stay, Party: req.Party, PromoCode: req.PromoCode}
 		q, _, err := quoteStay(ctx, s.pool, hr, st, s.today(st))
 		var pe *PromoError
 		if errors.As(err, &pe) {
@@ -194,19 +150,19 @@ func (s *Service) nightsByRoom(ctx context.Context, from, to time.Time) (map[uui
 	return out, rows.Err()
 }
 
-// Alternatives finds up to three nearby check-in dates (within a week either side) where
-// the same length of stay is fully available, nearest first.
+// Alternatives finds nearby check-in dates (within a week either side) where the same
+// length of stay is fully available, nearest first.
 func (s *Service) Alternatives(ctx context.Context, roomTypeID uuid.UUID, checkIn time.Time, nights, rooms int) ([]time.Time, error) {
 	st, err := loadSettings(ctx, s.pool)
 	if err != nil {
 		return nil, err
 	}
 	today := s.today(st)
-	from := checkIn.AddDate(0, 0, -7)
+	from := checkIn.AddDate(0, 0, -alternativesWindowDays)
 	if from.Before(today) {
 		from = today
 	}
-	all, err := s.nightsByRoom(ctx, from, checkIn.AddDate(0, 0, 7+nights))
+	all, err := s.nightsByRoom(ctx, from, checkIn.AddDate(0, 0, alternativesWindowDays+nights))
 	if err != nil {
 		return nil, err
 	}
@@ -229,9 +185,9 @@ func (s *Service) Alternatives(ctx context.Context, roomTypeID uuid.UUID, checkI
 		return true
 	}
 	var out []time.Time
-	for delta := 1; delta <= 7 && len(out) < 3; delta++ {
+	for delta := 1; delta <= alternativesWindowDays && len(out) < maxAlternatives; delta++ {
 		for _, d := range []time.Time{checkIn.AddDate(0, 0, -delta), checkIn.AddDate(0, 0, delta)} {
-			if !d.Before(today) && ok(d) && len(out) < 3 {
+			if !d.Before(today) && ok(d) && len(out) < maxAlternatives {
 				out = append(out, d)
 			}
 		}
@@ -239,17 +195,17 @@ func (s *Service) Alternatives(ctx context.Context, roomTypeID uuid.UUID, checkI
 	return out, nil
 }
 
-// CheckAllotment refuses an allotment below what is already sold or held, inside the
-// caller's transaction (the night rows are locked first, like every other writer).
-func CheckAllotment(ctx context.Context, tx pgx.Tx, roomTypeID uuid.UUID, from, to time.Time, newAllotment int) error {
-	nights, err := lockNights(ctx, tx, roomTypeID, from, to)
+// CheckAllotment refuses an allotment below what is already sold or held on any night in
+// the range, inside the caller's transaction (the rows are locked first, like every writer).
+func CheckAllotment(ctx context.Context, tx pgx.Tx, roomTypeID uuid.UUID, nights domain.Stay, newAllotment int) error {
+	locked, err := lockNights(ctx, tx, roomTypeID, nights)
 	if err != nil {
 		return err
 	}
-	if err := countHolds(ctx, tx, roomTypeID, nights, uuid.Nil); err != nil {
+	if err := countHolds(ctx, tx, roomTypeID, locked, uuid.Nil); err != nil {
 		return err
 	}
-	for _, n := range nights {
+	for _, n := range locked {
 		if n.sold+n.held > newAllotment {
 			return &AllotmentError{Date: n.date, Sold: n.sold, Held: n.held, RequestedTo: newAllotment}
 		}

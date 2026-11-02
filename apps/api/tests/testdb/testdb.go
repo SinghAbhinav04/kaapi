@@ -15,8 +15,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/platform/db"
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/seed"
+	"kaapi/api/internal/platform/db"
+	"kaapi/api/internal/seed"
 )
 
 // Seeded migrates, wipes and reseeds the database, and returns a pool sized for

@@ -1,6 +1,3 @@
-// Package inventory owns what the website may sell: holds, confirmations, availability
-// and allotment changes. Every path that changes inventory locks the night rows first,
-// always in date order, so two overlapping stays can never deadlock or oversell.
 package inventory
 
 import (
@@ -16,58 +13,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/domain"
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/platform/db"
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/pricing"
+	"kaapi/api/internal/domain"
+	"kaapi/api/internal/platform/db"
+	"kaapi/api/internal/platform/idgen"
 )
-
-type Service struct {
-	pool *pgxpool.Pool
-	now  func() time.Time // wall clock for "today" checks; hold expiry always uses the database clock
-}
-
-func NewService(pool *pgxpool.Pool, now func() time.Time) *Service {
-	if now == nil {
-		now = time.Now
-	}
-	return &Service{pool: pool, now: now}
-}
-
-type HoldRequest struct {
-	RoomTypeID uuid.UUID
-	RatePlanID uuid.UUID
-	CheckIn    time.Time
-	CheckOut   time.Time
-	Rooms      int
-	Adults     int
-	Children   int
-	PromoCode  string
-}
-
-type Hold struct {
-	ID         uuid.UUID
-	Token      string // shown once to the guest's browser; only its hash is stored
-	RoomTypeID uuid.UUID
-	RatePlanID uuid.UUID
-	CheckIn    time.Time
-	CheckOut   time.Time
-	Rooms      int
-	ExpiresAt  time.Time
-	Quote      pricing.Quote
-}
-
-type night struct {
-	date              time.Time
-	allotment, sold   int
-	held              int
-	stopSell          bool
-	stopSellReason    *string
-	minStay           int
-	closedToArrival   bool
-	closedToDeparture bool
-}
 
 // CreateHold reserves rooms for the property's hold window (10 minutes in the seed data).
 //
@@ -81,11 +31,11 @@ type night struct {
 // Because step 1 serialises every writer on the same nights, concurrent requests for the
 // last room queue up behind each other and exactly one of them wins.
 func (s *Service) CreateHold(ctx context.Context, req HoldRequest) (Hold, error) {
-	settings, err := loadSettings(ctx, s.pool)
+	st, err := loadSettings(ctx, s.pool)
 	if err != nil {
 		return Hold{}, err
 	}
-	if err := validateStay(req, settings, s.today(settings)); err != nil {
+	if err := validateStay(req.Stay, req.Party, st, s.today(st)); err != nil {
 		return Hold{}, err
 	}
 	token, tokenHash, err := newToken()
@@ -95,7 +45,7 @@ func (s *Service) CreateHold(ctx context.Context, req HoldRequest) (Hold, error)
 
 	var hold Hold
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		nights, err := lockNights(ctx, tx, req.RoomTypeID, req.CheckIn, req.CheckOut)
+		nights, err := lockNights(ctx, tx, req.RoomTypeID, req.Stay)
 		if err != nil {
 			return err
 		}
@@ -109,20 +59,23 @@ func (s *Service) CreateHold(ctx context.Context, req HoldRequest) (Hold, error)
 			return err
 		}
 
-		quote, promoID, err := quoteStay(ctx, tx, req, settings, s.today(settings))
+		quote, promoID, err := quoteStay(ctx, tx, req, st, s.today(st))
 		if err != nil {
 			return err
 		}
-		quoteJSON, _ := json.Marshal(quote)
+		quoteJSON, err := json.Marshal(quote)
+		if err != nil {
+			return err
+		}
 
-		hold = Hold{ID: uuid.Must(uuid.NewV7()), Token: token, RoomTypeID: req.RoomTypeID, RatePlanID: req.RatePlanID,
-			CheckIn: req.CheckIn, CheckOut: req.CheckOut, Rooms: req.Rooms, Quote: quote}
+		hold = Hold{ID: idgen.New(), Token: token, RoomTypeID: req.RoomTypeID, RatePlanID: req.RatePlanID,
+			Stay: req.Stay, Rooms: req.Rooms, Quote: quote}
 		return tx.QueryRow(ctx, `INSERT INTO holds
-			(id, room_type_id, rate_plan_id, check_in, check_out, rooms, adults, children, hold_token_hash, quote, promo_code_id, expires_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now() + make_interval(mins => $12))
+			(id, room_type_id, rate_plan_id, check_in, check_out, rooms, adults, children, hold_token_hash, quote, promo_code_id, status, expires_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now() + make_interval(mins => $13))
 			RETURNING expires_at`,
 			hold.ID, req.RoomTypeID, req.RatePlanID, req.CheckIn, req.CheckOut, req.Rooms, req.Adults, req.Children,
-			tokenHash, quoteJSON, promoID, settings.holdMinutes).Scan(&hold.ExpiresAt)
+			tokenHash, quoteJSON, promoID, domain.HoldActive, st.holdMinutes).Scan(&hold.ExpiresAt)
 	})
 	return hold, err
 }
@@ -165,14 +118,14 @@ func (s *Service) Release(ctx context.Context, holdID uuid.UUID) error {
 // caller marks the payment for refund.
 func Confirm(ctx context.Context, tx pgx.Tx, holdID, bookingID uuid.UUID) error {
 	var (
-		roomTypeID        uuid.UUID
-		checkIn, checkOut time.Time
-		rooms             int
-		status            domain.HoldStatus
-		expired           bool
+		roomTypeID uuid.UUID
+		stay       domain.Stay
+		rooms      int
+		status     domain.HoldStatus
+		expired    bool
 	)
 	err := tx.QueryRow(ctx, `SELECT room_type_id, check_in, check_out, rooms, status, expires_at <= now()
-		FROM holds WHERE id = $1 FOR UPDATE`, holdID).Scan(&roomTypeID, &checkIn, &checkOut, &rooms, &status, &expired)
+		FROM holds WHERE id = $1 FOR UPDATE`, holdID).Scan(&roomTypeID, &stay.CheckIn, &stay.CheckOut, &rooms, &status, &expired)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrHoldNotFound
 	}
@@ -183,7 +136,7 @@ func Confirm(ctx context.Context, tx pgx.Tx, holdID, bookingID uuid.UUID) error 
 		return ErrHoldNotActive
 	}
 
-	nights, err := lockNights(ctx, tx, roomTypeID, checkIn, checkOut)
+	nights, err := lockNights(ctx, tx, roomTypeID, stay)
 	if err != nil {
 		return err
 	}
@@ -193,7 +146,9 @@ func Confirm(ctx context.Context, tx pgx.Tx, holdID, bookingID uuid.UUID) error 
 			return err
 		}
 		if err := checkCapacity(nights, rooms); err != nil {
-			_, _ = tx.Exec(ctx, `UPDATE holds SET status = $2 WHERE id = $1`, holdID, domain.HoldExpired)
+			if _, uerr := tx.Exec(ctx, `UPDATE holds SET status = $2 WHERE id = $1`, holdID, domain.HoldExpired); uerr != nil {
+				return uerr
+			}
 			return err
 		}
 	}
@@ -214,26 +169,21 @@ func Confirm(ctx context.Context, tx pgx.Tx, holdID, bookingID uuid.UUID) error 
 }
 
 // lockNights locks the stay's nights in date order and returns them.
-func lockNights(ctx context.Context, tx pgx.Tx, roomTypeID uuid.UUID, checkIn, checkOut time.Time) ([]night, error) {
+func lockNights(ctx context.Context, tx pgx.Tx, roomTypeID uuid.UUID, stay domain.Stay) ([]night, error) {
 	rows, err := tx.Query(ctx, `SELECT date, allotment, sold, stop_sell, stop_sell_reason, min_stay, closed_to_arrival, closed_to_departure
 		FROM night_inventory WHERE room_type_id = $1 AND date >= $2 AND date < $3
-		ORDER BY date FOR UPDATE`, roomTypeID, checkIn, checkOut)
+		ORDER BY date FOR UPDATE`, roomTypeID, stay.CheckIn, stay.CheckOut)
 	if err != nil {
 		return nil, err
 	}
-	var nights []night
-	for rows.Next() {
+	nights, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (night, error) {
 		var n night
-		if err := rows.Scan(&n.date, &n.allotment, &n.sold, &n.stopSell, &n.stopSellReason, &n.minStay, &n.closedToArrival, &n.closedToDeparture); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		nights = append(nights, n)
-	}
-	if err := rows.Err(); err != nil {
+		return n, r.Scan(&n.date, &n.allotment, &n.sold, &n.stopSell, &n.stopSellReason, &n.minStay, &n.closedToArrival, &n.closedToDeparture)
+	})
+	if err != nil {
 		return nil, err
 	}
-	if len(nights) != nightsBetween(checkIn, checkOut) {
+	if len(nights) != stay.Nights() {
 		return nil, ErrNotForSale
 	}
 	return nights, nil
@@ -279,8 +229,7 @@ func countHolds(ctx context.Context, tx pgx.Tx, roomTypeID uuid.UUID, nights []n
 		return err
 	}
 	defer rows.Close()
-	i := 0
-	for rows.Next() {
+	for i := 0; rows.Next(); i++ {
 		var d time.Time
 		var held int
 		if err := rows.Scan(&d, &held); err != nil {
@@ -289,7 +238,6 @@ func countHolds(ctx context.Context, tx pgx.Tx, roomTypeID uuid.UUID, nights []n
 		if i < len(nights) {
 			nights[i].held = held
 		}
-		i++
 	}
 	return rows.Err()
 }
@@ -307,34 +255,25 @@ func checkCapacity(nights []night, rooms int) error {
 	return nil
 }
 
-func validateStay(req HoldRequest, st settings, today time.Time) error {
-	n := nightsBetween(req.CheckIn, req.CheckOut)
+func validateStay(stay domain.Stay, party domain.Party, st settings, today time.Time) error {
+	n := stay.Nights()
 	switch {
 	case n < 1:
 		return invalidStay("Check-out must be after check-in.")
 	case n > st.maxNights:
 		return invalidStay(fmt.Sprintf("You can book up to %d nights online. For longer stays, send us an enquiry.", st.maxNights))
-	case req.CheckIn.Before(today):
+	case stay.CheckIn.Before(today):
 		return invalidStay("Check-in can't be in the past.")
-	case req.Rooms < 1 || req.Rooms > st.maxRooms:
+	case party.Rooms < 1 || party.Rooms > st.maxRooms:
 		return invalidStay(fmt.Sprintf("You can book between 1 and %d rooms online.", st.maxRooms))
-	case req.Adults < 1 || req.Children < 0:
+	case party.Adults < 1 || party.Children < 0:
 		return invalidStay("At least one adult needs to be on the booking.")
 	}
 	return nil
 }
 
-func (s *Service) today(st settings) time.Time {
-	t := s.now().In(st.location)
-	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
-}
-
-func nightsBetween(in, out time.Time) int {
-	return int(out.Sub(in).Hours() / 24)
-}
-
 func newToken() (string, []byte, error) {
-	b := make([]byte, 32)
+	b := make([]byte, holdTokenBytes)
 	if _, err := rand.Read(b); err != nil {
 		return "", nil, err
 	}

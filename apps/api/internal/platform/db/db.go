@@ -14,7 +14,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver for goose
 	"github.com/pressly/goose/v3"
 
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/migrations"
+	"kaapi/api/migrations"
 )
 
 // Connect opens a pool and checks the database answers.

@@ -11,23 +11,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/platform/apperr"
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/pricing"
+	"kaapi/api/internal/platform/apperr"
+	"kaapi/api/internal/pricing"
 )
 
-// Querier is satisfied by both a pool and a transaction.
-type Querier interface {
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-}
-
-type settings struct {
-	location    *time.Location
-	holdMinutes int
-	maxNights   int
-	maxRooms    int
-	slabs       []pricing.Slab
-}
+// istFallback is used if the container has no time zone database.
+var istFallback = time.FixedZone("IST", 5*3600+1800)
 
 func loadSettings(ctx context.Context, q Querier) (settings, error) {
 	var st settings
@@ -39,7 +28,7 @@ func loadSettings(ctx context.Context, q Querier) (settings, error) {
 		return st, fmt.Errorf("load property settings: %w", err)
 	}
 	if st.location, err = time.LoadLocation(tz); err != nil {
-		st.location = time.FixedZone("IST", 5*3600+1800) // tzdata missing on a slim container
+		st.location = istFallback
 	}
 	return st, json.Unmarshal(slabs, &st.slabs)
 }
@@ -58,7 +47,7 @@ func quoteStay(ctx context.Context, q Querier, req HoldRequest, st settings, tod
 	if err != nil {
 		return pricing.Quote{}, nil, err
 	}
-	if n := nightsBetween(req.CheckIn, req.CheckOut); n < planMinNights {
+	if req.Nights() < planMinNights {
 		return pricing.Quote{}, nil, &RestrictionError{Err: ErrMinStay, Date: req.CheckIn, MinStay: planMinNights, Reason: "rate plan minimum"}
 	}
 
@@ -74,7 +63,7 @@ func quoteStay(ctx context.Context, q Querier, req HoldRequest, st settings, tod
 	if err != nil {
 		return pricing.Quote{}, nil, err
 	}
-	if len(nights) != nightsBetween(req.CheckIn, req.CheckOut) {
+	if len(nights) != req.Nights() {
 		return pricing.Quote{}, nil, ErrNotForSale
 	}
 
@@ -85,31 +74,28 @@ func quoteStay(ctx context.Context, q Querier, req HoldRequest, st settings, tod
 		if err != nil {
 			return pricing.Quote{}, nil, err
 		}
-		if err := pricing.Eligible(rule, req.CheckIn, req.CheckOut, today, req.RoomTypeID); err != nil {
+		if err := pricing.Eligible(rule, req.Stay, today, req.RoomTypeID); err != nil {
 			return pricing.Quote{}, nil, &PromoError{Err: err}
 		}
 		promo, promoID = &rule.Promo, &id
 	}
 
-	q2, err := pricing.Price(pricing.Input{Nights: nights, Rooms: req.Rooms, Adults: req.Adults, Children: req.Children,
-		Room: room, Promo: promo, Slabs: st.slabs})
+	quote, err := pricing.Price(pricing.Input{Nights: nights, Party: req.Party, Room: room, Promo: promo, Slabs: st.slabs})
 	if errors.Is(err, pricing.ErrTooManyGuest) {
-		return q2, nil, apperr.Wrap(err, apperr.CodeTooManyGuests, ErrTooManyGuests.Message)
+		return quote, nil, apperr.Wrap(err, apperr.CodeTooManyGuests, ErrTooManyGuests.Message)
 	}
-	return q2, promoID, err
+	return quote, promoID, err
 }
 
 func loadPromo(ctx context.Context, q Querier, code string) (pricing.PromoRule, uuid.UUID, error) {
 	var r pricing.PromoRule
 	var id uuid.UUID
-	var typ string
 	err := q.QueryRow(ctx, `SELECT id, code, type, value, stay_from, stay_to, book_from, book_to, min_nights, max_uses, used_count,
 		coalesce(room_type_ids, '{}'), is_active FROM promo_codes WHERE code = $1`, code).
-		Scan(&id, &r.Code, &typ, &r.Value, &r.StayFrom, &r.StayTo, &r.BookFrom, &r.BookTo, &r.MinNights, &r.MaxUses, &r.UsedCount,
+		Scan(&id, &r.Code, &r.Type, &r.Value, &r.StayFrom, &r.StayTo, &r.BookFrom, &r.BookTo, &r.MinNights, &r.MaxUses, &r.UsedCount,
 			&r.RoomTypeIDs, &r.Active)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, id, &PromoError{Err: errPromoUnknown}
 	}
-	r.Type = pricing.PromoType(typ)
 	return r, id, err
 }

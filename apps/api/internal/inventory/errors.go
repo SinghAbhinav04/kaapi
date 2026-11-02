@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/platform/apperr"
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/pricing"
+	"kaapi/api/internal/domain"
+	"kaapi/api/internal/platform/apperr"
+	"kaapi/api/internal/pricing"
 )
 
 // Sentinels, matched with errors.Is. Their messages are what guests and staff see.
@@ -28,13 +29,13 @@ func invalidStay(msg string) *apperr.Error { return apperr.New(apperr.CodeInvali
 type SoldOutError struct{ Nights []time.Time }
 
 func (e *SoldOutError) Error() string {
-	return "inventory: sold out on " + strings.Join(dates(e.Nights), ", ")
+	return "inventory: sold out on " + strings.Join(domain.FormatDates(e.Nights), ", ")
 }
 
 func (e *SoldOutError) Is(target error) bool { return target == ErrSoldOut }
 
 func (e *SoldOutError) AppError() *apperr.Error {
-	return ErrSoldOut.With(apperr.Details{"nights": dates(e.Nights)})
+	return ErrSoldOut.With(apperr.Details{"nights": domain.FormatDates(e.Nights)})
 }
 
 // Rule names the stay restriction a request broke.
@@ -152,12 +153,4 @@ func (e *PromoError) AppError() *apperr.Error {
 	msg := e.Err.Error()
 	return apperr.Wrap(e, apperr.CodePromoInvalid, strings.ToUpper(msg[:1])+msg[1:]+".").
 		With(apperr.Details{"reason": promoReasonOf[e.Err]})
-}
-
-func dates(ds []time.Time) []string {
-	out := make([]string, len(ds))
-	for i, d := range ds {
-		out[i] = d.Format(time.DateOnly)
-	}
-	return out
 }

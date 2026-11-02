@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/pricing"
+	"kaapi/api/internal/pricing"
 )
 
 // NightRow is one room type's inventory for one night.

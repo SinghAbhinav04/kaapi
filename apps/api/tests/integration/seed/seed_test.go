@@ -2,48 +2,18 @@ package seed_test
 
 import (
 	"context"
-	"os"
+	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/platform/db"
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/seed"
+	"kaapi/api/tests/testdb"
 )
 
-// Runs against a real Postgres: start one with `go run ./cmd/devdb` and set
-// TEST_DATABASE_URL=postgres://kaapi:kaapi@localhost:54329/kaapi?sslmode=disable
-func setup(t *testing.T) (context.Context, *pgxpool.Pool) {
-	t.Helper()
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	t.Cleanup(cancel)
-	if err := db.Migrate(ctx, url); err != nil {
-		t.Fatal(err)
-	}
-	pool, err := db.Connect(ctx, url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
-	fx, err := seed.Load("../../seed/data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := seed.Run(ctx, pool, fx, seed.Options{DemoPassword: "test-only-password", Reset: true}); err != nil {
-		t.Fatal(err)
-	}
-	return ctx, pool
-}
-
 func TestSeededDataMatchesTheDesign(t *testing.T) {
-	ctx, pool := setup(t)
+	ctx, pool := testdb.Seeded(t)
 
 	var enc string
 	if err := pool.QueryRow(ctx, `SHOW server_encoding`).Scan(&enc); err != nil || enc != "UTF8" {
@@ -78,7 +48,7 @@ func TestSeededDataMatchesTheDesign(t *testing.T) {
 }
 
 func TestDatabaseRefusesOversellAndBadTotals(t *testing.T) {
-	ctx, pool := setup(t)
+	ctx, pool := testdb.Seeded(t)
 
 	_, err := pool.Exec(ctx, `UPDATE night_inventory ni SET sold = sold + 1 FROM room_types rt
 		WHERE rt.id = ni.room_type_id AND rt.slug = 'pool-villa' AND ni.date = '2026-12-31'`)
@@ -103,8 +73,8 @@ func assertLeft(t *testing.T, ctx context.Context, pool *pgxpool.Pool, slug, dat
 
 func assertConstraint(t *testing.T, err error, name string) {
 	t.Helper()
-	pgErr, ok := err.(*pgconn.PgError)
-	if !ok || pgErr.ConstraintName != name {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.ConstraintName != name {
 		t.Errorf("want violation of %s, got %v", name, err)
 	}
 }

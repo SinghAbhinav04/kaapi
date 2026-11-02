@@ -1,8 +1,10 @@
-package idgen
+package idgen_test
 
 import (
 	"regexp"
 	"testing"
+
+	"kaapi/api/internal/platform/idgen"
 )
 
 // Same pattern as the CHECK constraint on bookings.ref.
@@ -11,7 +13,7 @@ var refPattern = regexp.MustCompile(`^KS-[2-9A-HJ-NP-Z]{6}$`)
 func TestBookingRefMatchesTheDatabaseRule(t *testing.T) {
 	seen := map[string]bool{}
 	for i := 0; i < 2000; i++ {
-		r := BookingRef()
+		r := idgen.BookingRef()
 		if !refPattern.MatchString(r) {
 			t.Fatalf("%q doesn't match the bookings.ref CHECK", r)
 		}
@@ -23,7 +25,7 @@ func TestBookingRefMatchesTheDatabaseRule(t *testing.T) {
 }
 
 func TestNewIsTimeOrdered(t *testing.T) {
-	a, b := New(), New()
+	a, b := idgen.New(), idgen.New()
 	if a.Version() != 7 || a.String() >= b.String() {
 		t.Fatalf("%s then %s", a, b)
 	}

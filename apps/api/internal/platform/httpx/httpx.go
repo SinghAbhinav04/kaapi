@@ -15,22 +15,8 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/platform/apperr"
+	"kaapi/api/internal/platform/apperr"
 )
-
-// Header names used across the API.
-const (
-	HeaderRequestID   = "X-Request-Id"
-	HeaderContentType = "Content-Type"
-	ContentTypeJSON   = "application/json; charset=utf-8"
-
-	// MaxBodyBytes caps request bodies; enquiries are the largest legitimate payload.
-	MaxBodyBytes = 64 << 10
-)
-
-type ctxKey int
-
-const requestIDKey ctxKey = iota
 
 // RequestID tags every request with an ID (the caller's, if it sent a sane one) and echoes it back.
 func RequestID(next http.Handler) http.Handler {
@@ -74,9 +60,6 @@ func Recover(log *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
-// HandlerFunc is an http.HandlerFunc that returns its error instead of writing it.
-type HandlerFunc func(w http.ResponseWriter, r *http.Request) error
-
 // Handle adapts a HandlerFunc: any returned error goes through WriteError.
 func Handle(log *slog.Logger, fn HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -84,18 +67,6 @@ func Handle(log *slog.Logger, fn HandlerFunc) http.HandlerFunc {
 			WriteError(log, w, r, err)
 		}
 	}
-}
-
-// ErrorBody is the JSON shape of every error response.
-type ErrorBody struct {
-	Error ErrorPayload `json:"error"`
-}
-
-type ErrorPayload struct {
-	Code      apperr.Code    `json:"code"`
-	Message   string         `json:"message"`
-	Details   apperr.Details `json:"details,omitempty"`
-	RequestID string         `json:"request_id,omitempty"`
 }
 
 // WriteError classifies err, logs it at the right level and writes the error envelope.

@@ -5,81 +5,10 @@
 package pricing
 
 import (
-	"errors"
 	"fmt"
 	"time"
-)
 
-// Slab is one GST band. MaxTariffPaise is the per-room, per-night ceiling for the band;
-// nil means "everything above the previous band".
-type Slab struct {
-	MaxTariffPaise *int64 `json:"max_tariff_paise_per_night"`
-	RateBps        int64  `json:"rate_bps"`
-}
-
-// Night is the plan price for one room on one night, before extra guests, discount and GST.
-type Night struct {
-	Date       time.Time
-	PricePaise int64
-}
-
-// Room holds the occupancy rules of a room type.
-type Room struct {
-	BaseOccupancy   int
-	MaxAdults       int
-	MaxChildren     int
-	ExtraAdultPaise int64
-}
-
-type PromoType string
-
-const (
-	PromoPercent PromoType = "PERCENT"
-	PromoFlat    PromoType = "FLAT"
-)
-
-// Promo is a discount that has already passed eligibility checks (see Eligible).
-type Promo struct {
-	Code  string
-	Type  PromoType
-	Value int64 // basis points for PERCENT, paise for FLAT
-}
-
-type Input struct {
-	Nights   []Night
-	Rooms    int
-	Adults   int
-	Children int
-	Room     Room
-	Promo    *Promo
-	Slabs    []Slab
-}
-
-// Line is one night of the quote, for all rooms together.
-type Line struct {
-	Date          time.Time `json:"date"`
-	RoomPaise     int64     `json:"room_paise"`     // plan price × rooms + extra adults
-	DiscountPaise int64     `json:"discount_paise"` // promo share for this night
-	TaxablePaise  int64     `json:"taxable_paise"`
-	GSTRateBps    int64     `json:"gst_rate_bps"`
-	GSTPaise      int64     `json:"gst_paise"`
-	TotalPaise    int64     `json:"total_paise"`
-}
-
-type Quote struct {
-	Lines         []Line `json:"lines"`
-	SubtotalPaise int64  `json:"subtotal_paise"`
-	DiscountPaise int64  `json:"discount_paise"`
-	TaxPaise      int64  `json:"tax_paise"`
-	TotalPaise    int64  `json:"total_paise"`
-	PromoCode     string `json:"promo_code,omitempty"`
-}
-
-var (
-	ErrNoNights     = errors.New("pricing: at least one night is required")
-	ErrNoRooms      = errors.New("pricing: at least one room is required")
-	ErrTooManyGuest = errors.New("pricing: too many guests for the rooms chosen")
-	ErrBadSlabs     = errors.New("pricing: GST slabs must end with an open band")
+	"kaapi/api/internal/domain"
 )
 
 // Price builds the quote.
@@ -104,10 +33,7 @@ func Price(in Input) (Quote, error) {
 		return Quote{}, ErrBadSlabs
 	}
 
-	extraAdults := in.Adults - in.Room.BaseOccupancy*in.Rooms
-	if extraAdults < 0 {
-		extraAdults = 0
-	}
+	extraAdults := max(in.Adults-in.Room.BaseOccupancy*in.Rooms, 0)
 
 	q := Quote{Lines: make([]Line, len(in.Nights))}
 	for i, n := range in.Nights {
@@ -128,7 +54,7 @@ func Price(in Input) (Quote, error) {
 		l := &q.Lines[i]
 		l.TaxablePaise = l.RoomPaise - l.DiscountPaise
 		l.GSTRateBps = rateFor(in.Slabs, divRound(l.TaxablePaise, int64(in.Rooms)))
-		l.GSTPaise = divRound(l.TaxablePaise*l.GSTRateBps, 10_000)
+		l.GSTPaise = divRound(l.TaxablePaise*l.GSTRateBps, bpsWhole)
 		l.TotalPaise = l.TaxablePaise + l.GSTPaise
 		q.DiscountPaise += l.DiscountPaise
 		q.TaxPaise += l.GSTPaise
@@ -139,11 +65,11 @@ func Price(in Input) (Quote, error) {
 
 func applyPromo(lines []Line, subtotal int64, p Promo) {
 	switch p.Type {
-	case PromoPercent:
+	case domain.PromoPercent:
 		for i := range lines {
-			lines[i].DiscountPaise = divRound(lines[i].RoomPaise*p.Value, 10_000)
+			lines[i].DiscountPaise = divRound(lines[i].RoomPaise*p.Value, bpsWhole)
 		}
-	case PromoFlat:
+	case domain.PromoFlat:
 		total := min(p.Value, subtotal)
 		var given int64
 		for i := range lines {
@@ -175,7 +101,7 @@ func divRound(a, b int64) int64 {
 // DerivePlanPrice turns a room-only price into another plan's price:
 // (room only + add-on) less discount, rounded to the nearest roundTo paise.
 func DerivePlanPrice(roomOnlyPaise, addPaise int64, discountBps int64, roundTo int64) int64 {
-	p := divRound((roomOnlyPaise+addPaise)*(10_000-discountBps), 10_000)
+	p := divRound((roomOnlyPaise+addPaise)*(bpsWhole-discountBps), bpsWhole)
 	return RoundTo(p, roundTo)
 }
 

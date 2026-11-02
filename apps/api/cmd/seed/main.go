@@ -11,8 +11,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/platform/db"
-	"github.com/SinghAbhinav04/kaapi-estate/apps/api/internal/seed"
+	"kaapi/api/internal/platform/db"
+	"kaapi/api/internal/seed"
 )
 
 func main() {
