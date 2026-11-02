@@ -2,69 +2,11 @@ package api
 
 import (
 	"net/http"
-	"time"
-
-	"github.com/google/uuid"
 
 	"kaapi/api/internal/auth"
-	"kaapi/api/internal/domain"
 	"kaapi/api/internal/outbox"
 	"kaapi/api/internal/platform/httpx"
 )
-
-type UserDTO struct {
-	ID          uuid.UUID         `json:"id"`
-	Email       string            `json:"email"`
-	Name        string            `json:"name"`
-	Role        domain.Role       `json:"role"`
-	Permissions []auth.Permission `json:"permissions"`
-}
-
-type AuthResponse struct {
-	User UserDTO `json:"user"`
-	// Tokens are only in the body for the native app (X-Client: native); the web app
-	// gets httpOnly cookies that scripts can't read.
-	AccessToken     *string    `json:"access_token,omitempty"`
-	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
-	RefreshToken    *string    `json:"refresh_token,omitempty"`
-}
-
-type StaffLoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-type OTPRequest struct {
-	Email string `json:"email"`
-}
-
-type OTPRequestResponse struct {
-	Sent     bool    `json:"sent"`
-	DemoCode *string `json:"demo_code,omitempty"` // only when DEMO_MODE is on, so reviewers can sign in
-}
-
-type OTPVerifyRequest struct {
-	Email string `json:"email"`
-	Code  string `json:"code"`
-}
-
-type RefreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
-type OutboxMessageDTO struct {
-	ID        uuid.UUID            `json:"id"`
-	Channel   domain.OutboxChannel `json:"channel"`
-	Kind      domain.OutboxKind    `json:"kind"`
-	Recipient string               `json:"recipient"`
-	Subject   *string              `json:"subject"`
-	Body      string               `json:"body"`
-	CreatedAt time.Time            `json:"created_at"`
-}
-
-type OutboxResponse struct {
-	Messages []OutboxMessageDTO `json:"messages"`
-}
 
 func userDTO(u auth.User) UserDTO {
 	return UserDTO{ID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role, Permissions: auth.PermissionsOf(u.Role)}

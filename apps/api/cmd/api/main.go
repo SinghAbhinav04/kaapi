@@ -26,6 +26,11 @@ const (
 	idleTimeout       = 120 * time.Second
 	shutdownGrace     = 20 * time.Second
 	startupTimeout    = 60 * time.Second
+
+	// Unpaid bookings are expired this long after their hold ends; late payments inside
+	// the grace period still go through if the room is free.
+	sweepEvery = time.Minute
+	sweepGrace = 30 * time.Minute
 )
 
 func main() {
@@ -54,9 +59,12 @@ func main() {
 	}
 	defer pool.Close()
 
+	app := api.New(cfg, log, pool, time.Now)
+	go app.SweepBookings(ctx, sweepEvery, sweepGrace)
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(cfg, log, pool, time.Now).Router(),
+		Handler:           app.Router(),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,

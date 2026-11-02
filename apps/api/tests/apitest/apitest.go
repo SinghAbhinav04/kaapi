@@ -121,13 +121,23 @@ func (r Response) Error(t *testing.T) httpx.ErrorPayload {
 // in the contract (deliberate 404/405 probes) are only checked for the error envelope.
 func (s *Server) Do(method, path string, body any, headers map[string]string) Response {
 	s.t.Helper()
-	var buf io.Reader
+	var raw []byte
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
 			s.t.Fatal(err)
 		}
-		buf = bytes.NewReader(b)
+		raw = b
+	}
+	return s.DoRaw(method, path, raw, headers)
+}
+
+// DoRaw sends exact bytes, for signed webhooks where the signature covers the raw body.
+func (s *Server) DoRaw(method, path string, body []byte, headers map[string]string) Response {
+	s.t.Helper()
+	var buf io.Reader
+	if body != nil {
+		buf = bytes.NewReader(body)
 	}
 	req, err := http.NewRequestWithContext(s.Ctx, method, s.URL+path, buf)
 	if err != nil {

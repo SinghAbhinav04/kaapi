@@ -4,6 +4,7 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"kaapi/api/internal/auth"
+	"kaapi/api/internal/booking"
 	"kaapi/api/internal/catalog"
 	"kaapi/api/internal/inventory"
 	"kaapi/api/internal/outbox"
@@ -26,6 +28,7 @@ type API struct {
 	log       *slog.Logger
 	pool      *pgxpool.Pool
 	auth      *auth.Service
+	bookings  *booking.Service
 	catalog   *catalog.Service
 	inventory *inventory.Service
 	outbox    *outbox.Service
@@ -37,6 +40,7 @@ func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() tim
 		log:       log,
 		pool:      pool,
 		auth:      auth.NewService(pool, cfg.JWESecret, now),
+		bookings:  booking.NewService(pool, now),
 		catalog:   catalog.NewService(pool),
 		inventory: inventory.NewService(pool, now),
 		outbox:    outbox.NewService(pool),
@@ -82,11 +86,40 @@ func (a *API) Router() http.Handler {
 		r.Get("/availability", h(a.availability))
 		r.Post("/holds", h(a.createHold))
 		r.Delete("/holds/{id}", h(a.releaseHold))
+		r.Post("/bookings", h(a.createBooking))
+		r.Get("/bookings/{ref}", h(a.getBooking))
+		r.With(a.requirePermission(auth.PermOwnBookingsRead)).Get("/me/bookings", h(a.myBookings))
+
+		// Payments: the mock gateway page, its simulator, and the signed webhook.
+		r.Get("/payments/{orderId}", h(a.paymentPage))
+		r.Post("/payments/{orderId}/simulate", h(a.simulatePayment))
+		r.Post("/payments/webhook", h(a.paymentWebhook))
 
 		// Staff console. Each route names the permission it needs.
 		r.Route("/staff", func(r chi.Router) {
 			r.With(a.requirePermission(auth.PermOutboxRead)).Get("/outbox", h(a.listOutbox))
+			r.With(a.requirePermission(auth.PermBookingsRead)).Get("/bookings", h(a.staffBookings))
+			r.With(a.requirePermission(auth.PermBookingsExport)).Get("/bookings/export", h(a.exportBookings))
 		})
 	})
 	return r
+}
+
+// SweepBookings expires unpaid bookings in the background. Holds stop counting the moment
+// they expire regardless; this only tidies statuses for staff screens.
+func (a *API) SweepBookings(ctx context.Context, every, grace time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if n, err := a.bookings.Sweep(ctx, grace); err != nil {
+				a.log.Error("booking sweep failed", "err", err)
+			} else if n > 0 {
+				a.log.Info("expired unpaid bookings", "count", n)
+			}
+		}
+	}
 }

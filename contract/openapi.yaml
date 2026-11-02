@@ -20,6 +20,7 @@ tags:
   - name: booking
   - name: auth
   - name: staff
+  - name: payments
 
 paths:
   /healthz:
@@ -208,12 +209,129 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
 
+  /v1/bookings:
+    post:
+      tags: [booking]
+      summary: Turn a hold into a booking awaiting payment.
+      description: Submitting twice for the same hold returns the same booking. The price is the hold's frozen quote.
+      parameters:
+        - { name: X-Hold-Token, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateBookingRequest" } } }
+      responses:
+        "201":
+          description: Created
+          content: { application/json: { schema: { $ref: "#/components/schemas/BookingResponse" } } }
+        "404": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/bookings/{ref}:
+    get:
+      tags: [booking]
+      summary: One booking, for the browser that made it (X-Hold-Token), its signed-in guest, or staff.
+      parameters:
+        - { name: ref, in: path, required: true, schema: { type: string, example: KS-7Q3M9X } }
+        - { name: X-Hold-Token, in: header, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/BookingResponse" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/me/bookings:
+    get:
+      tags: [booking]
+      summary: A signed-in guest's bookings.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/BookingsResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/payments/{orderId}:
+    get:
+      tags: [payments]
+      summary: What the mock payment page shows.
+      parameters: [{ $ref: "#/components/parameters/OrderID" }]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/PaymentPage" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/payments/{orderId}/simulate:
+    post:
+      tags: [payments]
+      summary: Mock gateway. Signs a webhook event for the chosen outcome and delivers it.
+      parameters: [{ $ref: "#/components/parameters/OrderID" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SimulatePaymentRequest" } } }
+      responses:
+        "200":
+          description: Processed
+          content: { application/json: { schema: { $ref: "#/components/schemas/PaymentPage" } } }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/payments/webhook:
+    post:
+      tags: [payments]
+      summary: Provider webhook, signed with HMAC-SHA256 in X-Mock-Signature. Idempotent by event id.
+      parameters:
+        - { name: X-Mock-Signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PaymentEvent" } } }
+      responses:
+        "200":
+          description: Received
+          content: { application/json: { schema: { type: object, required: [received], properties: { received: { type: boolean } } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/staff/bookings:
+    get:
+      tags: [staff]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: from, in: query, description: Check-in on or after., schema: { type: string, format: date } }
+        - { name: to, in: query, description: Check-in before., schema: { type: string, format: date } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/BookingsResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/staff/bookings/export:
+    get:
+      tags: [staff]
+      summary: Bookings confirmed or cancelled on a day (IST), as CSV for the reservation system.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: date, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: CSV, one row per booking.
+          content: { text/csv: { schema: { type: string } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     cookieAuth: { type: apiKey, in: cookie, name: kaapi_at, description: "Web. In production the cookie is __Host-kaapi_at." }
     bearerAuth: { type: http, scheme: bearer, description: "Native app. Encrypted JWE access token, valid 15 minutes." }
 
   parameters:
+    OrderID:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string, pattern: "^order_[0-9a-f]+$" }
     XClient:
       name: X-Client
       in: header
@@ -514,3 +632,110 @@ components:
       type: object
       required: [messages]
       properties: { messages: { type: array, items: { $ref: "#/components/schemas/OutboxMessage" } } }
+
+    Guest:
+      type: object
+      required: [name, email, phone, country]
+      properties:
+        name: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        country: { type: string, description: ISO 3166 alpha-2. }
+
+    CreateBookingRequest:
+      type: object
+      required: [hold_id, guest, consent]
+      additionalProperties: false
+      properties:
+        hold_id: { type: string, format: uuid }
+        guest: { $ref: "#/components/schemas/Guest" }
+        arrival_window: { type: string }
+        special_requests: { type: string, maxLength: 1000 }
+        consent: { type: boolean, description: "DPDP consent to use these details for the booking. Must be true." }
+        marketing_opt_in: { type: boolean }
+
+    Payment:
+      type: object
+      required: [order_id, status, amount_paise, failure_reason]
+      properties:
+        order_id: { type: string }
+        status: { type: string, enum: [CREATED, CAPTURED, FAILED, REFUND_PENDING, REFUNDED] }
+        amount_paise: { $ref: "#/components/schemas/Paise" }
+        failure_reason: { type: string, nullable: true }
+
+    BookingStatus:
+      type: string
+      enum: [PENDING_PAYMENT, CONFIRMED, PAYMENT_FAILED, EXPIRED, CANCELLED, REFUND_PENDING, REFUNDED]
+
+    Booking:
+      type: object
+      required: [ref, status, room, plan, stay, rooms, adults, children, guest, arrival_window, special_requests, quote,
+        hold_expires_at, created_at, confirmed_at, payment]
+      properties:
+        ref: { type: string }
+        status: { $ref: "#/components/schemas/BookingStatus" }
+        room:
+          type: object
+          required: [id, slug, name]
+          properties: { id: { type: string, format: uuid }, slug: { type: string }, name: { type: string } }
+        plan:
+          type: object
+          required: [name, refundable]
+          properties: { name: { type: string }, refundable: { type: boolean } }
+        stay: { $ref: "#/components/schemas/Stay" }
+        rooms: { type: integer }
+        adults: { type: integer }
+        children: { type: integer }
+        guest: { $ref: "#/components/schemas/Guest" }
+        arrival_window: { type: string, nullable: true }
+        special_requests: { type: string, nullable: true }
+        quote: { $ref: "#/components/schemas/Quote" }
+        hold_expires_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        confirmed_at: { type: string, format: date-time, nullable: true }
+        payment:
+          allOf: [{ $ref: "#/components/schemas/Payment" }]
+          nullable: true
+
+    BookingResponse:
+      type: object
+      required: [booking]
+      properties: { booking: { $ref: "#/components/schemas/Booking" } }
+
+    BookingsResponse:
+      type: object
+      required: [bookings]
+      properties: { bookings: { type: array, items: { $ref: "#/components/schemas/Booking" } } }
+
+    PaymentPage:
+      type: object
+      required: [order_id, amount_paise, status, failure_reason, booking_ref, booking_status, room_name, plan_name, stay, hold_expires_at]
+      properties:
+        order_id: { type: string }
+        amount_paise: { $ref: "#/components/schemas/Paise" }
+        status: { type: string }
+        failure_reason: { type: string, nullable: true }
+        booking_ref: { type: string }
+        booking_status: { $ref: "#/components/schemas/BookingStatus" }
+        room_name: { type: string }
+        plan_name: { type: string }
+        stay: { $ref: "#/components/schemas/Stay" }
+        hold_expires_at: { type: string, format: date-time, nullable: true }
+
+    SimulatePaymentRequest:
+      type: object
+      required: [outcome]
+      properties: { outcome: { type: string, enum: [SUCCESS, FAILURE] } }
+
+    PaymentEvent:
+      type: object
+      required: [id, type, provider, order_id, payment_id, amount_paise, created_at]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [payment.captured, payment.failed] }
+        provider: { type: string }
+        order_id: { type: string }
+        payment_id: { type: string }
+        amount_paise: { $ref: "#/components/schemas/Paise" }
+        failure_reason: { type: string }
+        created_at: { type: string, format: date-time }

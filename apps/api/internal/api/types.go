@@ -5,9 +5,12 @@ import (
 
 	"github.com/google/uuid"
 
+	"kaapi/api/internal/auth"
+	"kaapi/api/internal/booking"
 	"kaapi/api/internal/catalog"
 	"kaapi/api/internal/domain"
 	"kaapi/api/internal/inventory"
+	"kaapi/api/internal/payment"
 	"kaapi/api/internal/pricing"
 )
 
@@ -167,6 +170,143 @@ type PropertyResponse struct {
 	Facts        []FactDTO `json:"facts"`
 }
 
+// ---- auth
+
+type UserDTO struct {
+	ID          uuid.UUID         `json:"id"`
+	Email       string            `json:"email"`
+	Name        string            `json:"name"`
+	Role        domain.Role       `json:"role"`
+	Permissions []auth.Permission `json:"permissions"`
+}
+
+type AuthResponse struct {
+	User UserDTO `json:"user"`
+	// Tokens are only in the body for the native app (X-Client: native); the web app
+	// gets httpOnly cookies that scripts can't read.
+	AccessToken     *string    `json:"access_token,omitempty"`
+	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
+	RefreshToken    *string    `json:"refresh_token,omitempty"`
+}
+
+type StaffLoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type OTPRequest struct {
+	Email string `json:"email"`
+}
+
+type OTPRequestResponse struct {
+	Sent     bool    `json:"sent"`
+	DemoCode *string `json:"demo_code,omitempty"` // only when DEMO_MODE is on, so reviewers can sign in
+}
+
+type OTPVerifyRequest struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+type OutboxMessageDTO struct {
+	ID        uuid.UUID            `json:"id"`
+	Channel   domain.OutboxChannel `json:"channel"`
+	Kind      domain.OutboxKind    `json:"kind"`
+	Recipient string               `json:"recipient"`
+	Subject   *string              `json:"subject"`
+	Body      string               `json:"body"`
+	CreatedAt time.Time            `json:"created_at"`
+}
+
+type OutboxResponse struct {
+	Messages []OutboxMessageDTO `json:"messages"`
+}
+
+// ---- bookings and payments
+
+type GuestDTO struct {
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	Phone   string `json:"phone"`
+	Country string `json:"country"`
+}
+
+type CreateBookingRequest struct {
+	HoldID          uuid.UUID `json:"hold_id"`
+	Guest           GuestDTO  `json:"guest"`
+	ArrivalWindow   string    `json:"arrival_window"`
+	SpecialRequests string    `json:"special_requests"`
+	Consent         bool      `json:"consent"`
+	MarketingOptIn  bool      `json:"marketing_opt_in"`
+}
+
+type RoomRefDTO struct {
+	ID   uuid.UUID `json:"id"`
+	Slug string    `json:"slug"`
+	Name string    `json:"name"`
+}
+
+type PlanRefDTO struct {
+	Name       string `json:"name"`
+	Refundable bool   `json:"refundable"`
+}
+
+type PaymentDTO struct {
+	OrderID       string               `json:"order_id"`
+	Status        domain.PaymentStatus `json:"status"`
+	AmountPaise   int64                `json:"amount_paise"`
+	FailureReason *string              `json:"failure_reason"`
+}
+
+type BookingDTO struct {
+	Ref             string               `json:"ref"`
+	Status          domain.BookingStatus `json:"status"`
+	Room            RoomRefDTO           `json:"room"`
+	Plan            PlanRefDTO           `json:"plan"`
+	Stay            StayDTO              `json:"stay"`
+	Rooms           int                  `json:"rooms"`
+	Adults          int                  `json:"adults"`
+	Children        int                  `json:"children"`
+	Guest           GuestDTO             `json:"guest"`
+	ArrivalWindow   *string              `json:"arrival_window"`
+	SpecialRequests *string              `json:"special_requests"`
+	Quote           QuoteDTO             `json:"quote"`
+	HoldExpiresAt   *time.Time           `json:"hold_expires_at"`
+	CreatedAt       time.Time            `json:"created_at"`
+	ConfirmedAt     *time.Time           `json:"confirmed_at"`
+	Payment         *PaymentDTO          `json:"payment"`
+}
+
+type BookingResponse struct {
+	Booking BookingDTO `json:"booking"`
+}
+
+type BookingsResponse struct {
+	Bookings []BookingDTO `json:"bookings"`
+}
+
+// PaymentPageDTO is what the mock gateway page needs: no guest contact details.
+type PaymentPageDTO struct {
+	OrderID       string               `json:"order_id"`
+	AmountPaise   int64                `json:"amount_paise"`
+	Status        domain.PaymentStatus `json:"status"`
+	FailureReason *string              `json:"failure_reason"`
+	BookingRef    string               `json:"booking_ref"`
+	BookingStatus domain.BookingStatus `json:"booking_status"`
+	RoomName      string               `json:"room_name"`
+	PlanName      string               `json:"plan_name"`
+	Stay          StayDTO              `json:"stay"`
+	HoldExpiresAt *time.Time           `json:"hold_expires_at"`
+}
+
+type SimulatePaymentRequest struct {
+	Outcome payment.Outcome `json:"outcome"`
+}
+
 // ---- mappers
 
 func date(t time.Time) string { return t.Format(time.DateOnly) }
@@ -231,4 +371,27 @@ func nonNil[T any](s []T) []T {
 		return []T{}
 	}
 	return s
+}
+
+func bookingDTO(b booking.Booking) BookingDTO {
+	out := BookingDTO{Ref: b.Ref, Status: b.Status, Room: RoomRefDTO{ID: b.RoomTypeID, Slug: b.RoomTypeSlug, Name: b.RoomTypeName},
+		Plan: PlanRefDTO{Name: b.RatePlanName, Refundable: b.Refundable}, Stay: stayDTO(b.Stay), Rooms: b.Rooms,
+		Adults: b.Adults, Children: b.Children,
+		Guest:         GuestDTO{Name: b.Guest.Name, Email: b.Guest.Email, Phone: b.Guest.Phone, Country: b.Guest.Country},
+		ArrivalWindow: b.ArrivalWindow, SpecialRequests: b.SpecialRequests, Quote: quoteDTO(b.Quote),
+		HoldExpiresAt: b.HoldExpiresAt, CreatedAt: b.CreatedAt, ConfirmedAt: b.ConfirmedAt}
+	if b.Payment != nil {
+		out.Payment = &PaymentDTO{OrderID: b.Payment.OrderID, Status: b.Payment.Status, AmountPaise: b.Payment.AmountPaise,
+			FailureReason: b.Payment.FailureReason}
+	}
+	return out
+}
+
+func paymentPageDTO(b booking.Booking) PaymentPageDTO {
+	out := PaymentPageDTO{BookingRef: b.Ref, BookingStatus: b.Status, RoomName: b.RoomTypeName, PlanName: b.RatePlanName,
+		Stay: stayDTO(b.Stay), HoldExpiresAt: b.HoldExpiresAt}
+	if b.Payment != nil {
+		out.OrderID, out.AmountPaise, out.Status, out.FailureReason = b.Payment.OrderID, b.Payment.AmountPaise, b.Payment.Status, b.Payment.FailureReason
+	}
+	return out
 }
