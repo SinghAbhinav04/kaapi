@@ -52,7 +52,7 @@ Share your dates and group size and we'll send a proposal. You can also reach {{
 
 Thank you for telling us, and I'm sorry. This isn't the stay we want for any guest.
 
-Our General Manager has your message and will personally follow up with you within the day.
+I'm looking into this personally and will get back to you within the day with what we'll do to put it right.
 
 {{SIGNATURE}}`,
 	domain.CategoryOther: `Hi {{GUEST_NAME}},
@@ -92,7 +92,7 @@ func (s *Service) writeProse(ctx context.Context, q querier, message, senderName
 			return prose{}, err
 		}
 		text, derr := s.provider.Draft(ctx, ai.DraftInput{Message: ai.Redact(message, senderName), Category: category,
-			Extracted: ex, Facts: facts, StaffName: staff.Name, Today: s.today()})
+			Extracted: ex, Facts: facts, StaffName: staffLabel(staff), Today: s.today()})
 		if derr == nil {
 			p.template, p.flag = ai.Guard(text)
 		} else if errors.Is(derr, context.Canceled) {
@@ -267,6 +267,14 @@ func signature(st Staff) string {
 		return st.Name + "\nKaapi Estate"
 	}
 	return fmt.Sprintf("%s\n%s, Kaapi Estate", firstName(st.Name), roleTitle[st.Role])
+}
+
+// staffLabel tells the model who it writes as, e.g. "Anitha Gowda (General Manager)".
+func staffLabel(st Staff) string {
+	if title, ok := roleTitle[st.Role]; ok {
+		return st.Name + " (" + title + ")"
+	}
+	return st.Name
 }
 
 func greetingName(sender string) string {

@@ -42,16 +42,19 @@ type API struct {
 func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() time.Time) *API {
 	inv := inventory.NewService(pool, now)
 	var provider ai.Provider // nil: keyword rules and template drafts only
-	if cfg.AI.Enabled() {
-		ctx, cancel := context.WithTimeout(context.Background(), aiDiscoveryTimeout)
-		chain, warnings := ai.Build(ctx, AIOptions(cfg.AI))
-		cancel()
-		for _, w := range warnings {
-			log.Warn("ai", "warning", w)
-		}
-		if chain != nil {
-			provider = chain
-			log.Info("ai chain ready", "models", chain.Models())
+	opts := AIOptions(cfg.AI)
+	if chain := ai.Start(opts); chain != nil {
+		provider = chain
+		log.Info("ai chain ready", "models", chain.Models())
+		if ai.NeedsDiscovery(opts) { // fill in every model the keys allow, without delaying start-up
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), aiDiscoveryTimeout)
+				defer cancel()
+				for _, w := range chain.Refresh(ctx, opts) {
+					log.Warn("ai", "warning", w)
+				}
+				log.Info("ai models discovered", "models", chain.Models())
+			}()
 		}
 	}
 	return &API{
@@ -164,8 +167,8 @@ func (a *API) SweepBookings(ctx context.Context, every, grace time.Duration) {
 	}
 }
 
-// aiDiscoveryTimeout bounds the start-up call that lists the models each key can use.
-const aiDiscoveryTimeout = 10 * time.Second
+// aiDiscoveryTimeout bounds the background call that lists the models each key can use.
+const aiDiscoveryTimeout = time.Minute
 
 // AIOptions maps config onto the chain's options.
 func AIOptions(c config.AI) ai.Options {

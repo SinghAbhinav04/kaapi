@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -12,8 +13,10 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
+	"github.com/jackc/pgx/v5"
 )
 
 func main() {
@@ -38,10 +41,22 @@ func main() {
 		Logger(os.Stderr)
 
 	pg := embeddedpostgres.NewDatabase(cfg)
+	url := fmt.Sprintf("postgres://kaapi:kaapi@localhost:%d/kaapi?sslmode=disable", *port)
 	if err := pg.Start(); err != nil {
+		// Already running (e.g. from an earlier session)? Then just make sure the test database exists.
+		if ensureDatabase(url, testDatabase) == nil {
+			fmt.Printf("Postgres is already running on port %d; the %s database is ready.\n", *port, testDatabase)
+			return
+		}
 		log.Fatalf("start postgres: %v", err)
 	}
-	fmt.Printf("\nPostgres 17 is running.\nDATABASE_URL=postgres://kaapi:kaapi@localhost:%d/kaapi?sslmode=disable\nPress Ctrl+C to stop.\n", *port)
+	// Tests get their own database: they wipe and reseed it, so they must never share the
+	// one a running dev server is using.
+	if err := ensureDatabase(url, testDatabase); err != nil {
+		log.Printf("could not create the test database: %v", err)
+	}
+	fmt.Printf("\nPostgres 17 is running.\nDATABASE_URL=%s\nTEST_DATABASE_URL=postgres://kaapi:kaapi@localhost:%d/%s?sslmode=disable\nPress Ctrl+C to stop.\n",
+		url, *port, testDatabase)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -49,4 +64,22 @@ func main() {
 	if err := pg.Stop(); err != nil {
 		log.Fatalf("stop postgres: %v", err)
 	}
+}
+
+const testDatabase = "kaapi_test"
+
+func ensureDatabase(url, name string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := pgx.Connect(ctx, url)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+	var exists bool
+	if err := conn.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, name).Scan(&exists); err != nil || exists {
+		return err
+	}
+	_, err = conn.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{name}.Sanitize()+" TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C'")
+	return err
 }

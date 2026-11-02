@@ -72,7 +72,7 @@ const (
 
 // Tuning. The unsorted threshold is chosen from the evaluation report (cmd/eval).
 const (
-	PromptVersion      = "2026-11-03.1"
+	PromptVersion      = "2026-11-03.2"
 	UnsortedBelow      = 0.6
 	maxMessageRunes    = 4000
 	maxGuests          = 2000

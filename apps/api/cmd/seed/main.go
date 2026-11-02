@@ -11,11 +11,15 @@ import (
 	"os"
 	"time"
 
+	"kaapi/api/internal/platform/config"
 	"kaapi/api/internal/platform/db"
 	"kaapi/api/internal/seed"
 )
 
 func main() {
+	if err := config.LoadDotEnv(config.DotEnvFile); err != nil { // local development only
+		log.Fatal(err)
+	}
 	dir := flag.String("data", "seed/data", "fixture folder")
 	reset := flag.Bool("reset", false, "wipe existing data before seeding")
 	flag.Parse()

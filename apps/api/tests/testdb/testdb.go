@@ -1,7 +1,8 @@
 // Package testdb gives integration tests a freshly migrated and seeded database.
 //
 // Start one with `go run ./cmd/devdb`, then run tests with
-// TEST_DATABASE_URL=postgres://kaapi:kaapi@localhost:54329/kaapi?sslmode=disable
+// TEST_DATABASE_URL=postgres://kaapi:kaapi@localhost:54329/kaapi_test?sslmode=disable
+// (devdb creates kaapi_test so tests never wipe the database a dev server is using).
 // Tests are skipped when the variable is not set.
 package testdb
 

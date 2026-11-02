@@ -39,22 +39,64 @@ var (
 	groqSkipRe   = regexp.MustCompile(`guard|safeguard|whisper|orpheus|tts`)
 )
 
-// Build assembles the chain: fast Gemini models, then Gemini Pro, then Groq. It returns
-// nil when no key is configured, and the problems it worked around (for the log).
+// Build assembles the chain, listing models first: fast Gemini models, then Gemini Pro,
+// then Groq. It returns nil when no key is configured, and the problems it worked around.
+// It blocks on the providers' model lists, so the API uses Start and Refresh instead.
 func Build(ctx context.Context, o Options) (*Chain, []string) {
+	tiers, warnings := tiersFor(ctx, o, true)
+	c := NewChain(tiers...)
+	if c.Empty() {
+		return nil, warnings
+	}
+	return c, warnings
+}
+
+// Start returns a chain at once, without network calls: configured model lists, or a
+// short default list where discovery is needed. Refresh then fills in the full list, so
+// a slow provider never delays start-up.
+func Start(o Options) *Chain {
+	tiers, _ := tiersFor(context.Background(), o, false)
+	c := NewChain(tiers...)
+	if c.Empty() {
+		return nil
+	}
+	return c
+}
+
+// NeedsDiscovery reports whether any provider's model list has to be fetched.
+func NeedsDiscovery(o Options) bool {
+	return (o.GeminiKey != "" && len(o.GeminiModels) == 0) || (o.GroqKey != "" && len(o.GroqModels) == 0)
+}
+
+// Refresh lists the models each key can use and swaps them in. Models that can't be
+// listed keep the defaults.
+func (c *Chain) Refresh(ctx context.Context, o Options) []string {
+	tiers, warnings := tiersFor(ctx, o, true)
+	c.setTiers(tiers)
+	return warnings
+}
+
+func tiersFor(ctx context.Context, o Options, discover bool) ([]Tier, []string) {
 	var warnings []string
+	names := func(provider string, configured, fallback []string, list func() ([]string, error)) []string {
+		if len(configured) > 0 {
+			return configured
+		}
+		if !discover {
+			return fallback
+		}
+		listed, err := list()
+		if err != nil || len(listed) == 0 {
+			warnings = append(warnings, fmt.Sprintf("listing %s models failed (%v); using %v", provider, err, fallback))
+			return fallback
+		}
+		return listed
+	}
 	var fast, pro, groq []Provider
 	if o.GeminiKey != "" {
-		names := o.GeminiModels
-		if len(names) == 0 {
-			listed, err := listGemini(ctx, o.GeminiKey, o.GeminiBaseURL)
-			if err != nil || len(listed) == 0 {
-				warnings = append(warnings, fmt.Sprintf("listing Gemini models failed (%v); using %v", err, defaultGeminiModels))
-				listed = defaultGeminiModels
-			}
-			names = listed
-		}
-		for _, n := range names {
+		for _, n := range names("Gemini", o.GeminiModels, defaultGeminiModels, func() ([]string, error) {
+			return listGemini(ctx, o.GeminiKey, o.GeminiBaseURL)
+		}) {
 			p := NewGemini(o.GeminiKey, n, o.GeminiBaseURL)
 			if geminiProRe.MatchString(n) {
 				pro = append(pro, p)
@@ -64,28 +106,17 @@ func Build(ctx context.Context, o Options) (*Chain, []string) {
 		}
 	}
 	if o.GroqKey != "" {
-		names := o.GroqModels
-		if len(names) == 0 {
-			listed, err := listGroq(ctx, o.GroqKey, o.GroqBaseURL)
-			if err != nil || len(listed) == 0 {
-				warnings = append(warnings, fmt.Sprintf("listing Groq models failed (%v); using %v", err, defaultGroqModels))
-				listed = defaultGroqModels
-			}
-			names = listed
-		}
-		for _, n := range names {
+		for _, n := range names("Groq", o.GroqModels, defaultGroqModels, func() ([]string, error) {
+			return listGroq(ctx, o.GroqKey, o.GroqBaseURL)
+		}) {
 			groq = append(groq, NewGroq(o.GroqKey, n, o.GroqBaseURL))
 		}
 	}
-	c := NewChain(
-		Tier{Name: "gemini", Providers: fast, RPM: o.GeminiRPM},
-		Tier{Name: "gemini-pro", Providers: pro, RPM: o.GeminiRPM},
-		Tier{Name: "groq", Providers: groq, RPM: o.GroqRPM},
-	)
-	if c.Empty() {
-		return nil, warnings
-	}
-	return c, warnings
+	return []Tier{
+		{Name: "gemini", Providers: fast, RPM: o.GeminiRPM},
+		{Name: "gemini-pro", Providers: pro, RPM: o.GeminiRPM},
+		{Name: "groq", Providers: groq, RPM: o.GroqRPM},
+	}, warnings
 }
 
 // listGemini returns the text models this key can call, newest first.

@@ -42,6 +42,13 @@ const maxWait = 20 * time.Second
 
 func NewChain(tiers ...Tier) *Chain {
 	c := &Chain{now: time.Now}
+	c.setTiers(tiers)
+	return c
+}
+
+// setTiers replaces the models (after discovery). Calls already running finish on the old set.
+func (c *Chain) setTiers(tiers []Tier) {
+	var built [][]*member
 	for _, t := range tiers {
 		if len(t.Providers) == 0 {
 			continue
@@ -54,17 +61,24 @@ func NewChain(tiers ...Tier) *Chain {
 		for i, p := range t.Providers {
 			ms[i] = &member{p: p, gap: gap}
 		}
-		c.tiers = append(c.tiers, ms)
-		c.cursor = append(c.cursor, 0)
+		built = append(built, ms)
 	}
-	return c
+	c.mu.Lock()
+	c.tiers, c.cursor = built, make([]int, len(built))
+	c.mu.Unlock()
 }
 
 // Empty reports whether the chain has no models at all.
-func (c *Chain) Empty() bool { return len(c.tiers) == 0 }
+func (c *Chain) Empty() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.tiers) == 0
+}
 
 // Models lists every model in calling order, for logs and the dashboard.
 func (c *Chain) Models() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	var out []string
 	for _, t := range c.tiers {
 		for _, m := range t {
