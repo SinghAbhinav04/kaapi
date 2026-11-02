@@ -1,0 +1,32 @@
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# node / next
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+coverage/
+playwright-report/
+test-results/
+
+# go
+apps/api/bin/
+*.exe
+*.test
+*.out
+
+# capacitor
+apps/web/android/app/build/
+apps/web/android/.gradle/
+apps/web/ios/App/Pods/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
