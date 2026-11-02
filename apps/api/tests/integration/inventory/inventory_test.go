@@ -342,7 +342,7 @@ func TestAllotmentCannotDropBelowSoldOrHeld(t *testing.T) {
 	}
 	check := func(from, to string, n int) error {
 		return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-			return inventory.CheckAllotment(ctx, tx, cv.room, domain.Stay{CheckIn: day(from), CheckOut: day(to)}, n)
+			return inventory.CheckAllotment(ctx, tx, cv.room, domain.Stay{CheckIn: day(from), CheckOut: day(to)}, n, nil)
 		})
 	}
 	var ae *inventory.AllotmentError

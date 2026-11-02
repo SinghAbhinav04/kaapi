@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"kaapi/api/internal/admin"
 	"kaapi/api/internal/auth"
 	"kaapi/api/internal/booking"
 	"kaapi/api/internal/catalog"
@@ -27,6 +28,7 @@ type API struct {
 	cfg       config.Config
 	log       *slog.Logger
 	pool      *pgxpool.Pool
+	admin     *admin.Service
 	auth      *auth.Service
 	bookings  *booking.Service
 	catalog   *catalog.Service
@@ -39,6 +41,7 @@ func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() tim
 		cfg:       cfg,
 		log:       log,
 		pool:      pool,
+		admin:     admin.NewService(pool),
 		auth:      auth.NewService(pool, cfg.JWESecret, now),
 		bookings:  booking.NewService(pool, now),
 		catalog:   catalog.NewService(pool),
@@ -100,6 +103,8 @@ func (a *API) Router() http.Handler {
 			r.With(a.requirePermission(auth.PermOutboxRead)).Get("/outbox", h(a.listOutbox))
 			r.With(a.requirePermission(auth.PermBookingsRead)).Get("/bookings", h(a.staffBookings))
 			r.With(a.requirePermission(auth.PermBookingsExport)).Get("/bookings/export", h(a.exportBookings))
+			r.With(a.requirePermission(auth.PermRatesRead)).Get("/rates", h(a.ratesGrid))
+			r.With(a.requirePermission(auth.PermRatesRead)).Put("/rates", h(a.updateRates)) // the handler checks write permissions per field
 		})
 	})
 	return r

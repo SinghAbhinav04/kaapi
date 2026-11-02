@@ -195,9 +195,17 @@ func (s *Service) Alternatives(ctx context.Context, roomTypeID uuid.UUID, checkI
 	return out, nil
 }
 
+// LockNights locks a range of nights for a writer outside this package (rate edits), in
+// the same date order every other writer uses, so it can't deadlock with a booking.
+func LockNights(ctx context.Context, tx pgx.Tx, roomTypeID uuid.UUID, nights domain.Stay) error {
+	_, err := lockNights(ctx, tx, roomTypeID, nights)
+	return err
+}
+
 // CheckAllotment refuses an allotment below what is already sold or held on any night in
-// the range, inside the caller's transaction (the rows are locked first, like every writer).
-func CheckAllotment(ctx context.Context, tx pgx.Tx, roomTypeID uuid.UUID, nights domain.Stay, newAllotment int) error {
+// the range that applies (nil applies = every night), inside the caller's transaction.
+// The rows are locked first, like every writer.
+func CheckAllotment(ctx context.Context, tx pgx.Tx, roomTypeID uuid.UUID, nights domain.Stay, newAllotment int, applies func(time.Time) bool) error {
 	locked, err := lockNights(ctx, tx, roomTypeID, nights)
 	if err != nil {
 		return err
@@ -206,6 +214,9 @@ func CheckAllotment(ctx context.Context, tx pgx.Tx, roomTypeID uuid.UUID, nights
 		return err
 	}
 	for _, n := range locked {
+		if applies != nil && !applies(n.date) {
+			continue
+		}
 		if n.sold+n.held > newAllotment {
 			return &AllotmentError{Date: n.date, Sold: n.sold, Held: n.held, RequestedTo: newAllotment}
 		}

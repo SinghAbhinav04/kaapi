@@ -321,6 +321,43 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
+  /v1/staff/rates:
+    get:
+      tags: [staff]
+      summary: Prices and allotment for every room type across a range of nights.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, description: Exclusive. At most 62 nights after from., schema: { type: string, format: date } }
+        - { name: plan, in: query, schema: { type: string, default: RO-FLEX } }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/RatesGridResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [staff]
+      summary: Bulk-edit a room type's nights. Fields left out stay as they are.
+      description: |
+        The room-only price drives every other plan (breakfast adds a fixed amount; non-refundable takes a discount).
+        Allotment can't go below rooms already sold or on hold (`ALLOTMENT_TOO_LOW`). Every edit is audit-logged.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UpdateRatesRequest" } } }
+      responses:
+        "200":
+          description: Saved
+          content: { application/json: { schema: { $ref: "#/components/schemas/UpdateRatesResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     cookieAuth: { type: apiKey, in: cookie, name: kaapi_at, description: "Web. In production the cookie is __Host-kaapi_at." }
@@ -739,3 +776,57 @@ components:
         amount_paise: { $ref: "#/components/schemas/Paise" }
         failure_reason: { type: string }
         created_at: { type: string, format: date-time }
+
+    RateNight:
+      type: object
+      required: [date, price_paise, allotment, sold, held, left, stop_sell, stop_sell_reason, min_stay, no_arrival]
+      properties:
+        date: { $ref: "#/components/schemas/Date" }
+        price_paise: { $ref: "#/components/schemas/Paise" }
+        allotment: { type: integer }
+        sold: { type: integer }
+        held: { type: integer }
+        left: { type: integer }
+        stop_sell: { type: boolean }
+        stop_sell_reason: { type: string, nullable: true }
+        min_stay: { type: integer }
+        no_arrival: { type: boolean }
+
+    RateRow:
+      type: object
+      required: [room_type_id, slug, name, total_keys, nights]
+      properties:
+        room_type_id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        total_keys: { type: integer }
+        nights: { type: array, items: { $ref: "#/components/schemas/RateNight" } }
+
+    RatesGridResponse:
+      type: object
+      required: [plan, stay, rows]
+      properties:
+        plan: { type: string }
+        stay: { $ref: "#/components/schemas/Stay" }
+        rows: { type: array, items: { $ref: "#/components/schemas/RateRow" } }
+
+    UpdateRatesRequest:
+      type: object
+      required: [room_type_id, from, to]
+      additionalProperties: false
+      properties:
+        room_type_id: { type: string, format: uuid }
+        from: { $ref: "#/components/schemas/Date" }
+        to: { $ref: "#/components/schemas/Date" }
+        weekdays: { type: array, items: { type: string, enum: [MON, TUE, WED, THU, FRI, SAT, SUN] } }
+        room_only_price_paise: { type: integer, format: int64, minimum: 1 }
+        allotment: { type: integer, minimum: 0 }
+        stop_sell: { type: boolean }
+        stop_sell_reason: { type: string, maxLength: 120 }
+        min_stay: { type: integer, minimum: 1, maximum: 14 }
+        no_arrival: { type: boolean }
+
+    UpdateRatesResponse:
+      type: object
+      required: [nights_changed]
+      properties: { nights_changed: { type: integer } }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"kaapi/api/internal/admin"
 	"kaapi/api/internal/auth"
 	"kaapi/api/internal/booking"
 	"kaapi/api/internal/catalog"
@@ -307,6 +308,52 @@ type SimulatePaymentRequest struct {
 	Outcome payment.Outcome `json:"outcome"`
 }
 
+// ---- staff: rates and allotment
+
+type RateNightDTO struct {
+	Date           string  `json:"date"`
+	PricePaise     int64   `json:"price_paise"`
+	Allotment      int     `json:"allotment"`
+	Sold           int     `json:"sold"`
+	Held           int     `json:"held"`
+	Left           int     `json:"left"`
+	StopSell       bool    `json:"stop_sell"`
+	StopSellReason *string `json:"stop_sell_reason"`
+	MinStay        int     `json:"min_stay"`
+	NoArrival      bool    `json:"no_arrival"`
+}
+
+type RateRowDTO struct {
+	RoomTypeID uuid.UUID      `json:"room_type_id"`
+	Slug       string         `json:"slug"`
+	Name       string         `json:"name"`
+	TotalKeys  int            `json:"total_keys"`
+	Nights     []RateNightDTO `json:"nights"`
+}
+
+type RatesGridResponse struct {
+	Plan string       `json:"plan"`
+	Stay StayDTO      `json:"stay"`
+	Rows []RateRowDTO `json:"rows"`
+}
+
+type UpdateRatesRequest struct {
+	RoomTypeID         uuid.UUID `json:"room_type_id"`
+	From               string    `json:"from"`
+	To                 string    `json:"to"`
+	Weekdays           []string  `json:"weekdays"`
+	RoomOnlyPricePaise *int64    `json:"room_only_price_paise"`
+	Allotment          *int      `json:"allotment"`
+	StopSell           *bool     `json:"stop_sell"`
+	StopSellReason     *string   `json:"stop_sell_reason"`
+	MinStay            *int      `json:"min_stay"`
+	NoArrival          *bool     `json:"no_arrival"`
+}
+
+type UpdateRatesResponse struct {
+	NightsChanged int `json:"nights_changed"`
+}
+
 // ---- mappers
 
 func date(t time.Time) string { return t.Format(time.DateOnly) }
@@ -392,6 +439,19 @@ func paymentPageDTO(b booking.Booking) PaymentPageDTO {
 		Stay: stayDTO(b.Stay), HoldExpiresAt: b.HoldExpiresAt}
 	if b.Payment != nil {
 		out.OrderID, out.AmountPaise, out.Status, out.FailureReason = b.Payment.OrderID, b.Payment.AmountPaise, b.Payment.Status, b.Payment.FailureReason
+	}
+	return out
+}
+
+func ratesGridDTO(g admin.Grid) RatesGridResponse {
+	out := RatesGridResponse{Plan: g.Plan, Stay: stayDTO(g.Stay), Rows: make([]RateRowDTO, len(g.Rows))}
+	for i, r := range g.Rows {
+		row := RateRowDTO{RoomTypeID: r.RoomTypeID, Slug: r.Slug, Name: r.Name, TotalKeys: r.TotalKeys, Nights: make([]RateNightDTO, len(r.Nights))}
+		for j, n := range r.Nights {
+			row.Nights[j] = RateNightDTO{Date: date(n.Date), PricePaise: n.PricePaise, Allotment: n.Allotment, Sold: n.Sold,
+				Held: n.Held, Left: n.Left, StopSell: n.StopSell, StopSellReason: n.StopSellReason, MinStay: n.MinStay, NoArrival: n.NoArrival}
+		}
+		out.Rows[i] = row
 	}
 	return out
 }

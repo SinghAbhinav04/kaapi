@@ -14,6 +14,7 @@ const (
 	PermOwnBookingsRead Permission = "own_bookings:read"
 	PermBookingsRead    Permission = "bookings:read"
 	PermBookingsExport  Permission = "bookings:export"
+	PermRatesRead       Permission = "rates:read"
 	PermRatesWrite      Permission = "rates:write"
 	PermInventoryWrite  Permission = "inventory:write"
 	PermPromosWrite     Permission = "promos:write"
@@ -26,7 +27,7 @@ const (
 	PermDashboardRead   Permission = "dashboard:read"
 )
 
-var staffBase = []Permission{PermBookingsRead, PermEnquiriesRead, PermEnquiryReroute, PermEnquirySend, PermOutboxRead, PermDashboardRead}
+var staffBase = []Permission{PermBookingsRead, PermRatesRead, PermEnquiriesRead, PermEnquiryReroute, PermEnquirySend, PermOutboxRead, PermDashboardRead}
 
 var grants = map[domain.Role][]Permission{
 	domain.RoleGuest:        {PermOwnBookingsRead},
