@@ -144,6 +144,40 @@ func TestNativeTokensAndRefreshRotation(t *testing.T) {
 	}
 }
 
+// The web keeps tokens in cookies and renews through the same endpoint, with no body.
+func TestWebRefreshRotatesCookies(t *testing.T) {
+	s := apitest.New(t)
+	staffLogin(t, s, "admin@kaapiestate.test", nil)
+	origin := map[string]string{"Origin": apitest.TestConfig().AppOrigin}
+	res := s.Do(http.MethodPost, "/v1/auth/refresh", nil, origin)
+	if res.Status != http.StatusOK {
+		t.Fatalf("cookie refresh: %d %s", res.Status, res.Body)
+	}
+	if got := len(res.Header.Values("Set-Cookie")); got != 2 {
+		t.Fatalf("refresh must set both cookies again, set %d", got)
+	}
+	if res := s.Do(http.MethodGet, "/v1/me", nil, nil); res.Status != http.StatusOK {
+		t.Fatalf("after refresh: %d", res.Status)
+	}
+}
+
+// Browsers reach the API through the web app's /api proxy, so the refresh cookie's path must
+// be the one the browser sees; with the bare /v1/auth it was never sent and every staff
+// session ended after 15 minutes.
+func TestRefreshCookiePathMatchesTheBrowserProxy(t *testing.T) {
+	cfg := apitest.TestConfig()
+	cfg.BrowserAPIPrefix = "/api"
+	s := apitest.NewWith(t, cfg)
+	res := s.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: "gm@kaapiestate.test", Password: staffPassword}, nil)
+	paths := map[string]string{}
+	for _, c := range (&http.Response{Header: res.Header}).Cookies() {
+		paths[c.Name] = c.Path
+	}
+	if paths["kaapi_rt"] != "/api/v1/auth" || paths["kaapi_at"] != "/" {
+		t.Fatalf("cookie paths: %v", paths)
+	}
+}
+
 func TestAnonymousAndBadTokens(t *testing.T) {
 	s := apitest.New(t)
 	if e := s.Do(http.MethodGet, "/v1/me", nil, nil).Error(t); e.Code != apperr.CodeUnauthenticated || e.Message != "Please sign in." {

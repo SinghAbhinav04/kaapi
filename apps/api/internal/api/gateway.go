@@ -18,7 +18,6 @@ const (
 	cookieRefreshSecure = "__Secure-kaapi_rt"
 	cookieAccessDev     = "kaapi_at"
 	cookieRefreshDev    = "kaapi_rt"
-	refreshCookiePath   = "/v1/auth"
 
 	headerAuthorization = "Authorization"
 	bearerPrefix        = "Bearer "
@@ -35,6 +34,10 @@ func (a *API) accessCookie() string {
 	}
 	return cookieAccessDev
 }
+
+// refreshCookiePath limits the refresh token to the auth routes, as the browser addresses
+// them (through the web app's proxy): with the bare /v1/auth the browser never sends it back.
+func (a *API) refreshCookiePath() string { return a.cfg.BrowserAPIPrefix + "/v1/auth" }
 
 func (a *API) refreshCookie() string {
 	if a.cfg.CookieSecure {
@@ -127,7 +130,7 @@ func (a *API) setAuthCookies(w http.ResponseWriter, t auth.Tokens) {
 	// Max-Age is relative, so a skewed server or client clock can't expire a cookie early.
 	http.SetCookie(w, &http.Cookie{Name: a.accessCookie(), Value: t.Access, Path: "/", MaxAge: int(auth.AccessTTL.Seconds()),
 		HttpOnly: true, Secure: a.cfg.CookieSecure, SameSite: http.SameSiteLaxMode})
-	http.SetCookie(w, &http.Cookie{Name: a.refreshCookie(), Value: t.Refresh, Path: refreshCookiePath, MaxAge: int(auth.RefreshTTL.Seconds()),
+	http.SetCookie(w, &http.Cookie{Name: a.refreshCookie(), Value: t.Refresh, Path: a.refreshCookiePath(), MaxAge: int(auth.RefreshTTL.Seconds()),
 		HttpOnly: true, Secure: a.cfg.CookieSecure, SameSite: http.SameSiteStrictMode})
 }
 
@@ -135,7 +138,7 @@ func (a *API) clearAuthCookies(w http.ResponseWriter) {
 	past := time.Unix(0, 0)
 	http.SetCookie(w, &http.Cookie{Name: a.accessCookie(), Value: "", Path: "/", Expires: past, MaxAge: -1,
 		HttpOnly: true, Secure: a.cfg.CookieSecure, SameSite: http.SameSiteLaxMode})
-	http.SetCookie(w, &http.Cookie{Name: a.refreshCookie(), Value: "", Path: refreshCookiePath, Expires: past, MaxAge: -1,
+	http.SetCookie(w, &http.Cookie{Name: a.refreshCookie(), Value: "", Path: a.refreshCookiePath(), Expires: past, MaxAge: -1,
 		HttpOnly: true, Secure: a.cfg.CookieSecure, SameSite: http.SameSiteStrictMode})
 }
 

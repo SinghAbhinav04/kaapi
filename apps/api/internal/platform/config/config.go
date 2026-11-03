@@ -33,6 +33,8 @@ const (
 	EnvNativeAppOrigins  = "NATIVE_APP_ORIGINS"
 	EnvRequestTimeoutSec = "REQUEST_TIMEOUT_SECONDS"
 	EnvDemoMode          = "DEMO_MODE"
+	EnvBrowserAPIPrefix  = "BROWSER_API_PREFIX" // where browsers reach the API; default /api (the web app's proxy)
+	EnvFXBaseURL         = "FX_API_BASE_URL"    // exchange rates; empty = Frankfurter (ECB). Tests point it at a fake
 
 	// Gmail: the inbox reads and replies from a real mailbox once an admin connects it.
 	EnvGoogleClientID     = "GOOGLE_CLIENT_ID"
@@ -53,6 +55,9 @@ const (
 // minSecretBytes is the shortest secret accepted for token encryption and webhook signing.
 const minSecretBytes = 32
 
+// defaultBrowserAPIPrefix matches the rewrite in apps/web/next.config.ts.
+const defaultBrowserAPIPrefix = "/api"
+
 type Config struct {
 	Port             string
 	DatabaseURL      string
@@ -69,6 +74,10 @@ type Config struct {
 	RequestTimeout   time.Duration
 	// DemoMode shows guest sign-in codes on screen, because the demo has no real email.
 	DemoMode bool
+	// BrowserAPIPrefix is the path browsers put in front of /v1: the web app proxies /api/*
+	// here, so cookies scoped to a path must use the path the browser sees.
+	BrowserAPIPrefix string
+	FXBaseURL        string
 }
 
 func (c Config) IsProduction() bool { return c.Environment == EnvProduction }
@@ -85,6 +94,12 @@ func Load() (Config, error) {
 		Environment:    Environment(get(EnvEnvironment, string(EnvDevelopment))),
 		LogLevel:       get(EnvLogLevel, "info"),
 		DemoMode:       get(EnvDemoMode, "false") == "true",
+		FXBaseURL:      os.Getenv(EnvFXBaseURL),
+	}
+	// LookupEnv, not get: an empty value is meaningful (the API is reached directly).
+	c.BrowserAPIPrefix = defaultBrowserAPIPrefix
+	if v, ok := os.LookupEnv(EnvBrowserAPIPrefix); ok {
+		c.BrowserAPIPrefix = strings.TrimRight(v, "/")
 	}
 	c.CookieSecure = get(EnvCookieSecure, strconv.FormatBool(c.IsProduction())) == "true"
 	for _, o := range strings.Split(os.Getenv(EnvNativeAppOrigins), ",") {
@@ -122,6 +137,9 @@ func Load() (Config, error) {
 	}
 	if len(c.PaymentSecret) < minSecretBytes {
 		problems = append(problems, fmt.Sprintf("%s must be at least %d bytes", EnvPaymentSecret, minSecretBytes))
+	}
+	if c.BrowserAPIPrefix != "" && !strings.HasPrefix(c.BrowserAPIPrefix, "/") {
+		problems = append(problems, EnvBrowserAPIPrefix+" must be empty or start with /")
 	}
 	if c.Environment != EnvDevelopment && c.Environment != EnvProduction {
 		problems = append(problems, EnvEnvironment+" must be development or production")
