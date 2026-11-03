@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { ComposeDialog, GmailBar } from '@/features/operations';
+import { ComposeDialog, MailActions } from '@/features/operations';
 import { Card } from '@/features/staff-shell';
 import { cx } from '@/shared/lib/cx';
 
@@ -19,7 +19,7 @@ export function InboxPage() {
 
   return (
     <>
-      <GmailBar onCompose={() => setComposing(true)} />
+      <MailActions onCompose={() => setComposing(true)} />
       <Card className={cx(styles.inbox, open && styles.hasOpen)}>
         <EnquiryList
           lane={lane}

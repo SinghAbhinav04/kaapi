@@ -1,48 +1,17 @@
-/* Gmail bar */
-.bar {
+/* inbox actions */
+.actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px 16px;
+  justify-content: flex-end;
+  gap: 8px 16px;
   margin-bottom: 12px;
-  padding: 12px 16px;
-  border-radius: var(--radius-lg);
-  background: var(--surface-raised);
-  box-shadow: var(--e1);
 }
 
-.barMain {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.barText {
-  font-size: 13px;
-  color: var(--grey);
-}
-
-.barActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.barNote,
-.barError {
-  flex-basis: 100%;
+.failure {
+  margin-right: auto;
   font-size: 13px;
   font-weight: 600;
-}
-
-.barNote {
-  color: var(--estate);
-}
-
-.barError {
   color: var(--cherry);
 }
 

@@ -92,21 +92,76 @@ func (s *Service) Callback(ctx context.Context, code, state string) (string, err
 	if err != nil {
 		return "", apperr.Wrap(err, apperr.CodeUnavailable, "Connected, but Gmail couldn't be read. Try again.")
 	}
-	sealed, err := seal(s.tokenKey, []byte(tok.RefreshToken))
-	if err != nil {
-		return "", err
-	}
-	if _, err := s.pool.Exec(ctx, `INSERT INTO integrations (provider, account_email, refresh_token_enc, history_id, connected_by, connected_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (provider) DO UPDATE SET account_email = $2, refresh_token_enc = $3, history_id = $4, connected_by = $5,
-			connected_at = $6, last_sync_at = NULL, last_error = NULL`,
-		provider, p.EmailAddress, sealed, p.HistoryID, user, s.now()); err != nil {
+	if err := s.store(ctx, p.EmailAddress, tok.RefreshToken, p.HistoryID, &user); err != nil {
 		return "", err
 	}
 	s.mu.Lock()
 	s.access, s.accessExp = tok.AccessToken, s.now().Add(time.Duration(tok.ExpiresIn)*time.Second-tokenSkew)
 	s.mu.Unlock()
 	return p.EmailAddress, nil
+}
+
+// Bootstrap connects the mailbox from GMAIL_REFRESH_TOKEN at start-up, so the server is
+// connected after every restart, re-seed or fresh deploy without anyone pressing a button.
+// A database row that already holds the same grant is left alone (it knows where the last
+// poll stopped).
+func (s *Service) Bootstrap(ctx context.Context) error {
+	refresh := s.cfg.RefreshToken
+	if refresh == "" || !s.Configured() {
+		return nil
+	}
+	row, err := s.load(ctx)
+	switch {
+	case err == nil:
+		if cur, err := open(s.tokenKey, row.sealed); err == nil && string(cur) == refresh {
+			return nil
+		}
+	case !errors.Is(err, ErrNotConnected):
+		return err
+	}
+	tok, err := s.g.refresh(ctx, refresh)
+	if err != nil {
+		return fmt.Errorf("gmail: GMAIL_REFRESH_TOKEN was refused (run cmd/gmail-auth again): %w", err)
+	}
+	p, err := s.g.profile(ctx, tok.AccessToken)
+	if err != nil {
+		return err
+	}
+	history := p.HistoryID
+	if row.email == p.EmailAddress && row.historyID != "" {
+		history = row.historyID // same mailbox: carry on from the last poll
+	}
+	if err := s.store(ctx, p.EmailAddress, refresh, history, nil); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.access, s.accessExp = tok.AccessToken, s.now().Add(time.Duration(tok.ExpiresIn)*time.Second-tokenSkew)
+	s.mu.Unlock()
+	s.log.Info("gmail connected from environment", "account", p.EmailAddress)
+	return nil
+}
+
+// RefreshToken returns the stored grant and its mailbox, for cmd/gmail-auth to save into .env.
+func (s *Service) RefreshToken(ctx context.Context) (token, email string, err error) {
+	row, err := s.load(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	plain, err := open(s.tokenKey, row.sealed)
+	return string(plain), row.email, err
+}
+
+func (s *Service) store(ctx context.Context, email, refresh, historyID string, user *uuid.UUID) error {
+	sealed, err := seal(s.tokenKey, []byte(refresh))
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `INSERT INTO integrations (provider, account_email, refresh_token_enc, history_id, connected_by, connected_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (provider) DO UPDATE SET account_email = $2, refresh_token_enc = $3, history_id = $4, connected_by = $5,
+			connected_at = $6, last_sync_at = NULL, last_error = NULL`,
+		provider, email, sealed, historyID, user, s.now())
+	return err
 }
 
 // Disconnect forgets the mailbox and asks Google to revoke the grant (best effort: the
@@ -172,8 +227,20 @@ func (s *Service) Send(ctx context.Context, m domain.Mail) (domain.SentMail, err
 
 // ---- reading
 
-// Run polls the mailbox until ctx ends. A poll with nothing connected costs one query.
+// Run connects from the environment, polls once straight away, then on every tick until
+// ctx ends. A poll with nothing connected costs one query.
 func (s *Service) Run(ctx context.Context) {
+	if err := s.Bootstrap(ctx); err != nil {
+		s.log.Error("gmail bootstrap failed", "err", err)
+	}
+	poll := func() {
+		if n, err := s.Poll(ctx); err != nil && !errors.Is(err, ErrNotConnected) {
+			s.log.Error("gmail poll failed", "err", err)
+		} else if n > 0 {
+			s.log.Info("gmail imported", "count", n)
+		}
+	}
+	poll()
 	t := time.NewTicker(s.cfg.PollEvery)
 	defer t.Stop()
 	for {
@@ -181,11 +248,7 @@ func (s *Service) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if n, err := s.Poll(ctx); err != nil && !errors.Is(err, ErrNotConnected) {
-				s.log.Error("gmail poll failed", "err", err)
-			} else if n > 0 {
-				s.log.Info("gmail imported", "count", n)
-			}
+			poll()
 		}
 	}
 }

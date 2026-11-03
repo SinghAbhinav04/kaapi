@@ -39,6 +39,7 @@ const (
 	EnvGoogleClientSecret = "GOOGLE_CLIENT_SECRET"
 	EnvGmailRedirectURL   = "GMAIL_REDIRECT_URL" // optional; default APP_ORIGIN + /api/v1/integrations/gmail/callback
 	EnvGmailPollSeconds   = "GMAIL_POLL_SECONDS"
+	EnvGmailRefreshToken  = "GMAIL_REFRESH_TOKEN"   // written by cmd/gmail-auth; keeps the mailbox connected on every start
 	EnvGoogleOAuthBaseURL = "GOOGLE_OAUTH_BASE_URL" // tests point these at a fake
 	EnvGmailAPIBaseURL    = "GMAIL_API_BASE_URL"
 )
@@ -106,6 +107,7 @@ func Load() (Config, error) {
 		ClientSecret: os.Getenv(EnvGoogleClientSecret),
 		RedirectURL:  get(EnvGmailRedirectURL, c.AppOrigin+"/api/v1/integrations/gmail/callback"),
 		PollEvery:    time.Duration(poll) * time.Second,
+		RefreshToken: os.Getenv(EnvGmailRefreshToken),
 		OAuthBaseURL: os.Getenv(EnvGoogleOAuthBaseURL),
 		APIBaseURL:   os.Getenv(EnvGmailAPIBaseURL),
 	}
@@ -146,6 +148,7 @@ type Gmail struct {
 	ClientSecret string
 	RedirectURL  string
 	PollEvery    time.Duration
+	RefreshToken string // the mailbox grant from cmd/gmail-auth; empty: whatever the database holds
 	OAuthBaseURL string // empty: Google's
 	APIBaseURL   string // empty: Google's
 }

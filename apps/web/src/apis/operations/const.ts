@@ -3,8 +3,6 @@ export const OPERATIONS_PATHS = {
   dashboard: '/v1/staff/dashboard',
   messages: '/v1/staff/messages',
   gmail: '/v1/staff/integrations/gmail',
-  gmailConnect: '/v1/staff/integrations/gmail/connect',
-  gmailSync: '/v1/staff/integrations/gmail/sync',
 } as const;
 
 export const operationsKeys = {

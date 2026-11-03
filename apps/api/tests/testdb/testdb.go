@@ -54,6 +54,11 @@ func Seeded(t *testing.T) (context.Context, *pgxpool.Pool) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A re-seed keeps the connected mailbox on purpose (it should survive resets); tests
+	// still start with none.
+	if _, err := pool.Exec(ctx, `TRUNCATE integrations`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := seed.Run(ctx, pool, fx, seed.Options{DemoPassword: "test-only-password", Reset: true}); err != nil {
 		t.Fatal(err)
 	}
