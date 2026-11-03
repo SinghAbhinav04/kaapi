@@ -11,6 +11,8 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"kaapi/api/internal/auth"
 )
 
 const (
@@ -126,6 +128,47 @@ func (a *API) inboxStream(w http.ResponseWriter, r *http.Request) error {
 			_, err = fmt.Fprintf(w, "event: inbox\ndata: %s\n\n", ref)
 		case <-beat.C:
 			_, err = fmt.Fprint(w, ": ping\n\n") // keeps proxies from closing an idle stream
+		}
+		if err != nil || rc.Flush() != nil {
+			return nil
+		}
+	}
+}
+
+// changesStream: GET /v1/staff/changes/stream: server-sent events from the change feed, one
+// "change" event per topic (bookings, inventory, offers, enquiries, or * after the API
+// reconnected to the database). Staff consoles refetch what that topic affects instead of
+// polling. Only topic names are sent; every refetch goes through the caller's permissions.
+func (a *API) changesStream(w http.ResponseWriter, r *http.Request) error {
+	if !a.can(r, auth.PermRatesRead) && !a.can(r, auth.PermAnalyticsRead) && !a.can(r, auth.PermPromosWrite) {
+		return auth.ErrForbidden
+	}
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{}) // the server's write timeout would cut a long-lived stream
+	h := w.Header()
+	h.Set("Content-Type", "text/event-stream")
+	h.Set("Cache-Control", "no-cache, no-transform")
+	h.Set("Connection", "keep-alive")
+	h.Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	topics, stop := a.changes.Subscribe()
+	defer stop()
+	if _, err := fmt.Fprintf(w, "retry: %d\n: connected\n\n", streamRetryMS); err != nil {
+		return nil
+	}
+	_ = rc.Flush()
+	beat := time.NewTicker(streamHeartbeat)
+	defer beat.Stop()
+	for {
+		var err error
+		select {
+		case <-r.Context().Done():
+			return nil
+		case topic := <-topics:
+			_, err = fmt.Fprintf(w, "event: change\ndata: %s\n\n", topic)
+		case <-beat.C:
+			_, err = fmt.Fprint(w, ": ping\n\n")
 		}
 		if err != nil || rc.Flush() != nil {
 			return nil

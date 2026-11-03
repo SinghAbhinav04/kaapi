@@ -9,5 +9,5 @@ export const analyticsKeys = {
   report: (params: AnalyticsParams) => [...analyticsKeys.all, 'report', params] as const,
 };
 
-/** Reports change only as bookings arrive; a minute is fresh enough. */
-export const ANALYTICS_STALE_MS = 60_000;
+/** Reports change only when bookings, inventory or enquiries do, and the change stream says when. */
+export const ANALYTICS_STALE_MS = Infinity;

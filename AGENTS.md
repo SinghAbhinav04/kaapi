@@ -104,6 +104,8 @@ internal/
   fx/         ECB rates via Frankfurter, stored as INR-per-unit micros; shown only while fresh (48 h)
   platform/pii/        the personal-data interceptor (pii.Text: encrypt on write, decrypt on read) + blind indexes
   platform/ratelimit/  fixed-window counters: memory per process, or rate_limit_buckets shared by every instance
+  platform/changes/    the change feed (LISTEN data_changes): cache invalidation + the staff SSE stream
+  platform/cache/      a small TTL cache (the hot store; Redis-replaceable through consumers' interfaces)
   app/        composition root: builds every service once (cmd/api, cmd/worker and tests all use it) + RunWorkers
   transport/httpapi/  HTTP layer: router (gateway), handlers, DTOs (types.go), mappers, SSE inbox stream
   access/     RBAC: roles, grants, staff accounts, cached per-request permission lookup
@@ -113,7 +115,8 @@ migrations/   0001_init.sql (24 tables), 0002_lock_down_data_api.sql (RLS on eve
               enquiry external ids, draft send claim, outbox status + STAFF_MESSAGE), 0005_query_indexes.sql,
               0006_inbox_notify.sql, 0007_rbac.sql, 0008_analytics_covering_index.sql, 0009_fx.sql (fx_rates,
               bookings.display_currency + rate snapshot), 0010_outbox_delivery.sql (queued guest emails),
-              0011_offers.sql (automatic offers), 0012_pii.sql (blind-index columns for encrypted data). New tables must ENABLE RLS. Two branches must never
+              0011_offers.sql (automatic offers), 0012_pii.sql (blind-index columns for encrypted data),
+              0013_data_changes.sql (change-capture triggers). New tables must ENABLE RLS. Two branches must never
               add the same migration number: goose records versions, so the second 0005 is silently skipped.
 seed/data/    JSON fixtures: property, room_types, rate_plans, rates_rules, promos,
               users, enquiries (60, labelled), bookings (40)
@@ -236,8 +239,14 @@ The gateway is a layer in the API process, not a separate service (decision: one
 - **Keys:** `PII_KEY` (32+ bytes) is required in production and lives in `.env.production` / Secret Manager. **Lose it and the data is gone; change it and everything must be re-encrypted.** Development derives one from `JWE_SECRET` (`config.PIIKey`); the seeder and `testdb` derive it the same way, so they always agree.
 - **Existing rows:** `seed.EncryptExisting` runs on every API and seed start: it encrypts plaintext rows and fills the indexes in batches, once (a no-op afterwards). Reads pass old plaintext through, so nothing breaks before it runs.
 
-### Caches and hot state
-There is no Redis. Per-process caches with short TTLs: permissions (`access`, 30 s), live sessions (`auth.SessionLive`, 30 s, cleared at once in-process on logout and rotation), in-memory rate-limit counters. Shared state lives in Postgres: `rate_limit_buckets`, and `pg_notify` for the live inbox. The 30 s TTL is the bound on staleness across instances. A plan for event-driven caching (change data capture, analytics cache) is being discussed with the owner; nothing is built yet.
+### Change capture, caches and timing (`platform/changes`, `platform/cache`, migration 0013)
+- **Change data capture, the light way:** statement-level triggers on `bookings`, `night_inventory`, `night_rates`, `holds`, `promo_codes` and `enquiries` send a topic on `pg_notify('data_changes')`: `bookings`, `inventory`, `offers` or `enquiries`, delivered on commit, from any process. `changes.Feed` (run by `cmd/api`) keeps one LISTEN connection and, after any (re)connect, publishes `*` (notices may have been missed). Scale-up path: logical replication or Redis pub/sub behind the same `Subscribe`/`OnChange`.
+- **Analytics cache:** `analytics.Service` keeps computed reports (`platform/cache`, in memory, behind the consumer's `reportCache` interface, so Redis can replace it when instances must share). Key: range + today. The feed clears it on `bookings`, `inventory`, `enquiries` or `*`; `ANALYTICS_CACHE_SECONDS` (default 600, 0 = off, the tests' default) is only the safety net. Measured: 13 queries on a miss, 0 on a hit.
+- **Never cache what decides a booking:** availability, holds and the hold's price always read the database (overbooking guard, prices from the rate table).
+- **Staff consoles:** `GET /v1/staff/changes/stream` (SSE; rates:read, analytics:read or promos:write) sends each topic; `apis/changes` `useDataChanges` (mounted once in `StaffShell`) invalidates what the topic affects. The rates grid and analytics use `staleTime: Infinity` and don't poll. A rate save applies at once with `setQueryData` (`apis/rates/optimistic.ts`), rolls back on error and reconciles on settle.
+- **Guest search batching:** availability loads plans, nightly rates, the typed code and live offers in four queries and prices in memory through `priceStay`, the same pure function the hold uses (`TestSearchQuotesMatchWhatAHoldFreezes` keeps them equal). Six queries per search, down from about fifty.
+- **Server-Timing:** every response carries `db;dur=…;desc="N queries", app;dur=…` (a pgx query tracer, `db.Tracer()`, counts per request), so production latency is read in the browser's network panel, not guessed.
+- Other per-process caches with short TTLs: permissions (`access`, 30 s), live sessions (`auth.SessionLive`, 30 s), in-memory rate-limit counters. Shared state lives in Postgres: `rate_limit_buckets`, `pg_notify`. There is no Redis yet; add it (Memorystore or Upstash) when several API instances must share the analytics cache and rate limits.
 
 ## 4. Frontend: `apps/web` (Next.js 16.4, React 19.3, TypeScript 5.9)
 
@@ -343,7 +352,7 @@ Segmented, Stepper, Skeleton, EmptyState/ErrorState and Logo.
 - **Local Postgres without devdb** (e.g. a network that blocks devdb's binary download): `brew install postgresql@17 && brew services start postgresql@17`, create role `kaapi`/`kaapi` and databases `kaapi` + `kaapi_test`, then use `postgres://kaapi:kaapi@127.0.0.1:5432/...`. Override `DATABASE_URL` on the command line (real env beats `.env`). On corporate Macs `psql` can hang on Kerberos: add `gssencmode=disable` (pgx is unaffected).
 - **No IPv6?** The Supabase direct host is unreachable; use the session pooler URL instead.
 - **Env names** (values never in git; see `.env.example`):
-  - API (new): `WORKER_IN_PROCESS`, `GMAIL_REFRESH_TOKEN`; `GMAIL_POLL_SECONDS` defaults to 5; `PII_KEY` (32+ bytes, required in production); `DOTENV_FILE` (which settings file the commands load; default `.env`).
+  - API (new): `WORKER_IN_PROCESS`, `GMAIL_REFRESH_TOKEN`; `GMAIL_POLL_SECONDS` defaults to 5; `PII_KEY` (32+ bytes, required in production); `DOTENV_FILE` (which settings file the commands load; default `.env`); `ANALYTICS_CACHE_SECONDS` (default 600; 0 = off).
   - API: `DATABASE_URL`, `BROWSER_API_PREFIX` (optional, default `/api`), `FX_API_BASE_URL` (optional), `JWE_SECRET` (32+ bytes), `MOCK_PAYMENT_WEBHOOK_SECRET` (32+ bytes), `APP_ORIGIN`, `APP_ENV`, `DEMO_MODE`, `SEED_DEMO_PASSWORD`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`, `GEMINI_API_KEY`, `GEMINI_MODELS`, `GEMINI_RPM`, `GROQ_API_KEY`, `GROQ_MODELS`, `GROQ_RPM`, `SENTRY_DSN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_REDIRECT_URL` (optional), `GMAIL_POLL_SECONDS` (optional), `RATE_LIMITS` (optional, default on), `TRUSTED_PROXY_HOPS` (optional, default 1), `PORT` (default 8080)
   - Web: `API_ORIGIN` (where `/api/*` is proxied; default `http://localhost:8080`), `NEXT_PUBLIC_APP_URL`
 - **Demo accounts:**
@@ -409,15 +418,15 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 - Query audit at production scale with indexes (0005, 0008); live inbox (0006); database-backed RBAC with an admin console (0007).
 - Currency estimates for foreign guests, kept per booking for analytics.
 - Fixed: web token refresh never worked through the `/api` proxy (refresh cookie path), and parallel tabs could revoke each other's sessions.
-- On `dev` (not yet on `main`): gateway policies (CORS and rate limits per group, live-session tokens, trusted client IP); real guest emails through the outbox; automatic offers with the console's Offers page; personal data encrypted at rest; `DOTENV_FILE` for dev/production settings.
+- On `dev` (not yet on `main`): gateway policies (CORS and rate limits per group, live-session tokens, trusted client IP); real guest emails through the outbox; automatic offers with the console's Offers page; personal data encrypted at rest; `DOTENV_FILE` for dev/production settings; batched guest search; change capture with the analytics cache and live staff consoles; Server-Timing.
 
 **State of the two databases:**
-- Local devdb: on `dev`, migrations 1–12, seeded and encrypted. It has a test `DIWALI26` offer (15%, automatic) created while checking the Offers flow.
-- Supabase (production): migrations 1–9 from `main`. 10–12 and the encryption backfill run when `dev` is promoted and the API starts with `.env.production` (whose `PII_KEY` must be kept safe from then on).
+- Local devdb: on `dev`, migrations 1–13, seeded and encrypted. It has a test `DIWALI26` offer (15%, automatic) created while checking the Offers flow.
+- Supabase (production): migrations 1–9 from `main`. 10–13 and the encryption backfill run when `dev` is promoted and the API starts with `.env.production` (whose `PII_KEY` must be kept safe from then on).
 
 **To do, in order:**
-1. Promote `dev` to `main` once the owner has tested it (§ 6 Branches), then bring Supabase up to migration 12.
-2. Decide the caching / change-data-capture plan with the owner (proposed, not built).
+1. Promote `dev` to `main` once the owner has tested it (§ 6 Branches), then bring Supabase up to migration 13.
+2. After deploying, read real latency from `Server-Timing` and decide whether Redis is needed (several instances).
 3. A visual pass in a browser at 1440 px and 390 px against the approved canvas (Claude Design artifact "Kaapi Estate — Direct Booking"), including the currency switcher in the header and the Offers page.
 4. Small API gaps:
    - `GET /v1/staff/notifications`: GM alerts are stored but nothing reads them.

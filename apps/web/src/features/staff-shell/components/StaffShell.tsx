@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import type { ReactNode } from 'react';
 
-import { hasPermission, useLogout, type User } from '@/apis/auth';
+import { hasPermission, useLogout, type Permission, type User } from '@/apis/auth';
+import { useDataChanges } from '@/apis/changes';
 import { useInbox } from '@/apis/enquiries';
 import { useDashboard } from '@/apis/operations';
 import { ROUTES } from '@/shared/const';
@@ -17,8 +18,13 @@ import { useStaffGuard } from '../hooks';
 import { NavIcon } from './NavIcon';
 import styles from './StaffShell.module.css';
 
+/** Permissions whose pages react to the live change stream. */
+const WATCHED: readonly Permission[] = ['rates:read', 'analytics:read', 'promos:write'];
+
 export function StaffShell({ children }: { children: ReactNode }) {
   const { me, user, isStaff } = useStaffGuard();
+  // One live stream per tab, for whoever looks at rates, analytics or offers.
+  useDataChanges(!!user && isStaff && WATCHED.some((p) => hasPermission(user, p)));
 
   if (me.isError) {
     return (

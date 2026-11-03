@@ -67,6 +67,7 @@ func main() {
 	} else if n > 0 {
 		log.Info("encrypted existing personal data", "rows", n)
 	}
+	go a.Changes.Run(ctx)    // cache invalidation and live staff consoles
 	if cfg.WorkerInProcess { // local development: one process does everything
 		go a.RunWorkers(ctx)
 	}

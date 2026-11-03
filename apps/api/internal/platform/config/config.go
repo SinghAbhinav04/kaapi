@@ -35,12 +35,13 @@ const (
 	EnvNativeAppOrigins  = "NATIVE_APP_ORIGINS"
 	EnvRequestTimeoutSec = "REQUEST_TIMEOUT_SECONDS"
 	EnvDemoMode          = "DEMO_MODE"
-	EnvBrowserAPIPrefix  = "BROWSER_API_PREFIX" // where browsers reach the API; default /api (the web app's proxy)
-	EnvFXBaseURL         = "FX_API_BASE_URL"    // exchange rates; empty = Frankfurter (ECB). Tests point it at a fake
-	EnvWorkerInProcess   = "WORKER_IN_PROCESS"  // run background jobs inside cmd/api (default: on in development)
-	EnvRateLimits        = "RATE_LIMITS"        // "off" disables the gateway's limits (load tests); on by default
-	EnvTrustedProxyHops  = "TRUSTED_PROXY_HOPS" // proxies in front of the API that append X-Forwarded-For; default 1 (the web proxy)
-	EnvPIIKey            = "PII_KEY"            // encrypts guests' personal data at rest; 32+ bytes, required in production
+	EnvBrowserAPIPrefix  = "BROWSER_API_PREFIX"      // where browsers reach the API; default /api (the web app's proxy)
+	EnvFXBaseURL         = "FX_API_BASE_URL"         // exchange rates; empty = Frankfurter (ECB). Tests point it at a fake
+	EnvWorkerInProcess   = "WORKER_IN_PROCESS"       // run background jobs inside cmd/api (default: on in development)
+	EnvRateLimits        = "RATE_LIMITS"             // "off" disables the gateway's limits (load tests); on by default
+	EnvTrustedProxyHops  = "TRUSTED_PROXY_HOPS"      // proxies in front of the API that append X-Forwarded-For; default 1 (the web proxy)
+	EnvPIIKey            = "PII_KEY"                 // encrypts guests' personal data at rest; 32+ bytes, required in production
+	EnvAnalyticsCacheSec = "ANALYTICS_CACHE_SECONDS" // how long a computed analytics report is kept (the change feed drops it sooner); 0 = off
 
 	// Gmail: the inbox reads and replies from a real mailbox once an admin connects it.
 	EnvGoogleClientID     = "GOOGLE_CLIENT_ID"
@@ -99,6 +100,8 @@ type Config struct {
 	// PIIKey encrypts personal data at rest (package pii). Losing it loses that data, and
 	// changing it needs a re-encryption, so production must set its own and keep it safe.
 	PIIKey []byte
+	// AnalyticsCacheTTL keeps computed analytics reports; zero turns the cache off (tests).
+	AnalyticsCacheTTL time.Duration
 }
 
 func (c Config) IsProduction() bool { return c.Environment == EnvProduction }
@@ -131,6 +134,11 @@ func Load() (Config, error) {
 	}
 	c.TrustedProxyHops = hops
 	c.PIIKey = PIIKey(os.Getenv(EnvPIIKey), c.JWESecret)
+	cacheSecs, err := strconv.Atoi(get(EnvAnalyticsCacheSec, "600"))
+	if err != nil || cacheSecs < 0 {
+		return c, fmt.Errorf("%s must be a whole number of seconds, 0 or more", EnvAnalyticsCacheSec)
+	}
+	c.AnalyticsCacheTTL = time.Duration(cacheSecs) * time.Second
 	for _, o := range strings.Split(os.Getenv(EnvNativeAppOrigins), ",") {
 		if o = strings.TrimSpace(o); o != "" {
 			c.NativeAppOrigins = append(c.NativeAppOrigins, o)

@@ -7,6 +7,8 @@ export const ratesKeys = {
   grid: (params: RatesGridParams) => [...ratesKeys.all, params] as const,
 };
 
-/** Holds and bookings change "left" constantly, so the grid refreshes while open. */
-export const RATES_REFRESH_MS = 30_000;
-export const RATES_STALE_MS = 15_000;
+/**
+ * The grid never goes stale by itself: a save updates it at once (setQueryData) and the live
+ * change stream (apis/changes) refetches it whenever prices, allotment, sales or holds change.
+ */
+export const RATES_STALE_MS = Infinity;

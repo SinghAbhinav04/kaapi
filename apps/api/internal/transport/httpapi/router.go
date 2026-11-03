@@ -24,6 +24,7 @@ import (
 	"kaapi/api/internal/gmail"
 	"kaapi/api/internal/inventory"
 	"kaapi/api/internal/outbox"
+	"kaapi/api/internal/platform/changes"
 	"kaapi/api/internal/platform/config"
 	"kaapi/api/internal/platform/httpx"
 	"kaapi/api/internal/platform/ratelimit"
@@ -48,6 +49,7 @@ type API struct {
 	outbox    *outbox.Service
 	retention *retention.Service
 	hub       *hub
+	changes   *changes.Feed
 	limits    *ratelimit.Limiter
 }
 
@@ -55,7 +57,7 @@ type API struct {
 func New(a *app.App) *API {
 	return &API{cfg: a.Config, log: a.Log, pool: a.Pool, access: a.Access, admin: a.Admin, analytics: a.Analytics, auth: a.Auth,
 		bookings: a.Bookings, catalog: a.Catalog, enquiries: a.Enquiries, fx: a.FX, gmail: a.Gmail, inventory: a.Inventory,
-		outbox: a.Outbox, retention: a.Retention, hub: newHub(a.Pool, a.Log),
+		outbox: a.Outbox, retention: a.Retention, hub: newHub(a.Pool, a.Log), changes: a.Changes,
 		limits: ratelimit.New(a.Pool, a.Config.JWESecret, time.Now)}
 }
 
@@ -64,6 +66,7 @@ func New(a *app.App) *API {
 func (a *API) Router() http.Handler {
 	r := chi.NewRouter()
 	r.Use(httpx.RequestID)
+	r.Use(httpx.ServerTiming)
 	r.Use(httpx.ClientIP(a.cfg.TrustedProxyHops)) // before the access log, so it records the real caller
 	r.Use(httpx.AccessLog(a.log))
 	r.Use(httpx.Recover(a.log))
@@ -124,6 +127,7 @@ func (a *API) Router() http.Handler {
 			r.With(a.requirePermission(auth.PermRatesRead)).Get("/rates", h(a.ratesGrid))
 			r.With(a.requirePermission(auth.PermRatesRead)).Put("/rates", h(a.updateRates)) // the handler checks write permissions per field
 			r.With(a.requirePermission(auth.PermDashboardRead)).Get("/dashboard", h(a.dashboard))
+			r.With(a.requireAuth).Get("/changes/stream", h(a.changesStream)) // the handler checks the permissions
 			r.Group(func(r chi.Router) {
 				r.Use(a.requirePermission(auth.PermPromosWrite))
 				r.Get("/offers", h(a.listOffers))

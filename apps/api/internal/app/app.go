@@ -22,6 +22,8 @@ import (
 	"kaapi/api/internal/gmail"
 	"kaapi/api/internal/inventory"
 	"kaapi/api/internal/outbox"
+	"kaapi/api/internal/platform/cache"
+	"kaapi/api/internal/platform/changes"
 	"kaapi/api/internal/platform/config"
 	"kaapi/api/internal/platform/pii"
 	"kaapi/api/internal/retention"
@@ -39,6 +41,9 @@ type App struct {
 	Access    *access.Service
 	Admin     *admin.Service
 	Analytics *analytics.Service
+	// Changes is the change feed (triggers → pg_notify): it invalidates caches and tells open
+	// staff consoles what to refetch. cmd/api runs it.
+	Changes   *changes.Feed
 	Auth      *auth.Service
 	Bookings  *booking.Service
 	Catalog   *catalog.Service
@@ -49,6 +54,9 @@ type App struct {
 	Outbox    *outbox.Service
 	Retention *retention.Service
 }
+
+// maxCachedReports bounds the analytics cache: one entry per date range staff look at.
+const maxCachedReports = 64
 
 func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() time.Time) *App {
 	key := cfg.PIIKey
@@ -81,6 +89,16 @@ func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() tim
 	a.Gmail.SetInbox(mailInbox{a})
 	a.Enquiries.SetMailer(a.Gmail)
 	a.Outbox.SetMailer(a.Gmail)
+	a.Changes = changes.New(pool, log)
+	if cfg.AnalyticsCacheTTL > 0 {
+		a.Analytics.SetCache(cache.New[string, analytics.Report](cfg.AnalyticsCacheTTL, maxCachedReports))
+		a.Changes.OnChange(func(topic string) {
+			switch topic {
+			case changes.Bookings, changes.Inventory, changes.Enquiries, changes.All:
+				a.Analytics.Invalidate()
+			}
+		})
+	}
 	return a
 }
 

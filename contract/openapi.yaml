@@ -14,6 +14,7 @@ info:
       for `/v1/staff`; the web app and native shells elsewhere) and a rate limit, counted per
       signed-in account or per client IP. Over the limit: `429 RATE_LIMITED` with `Retry-After`
       (seconds) and `details.retry_after_seconds`.
+    - Every response carries `Server-Timing: db;dur=…;desc="N queries", app;dur=…` (milliseconds).
     - A token is accepted only while its session is live: logging out, a refresh rotating it,
       or the account being deactivated ends it at once.
 
@@ -507,6 +508,24 @@ paths:
     get:
       tags: [enquiries]
       summary: Live inbox updates (server-sent events). One "inbox" event, data = the enquiry ref, whenever an enquiry or its draft changes; refetch with your own permissions.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: An open event stream.
+          content: { text/event-stream: { schema: { type: string } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/staff/changes/stream:
+    get:
+      tags: [staff]
+      summary: Live data changes (server-sent events) for staff consoles.
+      description: >
+        One "change" event per topic whenever the data behind it changes, from any process:
+        bookings, inventory (prices, allotment, restrictions, sold, holds), offers, enquiries,
+        or * after the API reconnected to the database (treat everything as changed). Consoles
+        refetch what the topic affects instead of polling. Needs rates:read, analytics:read or
+        promos:write.
       security: [{ cookieAuth: [] }, { bearerAuth: [] }]
       responses:
         "200":

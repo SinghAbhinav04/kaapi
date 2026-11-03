@@ -1413,6 +1413,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/staff/changes/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Live data changes (server-sent events) for staff consoles.
+         * @description One "change" event per topic whenever the data behind it changes, from any process: bookings, inventory (prices, allotment, restrictions, sold, holds), offers, enquiries, or * after the API reconnected to the database (treat everything as changed). Consoles refetch what the topic affects instead of polling. Needs rates:read, analytics:read or promos:write.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description An open event stream. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/event-stream": string;
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/staff/enquiries/{ref}": {
         parameters: {
             query?: never;

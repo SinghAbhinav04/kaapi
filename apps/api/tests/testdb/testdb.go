@@ -53,6 +53,7 @@ func Seeded(t *testing.T) (context.Context, *pgxpool.Pool) {
 		t.Fatal(err)
 	}
 	cfg.MaxConns = 30
+	cfg.ConnConfig.Tracer = db.Tracer() // as in production, so Server-Timing counts queries
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)

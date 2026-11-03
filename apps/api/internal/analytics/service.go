@@ -14,6 +14,26 @@ type Service struct {
 	pool  *pgxpool.Pool
 	store store
 	now   func() time.Time
+	cache reportCache // nil: every request computes
+}
+
+// reportCache keeps finished reports for the next request (package cache in memory; a
+// Redis-backed store once several API instances must share them). The change feed clears it
+// whenever bookings, inventory or enquiries change, so a cached report is never stale.
+type reportCache interface {
+	Get(key string) (Report, bool)
+	Set(key string, r Report)
+	Clear()
+}
+
+// SetCache turns caching on; the app does it once at start-up.
+func (s *Service) SetCache(c reportCache) { s.cache = c }
+
+// Invalidate drops every cached report. The change feed calls it.
+func (s *Service) Invalidate() {
+	if s.cache != nil {
+		s.cache.Clear()
+	}
 }
 
 func NewService(pool *pgxpool.Pool, now func() time.Time) *Service {
@@ -25,6 +45,22 @@ func (s *Service) Today() time.Time { return dateIn(s.now(), ist()) }
 
 // Report covers bookings made from `from` to `to` (IST calendar dates, both inclusive).
 func (s *Service) Report(ctx context.Context, from, to time.Time) (Report, error) {
+	if s.cache == nil {
+		return s.report(ctx, from, to)
+	}
+	// Today is part of the key: "on the books" looks forward from it.
+	key := from.Format(time.DateOnly) + "|" + to.Format(time.DateOnly) + "|" + s.Today().Format(time.DateOnly)
+	if r, ok := s.cache.Get(key); ok {
+		return r, nil
+	}
+	r, err := s.report(ctx, from, to)
+	if err == nil {
+		s.cache.Set(key, r)
+	}
+	return r, err
+}
+
+func (s *Service) report(ctx context.Context, from, to time.Time) (Report, error) {
 	loc := ist()
 	start := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, loc)
 	end := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, 1)
