@@ -243,9 +243,13 @@ Segmented, Stepper, Skeleton, EmptyState/ErrorState and Logo.
   - Migrations run on API start and in `cmd/seed`.
   - **RLS is on for every table** (migration 0002). The publishable key exposes nothing. A test fails if any table lacks RLS.
 - **Seeding:** `cd apps/api && go run ./cmd/seed -reset`. The demo staff password comes from `SEED_DEMO_PASSWORD`.
+- **The real administrator** comes from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` / `SEED_ADMIN_NAME` (role ADMIN).
+  - It is created on every `-reset`, or on its own with `go run ./cmd/seed -admin`, which keeps all other data.
+  - Re-running resets its password and revokes its sessions.
+  - It is never in the fixtures: a real email and password must stay out of git.
 - **Tests never touch Supabase.** They truncate tables. Run `go run ./cmd/devdb`, then `TEST_DATABASE_URL=postgres://kaapi:kaapi@localhost:54329/kaapi_test?sslmode=disable go test ./... -p 1`. `testdb` refuses Supabase URLs.
 - **Env names** (values never in git; see `.env.example`):
-  - API: `DATABASE_URL`, `JWE_SECRET` (32+ bytes), `MOCK_PAYMENT_WEBHOOK_SECRET` (32+ bytes), `APP_ORIGIN`, `APP_ENV`, `DEMO_MODE`, `SEED_DEMO_PASSWORD`, `GEMINI_API_KEY`, `GEMINI_MODELS`, `GEMINI_RPM`, `GROQ_API_KEY`, `GROQ_MODELS`, `GROQ_RPM`, `SENTRY_DSN`
+  - API: `DATABASE_URL`, `JWE_SECRET` (32+ bytes), `MOCK_PAYMENT_WEBHOOK_SECRET` (32+ bytes), `APP_ORIGIN`, `APP_ENV`, `DEMO_MODE`, `SEED_DEMO_PASSWORD`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`, `GEMINI_API_KEY`, `GEMINI_MODELS`, `GEMINI_RPM`, `GROQ_API_KEY`, `GROQ_MODELS`, `GROQ_RPM`, `SENTRY_DSN`
   - Web: `API_ORIGIN` (where `/api/*` is proxied; default `http://localhost:8080`), `NEXT_PUBLIC_APP_URL`
 - **Demo accounts:**
   - staff: `gm@`, `reservations@`, `reservations2@`, `sales@`, `admin@kaapiestate.test`

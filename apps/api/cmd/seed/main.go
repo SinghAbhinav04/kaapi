@@ -22,7 +22,9 @@ func main() {
 	}
 	dir := flag.String("data", "seed/data", "fixture folder")
 	reset := flag.Bool("reset", false, "wipe existing data before seeding")
+	adminOnly := flag.Bool("admin", false, "only create or update the administrator from SEED_ADMIN_* (keeps all other data)")
 	flag.Parse()
+	admin := adminFromEnv()
 
 	url := os.Getenv("DATABASE_URL")
 	if url == "" {
@@ -44,10 +46,36 @@ func main() {
 	}
 	defer pool.Close()
 
-	sum, err := seed.Run(ctx, pool, fx, seed.Options{DemoPassword: os.Getenv("SEED_DEMO_PASSWORD"), Reset: *reset})
+	if *adminOnly {
+		if admin == nil {
+			log.Fatalf("set %s and %s to create the administrator", envAdminEmail, envAdminPassword)
+		}
+		if err := seed.EnsureAdmin(ctx, pool, *admin); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("administrator %s is ready\n", admin.Email)
+		return
+	}
+
+	sum, err := seed.Run(ctx, pool, fx, seed.Options{DemoPassword: os.Getenv("SEED_DEMO_PASSWORD"), Reset: *reset, Admin: admin})
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("seeded: %d room types, %d inventory nights, %d nightly rates, %d bookings (%d confirmed), %d enquiries, %d users\n",
 		sum.RoomTypes, sum.Nights, sum.Rates, sum.Bookings, sum.Confirmed, sum.Enquiries, sum.Users)
+}
+
+// The deployment's own administrator, kept out of the fixtures (real email, real password).
+const (
+	envAdminEmail    = "SEED_ADMIN_EMAIL"
+	envAdminPassword = "SEED_ADMIN_PASSWORD"
+	envAdminName     = "SEED_ADMIN_NAME"
+)
+
+func adminFromEnv() *seed.Account {
+	email, password := os.Getenv(envAdminEmail), os.Getenv(envAdminPassword)
+	if email == "" || password == "" {
+		return nil
+	}
+	return &seed.Account{Email: email, Password: password, Name: os.Getenv(envAdminName)}
 }

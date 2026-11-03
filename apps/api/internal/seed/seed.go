@@ -22,8 +22,9 @@ import (
 
 // Options controls a seed run.
 type Options struct {
-	DemoPassword string // hashed for every staff account; never stored in the repo
-	Reset        bool   // wipe existing data first
+	DemoPassword string   // hashed for every staff account; never stored in the repo
+	Reset        bool     // wipe existing data first
+	Admin        *Account // the deployment's own administrator, from the environment
 }
 
 // Summary is printed after seeding.
@@ -98,6 +99,12 @@ func Run(ctx context.Context, pool *pgxpool.Pool, fx *Fixtures, opt Options) (Su
 				return fmt.Errorf("user %s: %w", u.Email, err)
 			}
 			userIDs[strings.ToLower(u.Email)] = id
+			sum.Users++
+		}
+		if opt.Admin != nil {
+			if err := ensureAdmin(ctx, tx, *opt.Admin); err != nil {
+				return err
+			}
 			sum.Users++
 		}
 
