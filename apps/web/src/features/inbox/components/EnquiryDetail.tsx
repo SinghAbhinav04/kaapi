@@ -24,7 +24,7 @@ export function EnquiryDetail({ enquiryRef, onClose }: { enquiryRef: string | nu
   return (
     <section aria-labelledby="enq-title" className={styles.detailPane}>
       <button type="button" className={styles.back} onClick={onClose}>
-        ← All messages
+        All messages
       </button>
       {detail.isPending ? (
         <div className={styles.skeletons}>
@@ -117,7 +117,7 @@ function Detail({ enquiry, onMoved }: { enquiry: Enquiry; onMoved: () => void })
 
 const EVENT_TEXT: Record<EnquiryEvent['type'], (e: EnquiryEvent) => string> = {
   RECEIVED: () => 'Received',
-  CLASSIFIED: (e) => `Read by ${e.actor === 'AI' ? 'the AI' : 'keyword rules'}: ${String(e.to?.category ?? '').toLowerCase()} → ${LANE_LABEL[e.to?.lane as keyof typeof LANE_LABEL] ?? e.to?.lane}`,
+  CLASSIFIED: (e) => `Read by ${e.actor === 'AI' ? 'the AI' : 'keyword rules'}: ${String(e.to?.category ?? '').toLowerCase()}, sent to ${LANE_LABEL[e.to?.lane as keyof typeof LANE_LABEL] ?? e.to?.lane}`,
   REROUTED: (e) => `Moved from ${LANE_LABEL[e.from?.lane as keyof typeof LANE_LABEL] ?? e.from?.lane} to ${LANE_LABEL[e.to?.lane as keyof typeof LANE_LABEL] ?? e.to?.lane}`,
   CATEGORY_CHANGED: (e) => `Type corrected to ${String(e.to?.category ?? '').toLowerCase()}`,
   FIELDS_CORRECTED: () => 'Details corrected',

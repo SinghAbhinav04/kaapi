@@ -1826,6 +1826,277 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/staff/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The permission catalogue and every role with what it grants (administrator). */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AccessResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a role for a team with the permissions it grants. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RoleRequest"];
+                };
+            };
+            responses: {
+                /** @description The new role. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RoleResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/roles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Change a role's name, team and permissions. Takes effect within seconds for everyone with it. */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RoleRequest"];
+                };
+            };
+            responses: {
+                /** @description The role after the change. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RoleResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** Delete a role nobody has. */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every staff account. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MembersResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /** Create a staff account with a role and a starting password. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateMemberRequest"];
+                };
+            };
+            responses: {
+                /** @description The new account. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MemberResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Change a person's name, role, password or whether they can sign in. Role changes, deactivation and password resets sign them out everywhere. */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateMemberRequest"];
+                };
+            };
+            responses: {
+                /** @description The account after the change. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MemberResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+            };
+        };
+        trace?: never;
+    };
     "/v1/staff/analytics": {
         parameters: {
             query?: never;
@@ -2476,6 +2747,79 @@ export interface components {
         EnquiryStatusRequest: {
             status: components["schemas"]["EnquiryStatus"];
         };
+        /**
+         * @description Whose lane a role works, who gets alerts, the signature title.
+         * @enum {string}
+         */
+        Team: "GUEST" | "RESERVATIONS" | "SALES" | "GM" | "ADMIN";
+        Permission: {
+            key: string;
+            group: string;
+            label: string;
+            description: string;
+        };
+        Role: {
+            /** Format: uuid */
+            id: string;
+            key: string;
+            name: string;
+            description: string;
+            team: components["schemas"]["Team"];
+            /** @description Administrator and Guest; fixed. */
+            system: boolean;
+            permissions: string[];
+            members: number;
+        };
+        AccessResponse: {
+            permissions: components["schemas"]["Permission"][];
+            roles: components["schemas"]["Role"][];
+        };
+        RoleRequest: {
+            name: string;
+            description?: string;
+            /** @enum {string} */
+            team: "RESERVATIONS" | "SALES" | "GM";
+            permissions: string[];
+        };
+        RoleResponse: {
+            role: components["schemas"]["Role"];
+        };
+        Member: {
+            /** Format: uuid */
+            id: string;
+            email: string;
+            name: string;
+            phone: string | null;
+            /** Format: uuid */
+            role_id: string;
+            role_name: string;
+            team: components["schemas"]["Team"];
+            active: boolean;
+            /** Format: date-time */
+            created_at: string;
+        };
+        MembersResponse: {
+            members: components["schemas"]["Member"][];
+        };
+        MemberResponse: {
+            member: components["schemas"]["Member"];
+        };
+        CreateMemberRequest: {
+            email: string;
+            name: string;
+            phone?: string;
+            /** Format: uuid */
+            role_id: string;
+            password: string;
+        };
+        UpdateMemberRequest: {
+            name?: string;
+            phone?: string;
+            /** Format: uuid */
+            role_id?: string;
+            active?: boolean;
+            password?: string;
+        };
         GmailStatus: {
             /** @description The server has a Google OAuth client. */
             configured: boolean;
@@ -2698,6 +3042,17 @@ export type RouteEnquiryRequest = components['schemas']['RouteEnquiryRequest'];
 export type CorrectEnquiryRequest = components['schemas']['CorrectEnquiryRequest'];
 export type EditDraftRequest = components['schemas']['EditDraftRequest'];
 export type EnquiryStatusRequest = components['schemas']['EnquiryStatusRequest'];
+export type Team = components['schemas']['Team'];
+export type Permission = components['schemas']['Permission'];
+export type Role = components['schemas']['Role'];
+export type AccessResponse = components['schemas']['AccessResponse'];
+export type RoleRequest = components['schemas']['RoleRequest'];
+export type RoleResponse = components['schemas']['RoleResponse'];
+export type Member = components['schemas']['Member'];
+export type MembersResponse = components['schemas']['MembersResponse'];
+export type MemberResponse = components['schemas']['MemberResponse'];
+export type CreateMemberRequest = components['schemas']['CreateMemberRequest'];
+export type UpdateMemberRequest = components['schemas']['UpdateMemberRequest'];
 export type GmailStatus = components['schemas']['GmailStatus'];
 export type GmailStatusResponse = components['schemas']['GmailStatusResponse'];
 export type GmailConnectResponse = components['schemas']['GmailConnectResponse'];

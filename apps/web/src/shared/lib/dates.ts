@@ -45,10 +45,10 @@ export const formatDayMonth = (iso: IsoDate) => dayMonth.format(toDate(iso));
 /** "November 2026" */
 export const formatMonth = (iso: IsoDate) => monthYear.format(toDate(iso));
 
-/** "Sat 14 → Mon 16 Nov", collapsing the month when both dates share it. */
+/** "Sat 14 – Mon 16 Nov", collapsing the month when both dates share it. */
 export function formatStay(checkIn: IsoDate, checkOut: IsoDate): string {
   const sameMonth = checkIn.slice(0, 7) === checkOut.slice(0, 7);
-  return `${sameMonth ? formatWeekdayDay(checkIn) : formatDay(checkIn)} → ${formatDay(checkOut)}`;
+  return `${sameMonth ? formatWeekdayDay(checkIn) : formatDay(checkIn)} – ${formatDay(checkOut)}`;
 }
 
 /** "14–16 Nov" */

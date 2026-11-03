@@ -186,7 +186,7 @@ func (s *Service) quote(ctx context.Context, message string, ex ai.Extracted) (s
 			continue
 		}
 		q := quoted{Room: o.Name, RoomOnlyPaise: o.Plans[0].Quote.TotalPaise, Left: o.Left}
-		line := fmt.Sprintf("• %s: %s room only", o.Name, money.FormatINR(q.RoomOnlyPaise))
+		line := fmt.Sprintf("- %s: %s room only", o.Name, money.FormatINR(q.RoomOnlyPaise))
 		for _, p := range o.Plans {
 			if p.Code == "BB-FLEX" {
 				q.BreakfastPaise = p.Quote.TotalPaise

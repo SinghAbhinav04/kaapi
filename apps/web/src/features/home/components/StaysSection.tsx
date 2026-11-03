@@ -55,7 +55,7 @@ export function StaysSection() {
             <p className={styles.helperBody}>
               Coffee Villas sleep four adults and two children, and pets are welcome there. Tell us who&rsquo;s coming and we&rsquo;ll suggest a fit.
             </p>
-            <Link href={ROUTES.enquire}>Ask the reservations team →</Link>
+            <Link href={ROUTES.enquire}>Ask the reservations team</Link>
           </div>
         </div>
       )}

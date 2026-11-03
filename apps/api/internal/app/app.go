@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"kaapi/api/internal/access"
 	"kaapi/api/internal/admin"
 	"kaapi/api/internal/ai"
 	"kaapi/api/internal/analytics"
@@ -33,6 +34,7 @@ type App struct {
 	Log    *slog.Logger
 	Pool   *pgxpool.Pool
 
+	Access    *access.Service
 	Admin     *admin.Service
 	Analytics *analytics.Service
 	Auth      *auth.Service
@@ -51,6 +53,7 @@ func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() tim
 		Config:    cfg,
 		Log:       log,
 		Pool:      pool,
+		Access:    access.NewService(pool, now),
 		Admin:     admin.NewService(pool),
 		Analytics: analytics.NewService(pool, now),
 		Auth:      auth.NewService(pool, cfg.JWESecret, now),

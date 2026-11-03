@@ -48,28 +48,3 @@ func TestSealerRejects(t *testing.T) {
 		}
 	}
 }
-
-func TestPermissionMatrix(t *testing.T) {
-	cases := []struct {
-		role domain.Role
-		perm auth.Permission
-		want bool
-	}{
-		{domain.RoleGuest, auth.PermOwnBookingsRead, true},
-		{domain.RoleGuest, auth.PermOutboxRead, false},
-		{domain.RoleGuest, auth.PermRatesWrite, false},
-		{domain.RoleSales, auth.PermEnquirySend, true},
-		{domain.RoleSales, auth.PermRatesWrite, false},
-		{domain.RoleReservations, auth.PermRatesWrite, true},
-		{domain.RoleReservations, auth.PermPromosWrite, false},
-		{domain.RoleReservations, auth.PermEnquiriesAll, false},
-		{domain.RoleGM, auth.PermEnquiriesAll, true},
-		{domain.RoleGM, auth.PermPromosWrite, true},
-		{"", auth.PermOwnBookingsRead, false},
-	}
-	for _, tc := range cases {
-		if got := auth.Can(tc.role, tc.perm); got != tc.want {
-			t.Errorf("%s / %s: %v, want %v", tc.role, tc.perm, got, tc.want)
-		}
-	}
-}

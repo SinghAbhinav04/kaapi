@@ -26,7 +26,7 @@ export function StayCard({ card, nights, query, pricesLoading }: StayCardProps) 
           <Image src={card.photo.url} alt={card.photo.alt} fill sizes="(max-width: 700px) 100vw, (max-width: 1200px) 50vw, 33vw" className={styles.zoom} />
         )}
         <span className={styles.peek} aria-hidden="true">
-          View stay <span className={styles.arrow}>→</span>
+          View stay
         </span>
         {scarce && (
           <Pill tone="paper" mono className={styles.badge}>

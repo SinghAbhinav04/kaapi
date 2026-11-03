@@ -57,7 +57,7 @@ export function OutboxPage() {
                     <summary>
                       <Pill tone={kind.tone}>{kind.label}</Pill>
                       <span className={styles.recipient}>
-                        {m.channel.toLowerCase()} → {m.recipient}
+                        {m.channel === 'WHATSAPP' ? 'WhatsApp' : m.channel.charAt(0) + m.channel.slice(1).toLowerCase()} to {m.recipient}
                       </span>
                       <span className={styles.subject}>{m.subject ?? m.body.slice(0, 80)}</span>
                       <span className={styles.time}>

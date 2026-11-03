@@ -116,16 +116,6 @@
   transform: none;
 }
 
-.arrow {
-  display: inline-block;
-  transition: transform var(--dur-med) var(--ease-out);
-}
-
-.card:hover .arrow,
-.card:focus-visible .arrow {
-  transform: translateX(5px);
-}
-
 .badge {
   position: absolute;
   top: 16px;
@@ -234,8 +224,7 @@
 @media (prefers-reduced-motion: reduce) {
   .zoom,
   .peek,
-  .title,
-  .arrow {
+  .title {
     transition: none;
   }
 }

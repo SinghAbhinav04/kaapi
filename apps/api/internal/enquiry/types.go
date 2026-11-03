@@ -108,7 +108,7 @@ type Event struct {
 }
 
 type ListFilter struct {
-	Lanes  []domain.Lane // empty: every lane
+	Lanes  []domain.Lane // nil: every lane; empty: none
 	Status domain.EnquiryStatus
 	Query  string
 	Limit  int

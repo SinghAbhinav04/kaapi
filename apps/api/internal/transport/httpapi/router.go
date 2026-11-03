@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"kaapi/api/internal/access"
 	"kaapi/api/internal/admin"
 	"kaapi/api/internal/analytics"
 	"kaapi/api/internal/app"
@@ -32,6 +33,7 @@ type API struct {
 	cfg       config.Config
 	log       *slog.Logger
 	pool      *pgxpool.Pool
+	access    *access.Service
 	admin     *admin.Service
 	analytics *analytics.Service
 	auth      *auth.Service
@@ -47,7 +49,7 @@ type API struct {
 
 // New exposes the app's services over HTTP.
 func New(a *app.App) *API {
-	return &API{cfg: a.Config, log: a.Log, pool: a.Pool, admin: a.Admin, analytics: a.Analytics, auth: a.Auth,
+	return &API{cfg: a.Config, log: a.Log, pool: a.Pool, access: a.Access, admin: a.Admin, analytics: a.Analytics, auth: a.Auth,
 		bookings: a.Bookings, catalog: a.Catalog, enquiries: a.Enquiries, gmail: a.Gmail, inventory: a.Inventory,
 		outbox: a.Outbox, retention: a.Retention, hub: newHub(a.Pool, a.Log)}
 }
@@ -124,6 +126,18 @@ func (a *API) Router() http.Handler {
 				r.Delete("/integrations/gmail", h(a.gmailDisconnect))
 			})
 			r.With(a.requirePermission(auth.PermEnquirySend)).Post("/messages", h(a.composeMessage))
+
+			// Team and access: the administrator's console for people, roles and permissions.
+			r.Group(func(r chi.Router) {
+				r.Use(a.requirePermission(auth.PermUsersManage))
+				r.Get("/access", h(a.accessOverview))
+				r.Post("/roles", h(a.createRole))
+				r.Put("/roles/{id}", h(a.updateRole))
+				r.Delete("/roles/{id}", h(a.deleteRole))
+				r.Get("/users", h(a.listMembers))
+				r.Post("/users", h(a.createMember))
+				r.Patch("/users/{id}", h(a.updateMember))
+			})
 
 			r.Group(func(r chi.Router) {
 				r.Use(a.requirePermission(auth.PermEnquiriesRead))

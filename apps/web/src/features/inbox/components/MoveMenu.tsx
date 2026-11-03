@@ -28,7 +28,7 @@ export function MoveMenu({ enquiry, onMoved }: { enquiry: Enquiry; onMoved: () =
   return (
     <div ref={ref} className={styles.menuWrap}>
       <button type="button" className={styles.menuButton} aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((o) => !o)} disabled={route.isPending}>
-        {route.isPending ? 'Moving…' : 'Move ▾'}
+        {route.isPending ? 'Moving…' : 'Move to…'}
       </button>
       {open && (
         <div role="menu" className={styles.menu}>
@@ -36,7 +36,7 @@ export function MoveMenu({ enquiry, onMoved }: { enquiry: Enquiry; onMoved: () =
           {CATEGORIES.map((c) => (
             <button key={c} role="menuitem" type="button" className={styles.menuItem} disabled={c === enquiry.category} onClick={() => move(c)}>
               {CATEGORY_LABEL[c]}
-              <span className={styles.menuHint}>→ {LANE_LABEL[CATEGORY_LANE[c]]}</span>
+              <span className={styles.menuHint}>Goes to {LANE_LABEL[CATEGORY_LANE[c]]}</span>
             </button>
           ))}
         </div>

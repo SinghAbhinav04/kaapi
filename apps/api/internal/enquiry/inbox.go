@@ -26,7 +26,7 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]Summary, error) {
 		args = append(args, v)
 		where = append(where, fmt.Sprintf(cond, len(args)))
 	}
-	if len(f.Lanes) > 0 {
+	if f.Lanes != nil { // nil: every lane; empty: none (a team with no lane of its own)
 		add("e.lane = ANY($%d)", f.Lanes)
 	}
 	if f.Status != "" {

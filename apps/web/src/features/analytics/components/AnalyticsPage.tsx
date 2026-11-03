@@ -49,7 +49,7 @@ export function AnalyticsPage() {
             ) : (
               <>
                 <span className={styles.delta}>
-                  {revenueChange >= 0 ? '▲' : '▼'} {percent(Math.abs(revenueChange))}
+                  {revenueChange >= 0 ? 'Up' : 'Down'} {percent(Math.abs(revenueChange))}
                 </span>{' '}
                 vs the {Number(range)} days before
               </>

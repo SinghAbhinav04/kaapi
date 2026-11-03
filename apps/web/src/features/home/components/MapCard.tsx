@@ -51,7 +51,7 @@ export function MapCard() {
           <strong>{MAP.label}</strong> · {MAP.sub}
         </span>
         <a href={MAP.openHref} target="_blank" rel="noopener noreferrer" className={styles.mapLink}>
-          Open in Google Maps <span aria-hidden="true">↗</span>
+          Open in Google Maps
         </a>
       </figcaption>
     </figure>

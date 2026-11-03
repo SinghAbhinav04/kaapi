@@ -61,7 +61,7 @@ func (a *API) updateRates(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	p := principal(r.Context())
-	if (c.TouchesPrice() && !auth.Can(p.Role, auth.PermRatesWrite)) || (c.TouchesInventory() && !auth.Can(p.Role, auth.PermInventoryWrite)) {
+	if (c.TouchesPrice() && !a.can(r, auth.PermRatesWrite)) || (c.TouchesInventory() && !a.can(r, auth.PermInventoryWrite)) {
 		return auth.ErrForbidden
 	}
 	n, err := a.admin.Apply(r.Context(), p.UserID, c)

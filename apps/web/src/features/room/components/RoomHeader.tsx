@@ -30,12 +30,12 @@ export function RoomHeader() {
         <div className={styles.headerStart}>
           <Logo />
           <Link href={ROUTES.staysWith(searchToQuery(search))} className={styles.back}>
-            <span aria-hidden="true">←</span> All stays
+            All stays
           </Link>
         </div>
         <div ref={ref} className={styles.stayPill}>
           <span className={styles.stayPart}>
-            {formatDay(search.checkIn)} → {formatDay(search.checkOut)}
+            {formatDay(search.checkIn)} – {formatDay(search.checkOut)}
           </span>
           <span className={styles.stayDivider} aria-hidden="true" />
           <span className={styles.stayPart}>{formatParty(search.adults, search.children)}</span>

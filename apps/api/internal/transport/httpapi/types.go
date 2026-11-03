@@ -783,3 +783,75 @@ type ComposeRequest struct {
 type OutboxMessageResponse struct {
 	Message OutboxMessageDTO `json:"message"`
 }
+
+// ---- team and access
+
+type PermissionDTO struct {
+	Key         auth.Permission `json:"key"`
+	Group       string          `json:"group"`
+	Label       string          `json:"label"`
+	Description string          `json:"description"`
+}
+
+type RoleDTO struct {
+	ID          uuid.UUID         `json:"id"`
+	Key         string            `json:"key"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Team        domain.Role       `json:"team"`
+	System      bool              `json:"system"`
+	Permissions []auth.Permission `json:"permissions"`
+	Members     int               `json:"members"`
+}
+
+type AccessResponse struct {
+	Permissions []PermissionDTO `json:"permissions"`
+	Roles       []RoleDTO       `json:"roles"`
+}
+
+type RoleRequest struct {
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Team        string            `json:"team"`
+	Permissions []auth.Permission `json:"permissions"`
+}
+
+type RoleResponse struct {
+	Role RoleDTO `json:"role"`
+}
+
+type MemberDTO struct {
+	ID        uuid.UUID   `json:"id"`
+	Email     string      `json:"email"`
+	Name      string      `json:"name"`
+	Phone     *string     `json:"phone"`
+	RoleID    uuid.UUID   `json:"role_id"`
+	RoleName  string      `json:"role_name"`
+	Team      domain.Role `json:"team"`
+	Active    bool        `json:"active"`
+	CreatedAt time.Time   `json:"created_at"`
+}
+
+type MembersResponse struct {
+	Members []MemberDTO `json:"members"`
+}
+
+type MemberResponse struct {
+	Member MemberDTO `json:"member"`
+}
+
+type CreateMemberRequest struct {
+	Email    string    `json:"email"`
+	Name     string    `json:"name"`
+	Phone    string    `json:"phone"`
+	RoleID   uuid.UUID `json:"role_id"`
+	Password string    `json:"password"`
+}
+
+type UpdateMemberRequest struct {
+	Name     *string    `json:"name"`
+	Phone    *string    `json:"phone"`
+	RoleID   *uuid.UUID `json:"role_id"`
+	Active   *bool      `json:"active"`
+	Password *string    `json:"password"`
+}

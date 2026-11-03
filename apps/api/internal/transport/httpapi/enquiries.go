@@ -26,16 +26,19 @@ var ownLanes = map[domain.Role][]domain.Lane{
 	domain.RoleSales:        {domain.LaneSales},
 }
 
-// lanesFor returns nil for "every lane".
-func lanesFor(role domain.Role) []domain.Lane {
-	if auth.Can(role, auth.PermEnquiriesAll) {
+// lanesFor returns nil for "every lane": granted by permission, otherwise the caller's team lane.
+func (a *API) lanesFor(r *http.Request) []domain.Lane {
+	if a.can(r, auth.PermEnquiriesAll) {
 		return nil
 	}
-	return ownLanes[role]
+	if l, ok := ownLanes[principal(r.Context()).Role]; ok {
+		return l
+	}
+	return []domain.Lane{} // a team with no lane of its own sees none
 }
 
-func canSeeLane(role domain.Role, lane domain.Lane) bool {
-	l := lanesFor(role)
+func (a *API) canSeeLane(r *http.Request, lane domain.Lane) bool {
+	l := a.lanesFor(r)
 	return l == nil || slices.Contains(l, lane)
 }
 
@@ -115,16 +118,15 @@ func (a *API) listEnquiries(w http.ResponseWriter, r *http.Request) error {
 	if err := p.Err(); err != nil {
 		return err
 	}
-	role := principal(r.Context()).Role
 	switch {
 	case lane != "" && !lane.Valid():
 		return enquiry.ErrBadLane
-	case lane != "" && !canSeeLane(role, lane):
+	case lane != "" && !a.canSeeLane(r, lane):
 		return auth.ErrForbidden
 	case lane != "":
 		f.Lanes = []domain.Lane{lane}
 	default:
-		f.Lanes = lanesFor(role)
+		f.Lanes = a.lanesFor(r)
 	}
 	if f.Status != "" && !f.Status.Valid() {
 		return apperr.Validation(map[string]string{"status": "is not an enquiry status"})
@@ -156,7 +158,7 @@ func (a *API) visibleEnquiry(r *http.Request) (enquiry.Enquiry, error) {
 	if err != nil {
 		return e, err
 	}
-	if !canSeeLane(principal(r.Context()).Role, e.Lane) {
+	if !a.canSeeLane(r, e.Lane) {
 		return enquiry.Enquiry{}, enquiry.ErrNotFound
 	}
 	return e, nil

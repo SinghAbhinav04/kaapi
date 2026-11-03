@@ -611,6 +611,106 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /v1/staff/access:
+    get:
+      tags: [access]
+      summary: The permission catalogue and every role with what it grants (administrator).
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/AccessResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/staff/roles:
+    post:
+      tags: [access]
+      summary: Create a role for a team with the permissions it grants.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RoleRequest" } } }
+      responses:
+        "201":
+          description: The new role.
+          content: { application/json: { schema: { $ref: "#/components/schemas/RoleResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/staff/roles/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    put:
+      tags: [access]
+      summary: Change a role's name, team and permissions. Takes effect within seconds for everyone with it.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RoleRequest" } } }
+      responses:
+        "200":
+          description: The role after the change.
+          content: { application/json: { schema: { $ref: "#/components/schemas/RoleResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [access]
+      summary: Delete a role nobody has.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/staff/users:
+    get:
+      tags: [access]
+      summary: Every staff account.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/MembersResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [access]
+      summary: Create a staff account with a role and a starting password.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateMemberRequest" } } }
+      responses:
+        "201":
+          description: The new account.
+          content: { application/json: { schema: { $ref: "#/components/schemas/MemberResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/staff/users/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    patch:
+      tags: [access]
+      summary: Change a person's name, role, password or whether they can sign in. Role changes, deactivation and password resets sign them out everywhere.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UpdateMemberRequest" } } }
+      responses:
+        "200":
+          description: The account after the change.
+          content: { application/json: { schema: { $ref: "#/components/schemas/MemberResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
   /v1/staff/analytics:
     get:
       tags: [staff]
@@ -1321,6 +1421,93 @@ components:
       required: [status]
       additionalProperties: false
       properties: { status: { $ref: "#/components/schemas/EnquiryStatus" } }
+
+    Team: { type: string, enum: [GUEST, RESERVATIONS, SALES, GM, ADMIN], description: "Whose lane a role works, who gets alerts, the signature title." }
+
+    Permission:
+      type: object
+      required: [key, group, label, description]
+      properties: { key: { type: string }, group: { type: string }, label: { type: string }, description: { type: string } }
+
+    Role:
+      type: object
+      required: [id, key, name, description, team, system, permissions, members]
+      properties:
+        id: { type: string, format: uuid }
+        key: { type: string }
+        name: { type: string }
+        description: { type: string }
+        team: { $ref: "#/components/schemas/Team" }
+        system: { type: boolean, description: Administrator and Guest; fixed. }
+        permissions: { type: array, items: { type: string } }
+        members: { type: integer }
+
+    AccessResponse:
+      type: object
+      required: [permissions, roles]
+      properties:
+        permissions: { type: array, items: { $ref: "#/components/schemas/Permission" } }
+        roles: { type: array, items: { $ref: "#/components/schemas/Role" } }
+
+    RoleRequest:
+      type: object
+      required: [name, team, permissions]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        description: { type: string }
+        team: { type: string, enum: [RESERVATIONS, SALES, GM] }
+        permissions: { type: array, items: { type: string } }
+
+    RoleResponse:
+      type: object
+      required: [role]
+      properties: { role: { $ref: "#/components/schemas/Role" } }
+
+    Member:
+      type: object
+      required: [id, email, name, phone, role_id, role_name, team, active, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        name: { type: string }
+        phone: { type: string, nullable: true }
+        role_id: { type: string, format: uuid }
+        role_name: { type: string }
+        team: { $ref: "#/components/schemas/Team" }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    MembersResponse:
+      type: object
+      required: [members]
+      properties: { members: { type: array, items: { $ref: "#/components/schemas/Member" } } }
+
+    MemberResponse:
+      type: object
+      required: [member]
+      properties: { member: { $ref: "#/components/schemas/Member" } }
+
+    CreateMemberRequest:
+      type: object
+      required: [email, name, role_id, password]
+      additionalProperties: false
+      properties:
+        email: { type: string }
+        name: { type: string }
+        phone: { type: string }
+        role_id: { type: string, format: uuid }
+        password: { type: string, minLength: 12 }
+
+    UpdateMemberRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        phone: { type: string }
+        role_id: { type: string, format: uuid }
+        active: { type: boolean }
+        password: { type: string, minLength: 12 }
 
     GmailStatus:
       type: object

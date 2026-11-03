@@ -1,13 +1,11 @@
 package auth
 
-import (
-	"slices"
+import "slices"
 
-	"kaapi/api/internal/domain"
-)
-
-// Permission is one thing a role may do. Routes declare the permission they need;
-// roles are granted permissions here and nowhere else.
+// Permission is one thing a person may do. Routes declare the permission they need; which
+// roles grant which permissions lives in the database (roles, role_permissions), edited by
+// the administrator in the console. The constants here are the closed set the code checks,
+// and a test keeps them in step with the permissions table.
 type Permission string
 
 const (
@@ -28,22 +26,21 @@ const (
 	PermRetentionRun    Permission = "retention:run"
 	PermAnalyticsRead   Permission = "analytics:read"
 	PermIntegrations    Permission = "integrations:manage"
+	PermUsersManage     Permission = "users:manage"
 )
 
-var staffBase = []Permission{PermBookingsRead, PermRatesRead, PermEnquiriesRead, PermEnquiryReroute, PermEnquirySend, PermOutboxRead, PermDashboardRead}
-
-var grants = map[domain.Role][]Permission{
-	domain.RoleGuest:        {PermOwnBookingsRead},
-	domain.RoleReservations: append(slices.Clone(staffBase), PermRatesWrite, PermInventoryWrite, PermBookingsExport),
-	domain.RoleSales:        slices.Clone(staffBase),
-	domain.RoleGM: append(slices.Clone(staffBase), PermRatesWrite, PermInventoryWrite, PermPromosWrite, PermEnquiriesAll,
-		PermBookingsExport, PermFactsWrite, PermAnalyticsRead, PermIntegrations),
-	domain.RoleAdmin: append(slices.Clone(staffBase), PermRatesWrite, PermInventoryWrite, PermPromosWrite, PermEnquiriesAll,
-		PermBookingsExport, PermFactsWrite, PermRetentionRun, PermAnalyticsRead, PermIntegrations),
+// staffPermissions is every permission a staff role can be granted.
+var staffPermissions = []Permission{
+	PermEnquiriesRead, PermEnquiriesAll, PermEnquiryReroute, PermEnquirySend,
+	PermBookingsRead, PermBookingsExport, PermRatesRead, PermRatesWrite, PermInventoryWrite, PermPromosWrite,
+	PermOutboxRead, PermFactsWrite, PermDashboardRead, PermAnalyticsRead, PermIntegrations, PermRetentionRun, PermUsersManage,
 }
 
-// Can reports whether a role holds a permission.
-func Can(role domain.Role, p Permission) bool { return slices.Contains(grants[role], p) }
+// AllPermissions is what the Administrator role holds: every staff permission.
+func AllPermissions() []Permission { return slices.Clone(staffPermissions) }
 
-// PermissionsOf lists a role's permissions, for the client to hide what it can't use.
-func PermissionsOf(role domain.Role) []Permission { return slices.Clone(grants[role]) }
+// IsStaffPermission reports whether p can be granted to a staff role.
+func IsStaffPermission(p Permission) bool { return slices.Contains(staffPermissions, p) }
+
+// KnownPermissions is every permission the code checks, guest ones included.
+func KnownPermissions() []Permission { return append(AllPermissions(), PermOwnBookingsRead) }
