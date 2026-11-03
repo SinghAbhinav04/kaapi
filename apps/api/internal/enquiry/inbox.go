@@ -35,15 +35,26 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]Summary, error) {
 		add("e.status <> ALL($%d)", []domain.EnquiryStatus{domain.EnquiryClosed, domain.EnquirySpam})
 	}
 	if q := strings.TrimSpace(f.Query); q != "" {
-		add("(e.raw_text ILIKE '%%' || $%[1]d || '%%' OR e.sender_name ILIKE '%%' || $%[1]d || '%%' OR e.ref ILIKE '%%' || $%[1]d || '%%')", q)
+		// Same expression as enquiries_search_trgm_idx, so the trigram index serves it.
+		add("(coalesce(e.sender_name, '') || ' ' || e.ref || ' ' || e.raw_text) ILIKE '%%' || $%d || '%%'", q)
 	}
 	args = append(args, ai.UnsortedBelow, f.Limit)
-	q := fmt.Sprintf(`SELECT e.ref, e.channel, e.sender_name, e.raw_text, e.received_at, e.category, e.confidence::float8, e.lane,
-		e.status, e.priority, e.ai_status, e.category = 'ROOM' AND (e.extracted->>'check_in' IS NULL),
-		e.confidence < $%d, EXISTS (SELECT 1 FROM enquiry_drafts d WHERE d.enquiry_id = e.id)
-		FROM enquiries e WHERE %s
-		ORDER BY (e.priority = 'HIGH' AND e.status = 'NEW') DESC, e.received_at DESC LIMIT $%d`,
-		len(args)-1, strings.Join(where, " AND "), len(args))
+	cond := strings.Join(where, " AND ")
+	// Urgent (HIGH and NEW) first, then newest. Ordering by that expression directly forces a
+	// sort over every open enquiry; two index-ordered halves that each stop at the limit don't.
+	// Only the start of each message is read: the list shows a snippet.
+	q := fmt.Sprintf(`WITH picked AS (
+			(SELECT e.id, true AS urgent, e.received_at FROM enquiries e
+				WHERE %[1]s AND e.priority = 'HIGH' AND e.status = 'NEW' ORDER BY e.received_at DESC LIMIT $%[3]d)
+			UNION ALL
+			(SELECT e.id, false, e.received_at FROM enquiries e
+				WHERE %[1]s AND NOT (e.priority = 'HIGH' AND e.status = 'NEW') ORDER BY e.received_at DESC LIMIT $%[3]d))
+		SELECT e.ref, e.channel, e.sender_name, left(e.raw_text, %[4]d), e.received_at, e.category, e.confidence::float8, e.lane,
+			e.status, e.priority, e.ai_status, e.category = 'ROOM' AND (e.extracted->>'check_in' IS NULL),
+			e.confidence < $%[2]d, EXISTS (SELECT 1 FROM enquiry_drafts d WHERE d.enquiry_id = e.id)
+		FROM picked p JOIN enquiries e ON e.id = p.id
+		ORDER BY p.urgent DESC, p.received_at DESC LIMIT $%[3]d`,
+		cond, len(args)-1, len(args), snippetSourceChars)
 	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
