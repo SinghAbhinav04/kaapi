@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +28,10 @@ func Seeded(t *testing.T) (context.Context, *pgxpool.Pool) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("TEST_DATABASE_URL not set; start a database with `go run ./cmd/devdb`")
+	}
+	// Tests truncate every table. Refuse anything that looks like a hosted database.
+	if strings.Contains(url, "supabase.co") || strings.Contains(url, "pooler.supabase.com") {
+		t.Fatal("TEST_DATABASE_URL points at Supabase; tests wipe their database, so use a throwaway one (go run ./cmd/devdb)")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	t.Cleanup(cancel)
