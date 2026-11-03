@@ -1,0 +1,24 @@
+/* Sits above section backgrounds (z 1) but below section content (z 2), so the line
+   passes behind cards and images instead of drawing over them. */
+.svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.path {
+  fill: none;
+  stroke: var(--estate-deep);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  opacity: 0.4;
+}
+
+.dot {
+  fill: rgba(44, 74, 53, 0.55);
+  opacity: 0;
+  transition: opacity var(--dur-med) var(--ease-out);
+}

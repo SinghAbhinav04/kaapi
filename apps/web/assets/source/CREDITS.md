@@ -1,5 +1,8 @@
 # Image credits
 
+Originals live here, in `assets/source/`. What the site serves is built from them by
+`python scripts/build-images.py` into `public/images/` (AVIF, sized for its largest use).
+
 All imagery here is **placeholder** until the resort's own shoot. None of it shows the client's real property. Swap it all before launch, because guests must see the place they are actually booking (see ENQ-4460 in the seed data: a complaint about misleading photos).
 
 ## AI-generated (Google Gemini), in `gen/`
@@ -15,7 +18,7 @@ These were generated from prompts written for this project and are labelled as A
 | `coffee-cherries.jpg`, `harvest.jpg`, `filter-coffee.jpg` | The estate section |
 | `estate-lawn-wedding.jpg`, `planters-hall.jpg` | Weddings and offsites |
 
-## Unsplash (Unsplash License), still in use for four rooms until generated versions exist
+## Unsplash (Unsplash License), in `unsplash/`, still in use for four rooms until generated versions exist
 
 | Use | Photographer | Source |
 |---|---|---|

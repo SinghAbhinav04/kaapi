@@ -1,0 +1,63 @@
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+}
+
+.estate {
+  background: var(--estate-tint-2);
+  color: var(--estate-deep);
+}
+
+.amber {
+  background: var(--amber-tint);
+  color: var(--amber-ink);
+}
+
+.cherry {
+  background: var(--cherry-tint);
+  color: var(--cherry);
+}
+
+.alert {
+  background: var(--cherry);
+  color: #fff;
+}
+
+.neutral {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.unsorted {
+  background: var(--paper-2);
+  color: var(--ink);
+  border: 1px dashed var(--grey);
+  padding-block: 3px;
+}
+
+.paper {
+  background: var(--paper);
+  color: var(--cherry);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+.dark {
+  background: var(--ink);
+  color: var(--on-dark);
+}

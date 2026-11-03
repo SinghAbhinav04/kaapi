@@ -1,0 +1,31 @@
+{
+  "name": "kaapi-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "gen:api": "openapi-typescript ../../contract/openapi.yaml -o src/apis/generated/schema.ts --root-types --root-types-no-schema-prefix"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.105.3",
+    "next": "16.4.4",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@tanstack/react-query-devtools": "5.105.3",
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "babel-plugin-react-compiler": "1.0.0",
+    "eslint": "10.14.0",
+    "eslint-config-next": "16.4.4",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}

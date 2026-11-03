@@ -1,0 +1,40 @@
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--tap);
+  padding: 0 4px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+.dark {
+  background: var(--night);
+  box-shadow: none;
+  color: var(--on-dark);
+}
+
+.warn {
+  box-shadow: inset 0 0 0 1.5px #e0846f;
+}
+
+.step {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.step:disabled {
+  opacity: 0.35;
+}
+
+.value {
+  min-width: 28px;
+  text-align: center;
+  font: 700 16px var(--font-mono);
+}

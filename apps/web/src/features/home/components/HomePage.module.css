@@ -1,0 +1,8 @@
+.page {
+  overflow-x: clip;
+}
+
+/* The TrailSpine measures sections relative to this container. */
+.trail {
+  position: relative;
+}

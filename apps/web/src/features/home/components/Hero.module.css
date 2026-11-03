@@ -1,0 +1,438 @@
+/* Tall wrapper + sticky scene: scroll progress through .wrap drives every layer. */
+.wrap {
+  position: relative;
+  height: 340svh;
+  view-timeline: --hero block;
+}
+
+.sticky {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  min-height: 640px;
+  overflow: hidden;
+  background: #cfd6d2;
+}
+
+.cam {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 60%;
+}
+
+.kenBurns {
+  position: absolute;
+  inset: -3%;
+  transform-origin: 58% 52%;
+  animation: ken-burns 26s ease-in-out infinite alternate;
+}
+
+.photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mist {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.35;
+}
+
+.drift {
+  animation: drift 34s ease-in-out infinite alternate;
+}
+
+.driftReverse {
+  animation: drift 48s ease-in-out infinite alternate-reverse;
+}
+
+.rows {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.cam2 {
+  position: absolute;
+  inset: 0;
+}
+
+.flora {
+  position: absolute;
+  left: -3%;
+  right: -3%;
+  bottom: -4%;
+  height: 70%;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+}
+
+.floraImg {
+  object-fit: cover;
+  object-position: 50% 100%;
+  transform-origin: 50% 100%;
+  animation: sway 5s ease-in-out infinite alternate;
+}
+
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 45%, rgba(0, 0, 0, 0) 50%, rgba(18, 22, 28, 0.28) 100%),
+    linear-gradient(rgba(18, 22, 28, 0) 60%, rgba(18, 22, 28, 0.35) 100%);
+}
+
+.glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(55% 42% at 26% 28%, rgba(245, 241, 234, 0.78) 0%, rgba(245, 241, 234, 0) 72%);
+}
+
+.intro {
+  position: absolute;
+  inset: 0;
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: clamp(110px, 16svh, 150px) var(--gutter) 0;
+}
+
+.eyebrow {
+  margin-bottom: 20px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  color: #1f3a28;
+}
+
+.title {
+  max-width: 860px;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--text-display-xl);
+  line-height: var(--leading-display);
+  letter-spacing: 0.005em;
+}
+
+.titleAccent {
+  font-family: var(--font-accent);
+  font-style: italic;
+  font-size: 1.08em;
+  letter-spacing: 0;
+}
+
+.lead {
+  margin-top: 26px;
+  max-width: 520px;
+  font-size: var(--text-lead);
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.hint {
+  position: absolute;
+  left: 50%;
+  bottom: 150px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  color: var(--on-dark);
+}
+
+.beat {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 24px;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.beatText {
+  max-width: 820px;
+  text-align: center;
+  padding: 18px 34px;
+  border-radius: var(--radius-xl);
+  background: rgba(245, 241, 234, 0.62);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  font-family: var(--font-accent);
+  font-style: italic;
+  font-size: var(--text-quote);
+  line-height: 1.1;
+}
+
+.beatFinal {
+  max-width: 860px;
+  text-align: center;
+  padding: 26px 40px;
+  border-radius: 24px;
+  background: rgba(245, 241, 234, 0.72);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+
+.beatTitle {
+  font-family: var(--font-display);
+  font-size: clamp(2.25rem, 1.4rem + 3vw, 4.25rem);
+  line-height: var(--leading-display);
+}
+
+.beatSub {
+  margin-top: 12px;
+  font-size: 18px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
+.search {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  width: min(1080px, calc(100% - 40px));
+}
+
+/* Scroll-driven choreography (Chromium, Safari 26+). Elsewhere the hero is a still scene. */
+@supports (animation-timeline: view()) {
+  .cam {
+    animation: cam linear both;
+    animation-timeline: --hero;
+    animation-range: contain 0% contain 60%;
+  }
+
+  .cam2 {
+    animation: cam2 linear both;
+    animation-timeline: --hero;
+    animation-range: contain 52% contain 100%;
+  }
+
+  .flora {
+    animation: flora-parallax linear both;
+    animation-timeline: --hero;
+    animation-range: contain 0% contain 100%;
+  }
+
+  .rows {
+    animation: fade-in linear both;
+    animation-timeline: --hero;
+    animation-range: contain 52% contain 64%;
+  }
+
+  .mist {
+    animation: mist-up linear both;
+    animation-timeline: --hero;
+    animation-range: contain 22% contain 60%;
+  }
+
+  .intro {
+    animation: intro-out linear both;
+    animation-timeline: --hero;
+    animation-range: contain 0% contain 12%;
+  }
+
+  .hint {
+    animation: hint-out linear both;
+    animation-timeline: --hero;
+    animation-range: contain 0% contain 5%;
+  }
+
+  .b1 {
+    animation: beat linear both;
+    animation-timeline: --hero;
+    animation-range: contain 10% contain 32%;
+  }
+
+  .b2 {
+    animation: beat linear both;
+    animation-timeline: --hero;
+    animation-range: contain 30% contain 52%;
+  }
+
+  .b3 {
+    animation: beat linear both;
+    animation-timeline: --hero;
+    animation-range: contain 54% contain 78%;
+  }
+
+  .b4 {
+    animation: beat-in linear both;
+    animation-timeline: --hero;
+    animation-range: contain 78% contain 94%;
+  }
+}
+
+@supports not (animation-timeline: view()) {
+  .wrap {
+    height: auto;
+  }
+
+  .beat {
+    display: none;
+  }
+}
+
+@keyframes ken-burns {
+  from {
+    transform: scale(1.03);
+  }
+  to {
+    transform: scale(1.1) translate(-1.5%, -1.2%);
+  }
+}
+
+@keyframes drift {
+  from {
+    transform: translateX(-4%);
+  }
+  to {
+    transform: translateX(4%);
+  }
+}
+
+@keyframes sway {
+  from {
+    transform: rotate(-0.6deg) translateX(-0.4%);
+  }
+  to {
+    transform: rotate(0.6deg) translateX(0.4%);
+  }
+}
+
+@keyframes cam {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.18) translateY(3%);
+  }
+}
+
+@keyframes cam2 {
+  from {
+    transform: scale(1.12);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes flora-parallax {
+  from {
+    transform: none;
+  }
+  to {
+    transform: translateY(8%) scale(1.25);
+  }
+}
+
+@keyframes mist-up {
+  0% {
+    opacity: 0.35;
+  }
+  60% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes intro-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-40px);
+  }
+}
+
+@keyframes hint-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes beat {
+  0% {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+  25%,
+  75% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-32px);
+  }
+}
+
+@keyframes beat-in {
+  0% {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+  45%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .hint {
+    display: none;
+  }
+
+  .search {
+    bottom: 16px;
+    width: calc(100% - 24px);
+  }
+
+  .glow {
+    background: radial-gradient(90% 50% at 30% 25%, rgba(245, 241, 234, 0.85) 0%, rgba(245, 241, 234, 0) 75%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kenBurns,
+  .drift,
+  .driftReverse,
+  .floraImg,
+  .cam,
+  .cam2,
+  .flora {
+    animation: none;
+  }
+}

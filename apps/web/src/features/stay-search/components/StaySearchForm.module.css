@@ -1,0 +1,123 @@
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--radius-xl);
+}
+
+.hero {
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--e3);
+}
+
+.panel {
+  padding: 0;
+  flex-direction: column;
+}
+
+.cell {
+  position: relative;
+  flex: 1 1 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 18px;
+  border-radius: var(--radius-md);
+  background: rgba(245, 241, 234, 0.92);
+}
+
+.panel .cell {
+  flex: none;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+}
+
+.cellLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  color: var(--grey);
+}
+
+.cellInput,
+.cellButton {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: 600 18px var(--font-body);
+  color: var(--ink);
+  text-align: left;
+  min-height: 28px;
+}
+
+.cellInput:focus,
+.cellButton:focus {
+  outline: none;
+}
+
+.cell:focus-within {
+  outline: 2px solid var(--estate);
+  outline-offset: 2px;
+}
+
+.submit {
+  flex: 0 1 220px;
+  min-height: 64px;
+}
+
+.panel .submit {
+  flex: none;
+}
+
+/* guests popover: opens above the hero bar, below the field in a panel */
+.popover {
+  position: absolute;
+  z-index: 10;
+  left: 0;
+  bottom: calc(100% + 10px);
+  width: min(340px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--e3);
+}
+
+.panel .popover {
+  top: calc(100% + 8px);
+  bottom: auto;
+}
+
+.panelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.panelRow small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--grey);
+}
+
+.panelDone {
+  align-self: flex-end;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  color: var(--on-dark);
+  font-weight: 600;
+}

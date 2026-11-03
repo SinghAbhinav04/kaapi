@@ -1,0 +1,35 @@
+.footer {
+  border-top: 1px solid var(--hairline);
+}
+
+.row {
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 48px var(--gutter) 24px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 24px;
+  font-size: 14px;
+  color: var(--grey);
+}
+
+.brand {
+  font-family: var(--font-display);
+  font-size: 20px;
+  color: var(--ink);
+}
+
+.links {
+  display: flex;
+  gap: 20px;
+}
+
+.credit {
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 0 var(--gutter) 40px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--grey);
+}
