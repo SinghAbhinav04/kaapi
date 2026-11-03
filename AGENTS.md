@@ -239,6 +239,7 @@ Segmented, Stepper, Skeleton, EmptyState/ErrorState and Logo.
 - **Shared database: Supabase Postgres (Mumbai, project `mpfjyrmtlkeqryfhmdfy`).**
   - Locally: set `DATABASE_URL` in `apps/api/.env` (git-ignored), using the direct host `db.<ref>.supabase.co:5432`, which is IPv6.
   - Cloud Run has no IPv6, so production must use the **session pooler** URL from Supabase → Connect.
+  - If the password contains reserved characters (`@ : / # ? %`), percent-encode them in the URL. An unencoded `@` makes the host parse as `@db.…`.
   - Migrations run on API start and in `cmd/seed`.
   - **RLS is on for every table** (migration 0002). The publishable key exposes nothing. A test fails if any table lacks RLS.
 - **Seeding:** `cd apps/api && go run ./cmd/seed -reset`. The demo staff password comes from `SEED_DEMO_PASSWORD`.
@@ -294,7 +295,7 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 - `next build` passes, plus an end-to-end smoke test through the `/api` proxy.
 
 **To do, in order:**
-1. Seed Supabase, then run the app and the smoke test against it.
+1. ~~Seed Supabase and run the smoke test against it.~~ Done 3 Nov: seeded, and the public key reads nothing (RLS verified).
 2. A visual pass in a browser at 1440 px and 390 px against the approved canvas (Claude Design artifact "Kaapi Estate — Direct Booking").
 3. Small API gaps:
    - `GET /v1/staff/notifications`: GM alerts are stored but nothing reads them.
