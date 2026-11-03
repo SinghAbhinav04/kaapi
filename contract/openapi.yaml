@@ -365,6 +365,56 @@ paths:
         "422": { $ref: "#/components/responses/Error" }
 
         "429": { $ref: "#/components/responses/Error" }
+  /v1/staff/offers:
+    get:
+      tags: [staff]
+      summary: Every offer, live ones first. Needs promos:write.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/OffersResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [staff]
+      summary: Add an offer (a code, or an automatic festive or seasonal discount). Audit-logged.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OfferRequest" } } }
+      responses:
+        "201":
+          description: Created
+          content: { application/json: { schema: { $ref: "#/components/schemas/OfferResponse" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/staff/offers/{id}:
+    put:
+      tags: [staff]
+      summary: Change an offer, including pausing it (active false). Its use count is kept. Audit-logged.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OfferRequest" } } }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/OfferResponse" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/rates:
     get:
       tags: [staff]
@@ -924,6 +974,44 @@ components:
       properties:
         charged_in: { type: string, enum: [INR], description: Bookings are always charged in this currency. }
         rates: { type: array, items: { $ref: "#/components/schemas/FxRate" } }
+
+    OfferRequest:
+      type: object
+      required: [code, description, type, value, stay_from, stay_to, book_from, book_to, min_nights, max_uses, room_type_ids, auto_apply, active]
+      properties:
+        code: { type: string, pattern: "^[A-Za-z0-9]{3,24}$", description: Shown on the quote; guests type it unless the offer is automatic. }
+        description: { type: string, minLength: 3, maxLength: 200 }
+        type: { type: string, enum: [PERCENT, FLAT] }
+        value: { type: integer, format: int64, minimum: 1, description: "Basis points for PERCENT (1500 = 15%, at most 50%), paise for FLAT." }
+        stay_from: { type: string, format: date }
+        stay_to: { type: string, format: date, description: The last night it covers. }
+        book_from: { type: string, format: date }
+        book_to: { type: string, format: date }
+        min_nights: { type: integer, minimum: 1, maximum: 30 }
+        max_uses: { type: integer, minimum: 1, nullable: true, description: Null for no cap. }
+        room_type_ids: { type: array, items: { type: string, format: uuid }, description: Empty for every room type. }
+        auto_apply: { type: boolean, description: "Applies by itself to stays it covers (a festive or seasonal offer). Guests always get their best offer: an automatic one or the code they typed." }
+        active: { type: boolean, description: False pauses it. }
+
+    Offer:
+      allOf:
+        - $ref: "#/components/schemas/OfferRequest"
+        - type: object
+          required: [id, used_count, updated_at]
+          properties:
+            id: { type: string, format: uuid }
+            used_count: { type: integer, minimum: 0 }
+            updated_at: { type: string, format: date-time }
+
+    OffersResponse:
+      type: object
+      required: [offers]
+      properties: { offers: { type: array, items: { $ref: "#/components/schemas/Offer" } } }
+
+    OfferResponse:
+      type: object
+      required: [offer]
+      properties: { offer: { $ref: "#/components/schemas/Offer" } }
 
     Photo:
       type: object

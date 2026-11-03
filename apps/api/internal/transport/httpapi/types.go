@@ -869,3 +869,36 @@ type UpdateMemberRequest struct {
 	Active   *bool      `json:"active"`
 	Password *string    `json:"password"`
 }
+
+// ---- offers
+
+type OfferRequest struct {
+	Code        string           `json:"code"`
+	Description string           `json:"description"`
+	Type        domain.PromoType `json:"type"`
+	Value       int64            `json:"value"`
+	StayFrom    string           `json:"stay_from"`
+	StayTo      string           `json:"stay_to"`
+	BookFrom    string           `json:"book_from"`
+	BookTo      string           `json:"book_to"`
+	MinNights   int              `json:"min_nights"`
+	MaxUses     *int             `json:"max_uses"`
+	RoomTypeIDs []uuid.UUID      `json:"room_type_ids"`
+	AutoApply   bool             `json:"auto_apply"`
+	Active      bool             `json:"active"`
+}
+
+type OfferDTO struct {
+	OfferRequest
+	ID        uuid.UUID `json:"id"`
+	UsedCount int       `json:"used_count"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type OffersResponse struct {
+	Offers []OfferDTO `json:"offers"`
+}
+
+type OfferResponse struct {
+	Offer OfferDTO `json:"offer"`
+}

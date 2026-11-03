@@ -68,4 +68,50 @@ const (
 	stopSellReasonMax = 120
 	auditActionRates  = "rates.bulk_update"
 	auditEntityRoom   = "room_type"
+
+	auditActionOfferCreate = "offer.create"
+	auditActionOfferUpdate = "offer.update"
+	auditEntityOffer       = "promo_code"
+
+	// Offer limits. A percentage is in basis points; the database caps it at 50% too.
+	maxPercentBps       = 5000
+	maxFlatPaise        = 1_00_000_00 // ₹1,00,000
+	maxOfferMinNights   = 30
+	offerDescriptionMin = 3
+	offerDescriptionMax = 200
+	pgUniqueViolation   = "23505"
 )
+
+// Offer is a discount: a code guests type, or an automatic offer (AutoApply) that applies by
+// itself to stays it covers, booked while it runs.
+type Offer struct {
+	ID                   uuid.UUID
+	Code                 string
+	Description          string
+	Type                 domain.PromoType
+	Value                int64 // basis points for PERCENT, paise for FLAT
+	StayFrom, StayTo     time.Time
+	BookFrom, BookTo     time.Time
+	MinNights            int
+	MaxUses              *int
+	UsedCount            int
+	RoomTypeIDs          []uuid.UUID // empty: every room type
+	AutoApply            bool
+	Active               bool
+	CreatedAt, UpdatedAt time.Time
+}
+
+// OfferInput is what staff set on an offer.
+type OfferInput struct {
+	Code             string
+	Description      string
+	Type             domain.PromoType
+	Value            int64
+	StayFrom, StayTo time.Time
+	BookFrom, BookTo time.Time
+	MinNights        int
+	MaxUses          *int
+	RoomTypeIDs      []uuid.UUID
+	AutoApply        bool
+	Active           bool
+}

@@ -124,6 +124,12 @@ func (a *API) Router() http.Handler {
 			r.With(a.requirePermission(auth.PermRatesRead)).Get("/rates", h(a.ratesGrid))
 			r.With(a.requirePermission(auth.PermRatesRead)).Put("/rates", h(a.updateRates)) // the handler checks write permissions per field
 			r.With(a.requirePermission(auth.PermDashboardRead)).Get("/dashboard", h(a.dashboard))
+			r.Group(func(r chi.Router) {
+				r.Use(a.requirePermission(auth.PermPromosWrite))
+				r.Get("/offers", h(a.listOffers))
+				r.Post("/offers", h(a.createOffer))
+				r.Put("/offers/{id}", h(a.updateOffer))
+			})
 			r.With(a.requirePermission(auth.PermRetentionRun)).Post("/retention/run", h(a.runRetention))
 			r.With(a.requirePermission(auth.PermAnalyticsRead)).Get("/analytics", h(a.analyticsReport))
 			r.With(a.requirePermission(auth.PermEnquiriesRead)).Get("/integrations/gmail", h(a.gmailStatus))

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -102,5 +103,80 @@ func (store) audit(ctx context.Context, q db.Querier, actor, roomTypeID uuid.UUI
 	}
 	_, err = q.Exec(ctx, `INSERT INTO audit_logs (id, actor_user_id, action, entity, entity_id, after) VALUES ($1,$2,$3,$4,$5,$6)`,
 		idgen.New(), actor, auditActionRates, auditEntityRoom, roomTypeID.String(), b)
+	return err
+}
+
+const offerColumns = `id, code, description, type, value, stay_from, stay_to, book_from, book_to, min_nights, max_uses, used_count,
+	coalesce(room_type_ids, '{}'), auto_apply, is_active, created_at, updated_at`
+
+func scanOffer(r pgx.Row) (Offer, error) {
+	var o Offer
+	return o, r.Scan(&o.ID, &o.Code, &o.Description, &o.Type, &o.Value, &o.StayFrom, &o.StayTo, &o.BookFrom, &o.BookTo,
+		&o.MinNights, &o.MaxUses, &o.UsedCount, &o.RoomTypeIDs, &o.AutoApply, &o.Active, &o.CreatedAt, &o.UpdatedAt)
+}
+
+func (store) offers(ctx context.Context, q db.Querier) ([]Offer, error) {
+	rows, err := q.Query(ctx, `SELECT `+offerColumns+` FROM promo_codes ORDER BY is_active DESC, book_to DESC, code`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Offer, error) { return scanOffer(r) })
+}
+
+func (store) offer(ctx context.Context, q db.Querier, id uuid.UUID) (Offer, error) {
+	o, err := scanOffer(q.QueryRow(ctx, `SELECT `+offerColumns+` FROM promo_codes WHERE id = $1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return o, ErrOfferNotFound
+	}
+	return o, err
+}
+
+// roomIDs stores nil for "every room type", as the pricing code expects.
+func roomIDs(ids []uuid.UUID) []uuid.UUID {
+	if len(ids) == 0 {
+		return nil
+	}
+	return ids
+}
+
+func (store) insertOffer(ctx context.Context, q db.Querier, id uuid.UUID, in OfferInput) error {
+	_, err := q.Exec(ctx, `INSERT INTO promo_codes (id, code, description, type, value, stay_from, stay_to, book_from, book_to,
+		min_nights, max_uses, room_type_ids, auto_apply, is_active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		id, in.Code, in.Description, in.Type, in.Value, in.StayFrom, in.StayTo, in.BookFrom, in.BookTo,
+		in.MinNights, in.MaxUses, roomIDs(in.RoomTypeIDs), in.AutoApply, in.Active)
+	return err
+}
+
+func (store) updateOffer(ctx context.Context, q db.Querier, id uuid.UUID, in OfferInput) error {
+	_, err := q.Exec(ctx, `UPDATE promo_codes SET code = $2, description = $3, type = $4, value = $5, stay_from = $6, stay_to = $7,
+		book_from = $8, book_to = $9, min_nights = $10, max_uses = $11, room_type_ids = $12, auto_apply = $13, is_active = $14,
+		updated_at = now() WHERE id = $1`,
+		id, in.Code, in.Description, in.Type, in.Value, in.StayFrom, in.StayTo, in.BookFrom, in.BookTo,
+		in.MinNights, in.MaxUses, roomIDs(in.RoomTypeIDs), in.AutoApply, in.Active)
+	return err
+}
+
+// checkRooms refuses room type ids that don't exist (an array can't carry a foreign key).
+func (store) checkRooms(ctx context.Context, q db.Querier, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	var n int
+	if err := q.QueryRow(ctx, `SELECT count(*) FROM room_types WHERE id = ANY($1)`, ids).Scan(&n); err != nil {
+		return err
+	}
+	if n != len(ids) {
+		return ErrOfferRoom
+	}
+	return nil
+}
+
+func (store) auditEntry(ctx context.Context, q db.Querier, actor uuid.UUID, action, entity, entityID string, after map[string]any) error {
+	b, err := json.Marshal(after)
+	if err != nil {
+		return err
+	}
+	_, err = q.Exec(ctx, `INSERT INTO audit_logs (id, actor_user_id, action, entity, entity_id, after) VALUES ($1,$2,$3,$4,$5,$6)`,
+		idgen.New(), actor, action, entity, entityID, b)
 	return err
 }

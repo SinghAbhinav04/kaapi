@@ -67,8 +67,9 @@ func quoteStay(ctx context.Context, q Querier, req HoldRequest, st settings, tod
 		return pricing.Quote{}, nil, ErrNotForSale
 	}
 
-	var promo *pricing.Promo
-	var promoID *uuid.UUID
+	// The discounts on offer: the code the guest typed (an invalid one is reported, as before)
+	// and every automatic offer that fits this stay. The guest gets whichever is cheapest.
+	var offers []candidate
 	if code := strings.ToUpper(strings.TrimSpace(req.PromoCode)); code != "" {
 		rule, id, err := loadPromo(ctx, q, code)
 		if err != nil {
@@ -77,14 +78,68 @@ func quoteStay(ctx context.Context, q Querier, req HoldRequest, st settings, tod
 		if err := pricing.Eligible(rule, req.Stay, today, req.RoomTypeID); err != nil {
 			return pricing.Quote{}, nil, &PromoError{Err: err}
 		}
-		promo, promoID = &rule.Promo, &id
+		offers = append(offers, candidate{promo: rule.Promo, id: id})
+	}
+	autos, err := loadAutoOffers(ctx, q, today)
+	if err != nil {
+		return pricing.Quote{}, nil, err
+	}
+	for _, a := range autos {
+		if pricing.Eligible(a.rule, req.Stay, today, req.RoomTypeID) == nil {
+			offers = append(offers, candidate{promo: a.rule.Promo, id: a.id})
+		}
 	}
 
-	quote, err := pricing.Price(pricing.Input{Nights: nights, Party: req.Party, Room: room, Promo: promo, Slabs: st.slabs})
+	in := pricing.Input{Nights: nights, Party: req.Party, Room: room, Slabs: st.slabs}
+	best, err := pricing.Price(in)
 	if errors.Is(err, pricing.ErrTooManyGuest) {
-		return quote, nil, apperr.Wrap(err, apperr.CodeTooManyGuests, ErrTooManyGuests.Message)
+		return best, nil, apperr.Wrap(err, apperr.CodeTooManyGuests, ErrTooManyGuests.Message)
 	}
-	return quote, promoID, err
+	if err != nil {
+		return best, nil, err
+	}
+	var bestID *uuid.UUID
+	for _, o := range offers {
+		in.Promo = &o.promo
+		quote, err := pricing.Price(in)
+		if err != nil {
+			return quote, nil, err
+		}
+		// Strictly cheaper wins, so on a tie the code the guest typed (listed first) stays.
+		if bestID == nil || quote.TotalPaise < best.TotalPaise {
+			best, bestID = quote, &o.id
+		}
+	}
+	return best, bestID, nil
+}
+
+// candidate is one discount that could apply to a stay.
+type candidate struct {
+	promo pricing.Promo
+	id    uuid.UUID
+}
+
+type autoOffer struct {
+	rule pricing.PromoRule
+	id   uuid.UUID
+}
+
+// loadAutoOffers returns the automatic offers bookable today; Eligible then checks the stay.
+func loadAutoOffers(ctx context.Context, q Querier, today time.Time) ([]autoOffer, error) {
+	rows, err := q.Query(ctx, `SELECT id, code, type, value, stay_from, stay_to, book_from, book_to, min_nights, max_uses, used_count,
+		coalesce(room_type_ids, '{}'), is_active FROM promo_codes
+		WHERE auto_apply AND is_active AND book_from <= $1 AND book_to >= $1
+		  AND (max_uses IS NULL OR used_count < max_uses)
+		ORDER BY code`, today)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (autoOffer, error) {
+		var a autoOffer
+		err := r.Scan(&a.id, &a.rule.Code, &a.rule.Type, &a.rule.Value, &a.rule.StayFrom, &a.rule.StayTo, &a.rule.BookFrom, &a.rule.BookTo,
+			&a.rule.MinNights, &a.rule.MaxUses, &a.rule.UsedCount, &a.rule.RoomTypeIDs, &a.rule.Active)
+		return a, err
+	})
 }
 
 func loadPromo(ctx context.Context, q Querier, code string) (pricing.PromoRule, uuid.UUID, error) {

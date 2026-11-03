@@ -1040,6 +1040,124 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/staff/offers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every offer, live ones first. Needs promos:write. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OffersResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /** Add an offer (a code, or an automatic festive or seasonal discount). Audit-logged. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OfferRequest"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OfferResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/offers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Change an offer, including pausing it (active false). Its use count is kept. Audit-logged. */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OfferRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OfferResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/staff/rates": {
         parameters: {
             query?: never;
@@ -2338,6 +2456,51 @@ export interface components {
             charged_in: "INR";
             rates: components["schemas"]["FxRate"][];
         };
+        OfferRequest: {
+            /** @description Shown on the quote; guests type it unless the offer is automatic. */
+            code: string;
+            description: string;
+            /** @enum {string} */
+            type: "PERCENT" | "FLAT";
+            /**
+             * Format: int64
+             * @description Basis points for PERCENT (1500 = 15%, at most 50%), paise for FLAT.
+             */
+            value: number;
+            /** Format: date */
+            stay_from: string;
+            /**
+             * Format: date
+             * @description The last night it covers.
+             */
+            stay_to: string;
+            /** Format: date */
+            book_from: string;
+            /** Format: date */
+            book_to: string;
+            min_nights: number;
+            /** @description Null for no cap. */
+            max_uses: number | null;
+            /** @description Empty for every room type. */
+            room_type_ids: string[];
+            /** @description Applies by itself to stays it covers (a festive or seasonal offer). Guests always get their best offer: an automatic one or the code they typed. */
+            auto_apply: boolean;
+            /** @description False pauses it. */
+            active: boolean;
+        };
+        Offer: components["schemas"]["OfferRequest"] & {
+            /** Format: uuid */
+            id: string;
+            used_count: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        OffersResponse: {
+            offers: components["schemas"]["Offer"][];
+        };
+        OfferResponse: {
+            offer: components["schemas"]["Offer"];
+        };
         Photo: {
             url: string;
             alt: string;
@@ -3101,6 +3264,10 @@ export type PropertyResponse = components['schemas']['PropertyResponse'];
 export type Currency = components['schemas']['Currency'];
 export type FxRate = components['schemas']['FxRate'];
 export type FxRatesResponse = components['schemas']['FxRatesResponse'];
+export type OfferRequest = components['schemas']['OfferRequest'];
+export type Offer = components['schemas']['Offer'];
+export type OffersResponse = components['schemas']['OffersResponse'];
+export type OfferResponse = components['schemas']['OfferResponse'];
 export type Photo = components['schemas']['Photo'];
 export type Plan = components['schemas']['Plan'];
 export type Room = components['schemas']['Room'];
