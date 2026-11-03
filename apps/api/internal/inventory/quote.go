@@ -33,24 +33,33 @@ func loadSettings(ctx context.Context, q Querier) (settings, error) {
 	return st, json.Unmarshal(slabs, &st.slabs)
 }
 
-// quoteStay prices a stay from the stored nightly rates.
+// planInfo is what pricing one plan needs besides its nightly rates.
+type planInfo struct {
+	room      pricing.Room
+	minNights int
+}
+
+// typedCode is the code the guest typed: its rule, or why it can't be used (unknown code).
+type typedCode struct {
+	rule pricing.PromoRule
+	id   uuid.UUID
+	err  error // a *PromoError when no such code exists
+}
+
+// quoteStay prices one plan for a stay (the hold path): it loads what that needs, then
+// priceStay does the rest.
 func quoteStay(ctx context.Context, q Querier, req HoldRequest, st settings, today time.Time) (pricing.Quote, *uuid.UUID, error) {
-	var room pricing.Room
-	var planMinNights int
+	var plan planInfo
 	err := q.QueryRow(ctx, `SELECT rt.base_occupancy, rt.max_adults, rt.max_children, rt.extra_adult_paise, rp.min_nights
 		FROM rate_plans rp JOIN room_types rt ON rt.id = rp.room_type_id
 		WHERE rp.id = $1 AND rt.id = $2 AND rp.is_active AND rt.is_active`, req.RatePlanID, req.RoomTypeID).
-		Scan(&room.BaseOccupancy, &room.MaxAdults, &room.MaxChildren, &room.ExtraAdultPaise, &planMinNights)
+		Scan(&plan.room.BaseOccupancy, &plan.room.MaxAdults, &plan.room.MaxChildren, &plan.room.ExtraAdultPaise, &plan.minNights)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return pricing.Quote{}, nil, ErrPlanMismatch
 	}
 	if err != nil {
 		return pricing.Quote{}, nil, err
 	}
-	if req.Nights() < planMinNights {
-		return pricing.Quote{}, nil, &RestrictionError{Err: ErrMinStay, Date: req.CheckIn, MinStay: planMinNights, Reason: "rate plan minimum"}
-	}
-
 	rows, err := q.Query(ctx, `SELECT date, price_paise FROM night_rates
 		WHERE rate_plan_id = $1 AND date >= $2 AND date < $3 ORDER BY date`, req.RatePlanID, req.CheckIn, req.CheckOut)
 	if err != nil {
@@ -63,26 +72,56 @@ func quoteStay(ctx context.Context, q Querier, req HoldRequest, st settings, tod
 	if err != nil {
 		return pricing.Quote{}, nil, err
 	}
-	if len(nights) != req.Nights() {
-		return pricing.Quote{}, nil, ErrNotForSale
-	}
-
-	// The discounts on offer: the code the guest typed (an invalid one is reported, as before)
-	// and every automatic offer that fits this stay. The guest gets whichever is cheapest.
-	var offers []candidate
-	if code := strings.ToUpper(strings.TrimSpace(req.PromoCode)); code != "" {
-		rule, id, err := loadPromo(ctx, q, code)
-		if err != nil {
-			return pricing.Quote{}, nil, err
-		}
-		if err := pricing.Eligible(rule, req.Stay, today, req.RoomTypeID); err != nil {
-			return pricing.Quote{}, nil, &PromoError{Err: err}
-		}
-		offers = append(offers, candidate{promo: rule.Promo, id: id})
+	typed, err := loadTyped(ctx, q, req.PromoCode)
+	if err != nil {
+		return pricing.Quote{}, nil, err
 	}
 	autos, err := loadAutoOffers(ctx, q, today)
 	if err != nil {
 		return pricing.Quote{}, nil, err
+	}
+	return priceStay(nights, plan, req, st, today, typed, autos)
+}
+
+// loadTyped looks up the code the guest typed; nil when they typed none.
+func loadTyped(ctx context.Context, q Querier, code string) (*typedCode, error) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if code == "" {
+		return nil, nil
+	}
+	rule, id, err := loadPromo(ctx, q, code)
+	var pe *PromoError
+	if errors.As(err, &pe) {
+		return &typedCode{err: pe}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &typedCode{rule: rule, id: id}, nil
+}
+
+// priceStay checks the plan's restrictions, picks the guest's best offer (the code they
+// typed, or any automatic offer that fits; an invalid code is reported) and prices the stay.
+// It does no I/O: the hold and the search both call it with what they loaded, so the price
+// a guest sees in search is exactly the price their hold freezes.
+func priceStay(nights []pricing.Night, plan planInfo, req HoldRequest, st settings, today time.Time, typed *typedCode,
+	autos []autoOffer) (pricing.Quote, *uuid.UUID, error) {
+	if req.Nights() < plan.minNights {
+		return pricing.Quote{}, nil, &RestrictionError{Err: ErrMinStay, Date: req.CheckIn, MinStay: plan.minNights, Reason: "rate plan minimum"}
+	}
+	if len(nights) != req.Nights() {
+		return pricing.Quote{}, nil, ErrNotForSale
+	}
+
+	var offers []candidate
+	if typed != nil {
+		if typed.err != nil {
+			return pricing.Quote{}, nil, typed.err
+		}
+		if err := pricing.Eligible(typed.rule, req.Stay, today, req.RoomTypeID); err != nil {
+			return pricing.Quote{}, nil, &PromoError{Err: err}
+		}
+		offers = append(offers, candidate{promo: typed.rule.Promo, id: typed.id})
 	}
 	for _, a := range autos {
 		if pricing.Eligible(a.rule, req.Stay, today, req.RoomTypeID) == nil {
@@ -90,7 +129,7 @@ func quoteStay(ctx context.Context, q Querier, req HoldRequest, st settings, tod
 		}
 	}
 
-	in := pricing.Input{Nights: nights, Party: req.Party, Room: room, Slabs: st.slabs}
+	in := pricing.Input{Nights: nights, Party: req.Party, Room: plan.room, Slabs: st.slabs}
 	best, err := pricing.Price(in)
 	if errors.Is(err, pricing.ErrTooManyGuest) {
 		return best, nil, apperr.Wrap(err, apperr.CodeTooManyGuests, ErrTooManyGuests.Message)

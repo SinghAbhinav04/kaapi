@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"kaapi/api/internal/domain"
+	"kaapi/api/internal/pricing"
 )
 
 // Search answers "what can I book for these dates?" for every room type, with prices for
@@ -40,6 +41,14 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) ([]Option, erro
 	}
 
 	avail, err := s.nightsByRoom(ctx, req.CheckIn, req.CheckOut)
+	if err != nil {
+		return nil, err
+	}
+
+	// Everything the prices need, loaded once for every room type and plan: a handful of
+	// queries per search however many rooms and plans there are (it was 3-4 per plan).
+	today := s.today(st)
+	sp, err := s.loadSearchPricing(ctx, req, today)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +85,7 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) ([]Option, erro
 			}
 		}
 		if opt.Status == Available {
-			if err := s.attachQuotes(ctx, &opt, req, st); err != nil {
+			if err := attachQuotes(&opt, req, st, today, sp); err != nil {
 				return nil, err
 			}
 		}
@@ -85,27 +94,81 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) ([]Option, erro
 	return out, nil
 }
 
-func (s *Service) attachQuotes(ctx context.Context, opt *Option, req SearchRequest, st settings) error {
-	rows, err := s.pool.Query(ctx, `SELECT id, code, name, refundable FROM rate_plans WHERE room_type_id = $1 AND is_active ORDER BY sort`, opt.RoomTypeID)
+// searchPricing is what pricing every plan of a search needs, loaded in one go.
+type searchPricing struct {
+	plans map[uuid.UUID][]searchPlan    // by room type, in display order
+	rates map[uuid.UUID][]pricing.Night // by plan, in date order
+	typed *typedCode
+	autos []autoOffer
+}
+
+type searchPlan struct {
+	PlanQuote
+	info planInfo
+}
+
+// loadSearchPricing reads every active plan, its nightly rates for the stay, the typed code
+// and the live automatic offers: four queries, whatever the number of rooms and plans.
+func (s *Service) loadSearchPricing(ctx context.Context, req SearchRequest, today time.Time) (searchPricing, error) {
+	sp := searchPricing{plans: map[uuid.UUID][]searchPlan{}, rates: map[uuid.UUID][]pricing.Night{}}
+	rows, err := s.pool.Query(ctx, `SELECT rp.room_type_id, rp.id, rp.code, rp.name, rp.refundable, rp.min_nights,
+			rt.base_occupancy, rt.max_adults, rt.max_children, rt.extra_adult_paise
+		FROM rate_plans rp JOIN room_types rt ON rt.id = rp.room_type_id
+		WHERE rp.is_active AND rt.is_active ORDER BY rp.sort`)
 	if err != nil {
-		return err
+		return sp, err
 	}
-	plans, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (PlanQuote, error) {
-		var p PlanQuote
-		return p, r.Scan(&p.PlanID, &p.Code, &p.Name, &p.Refundable)
-	})
+	var planIDs []uuid.UUID
+	for rows.Next() {
+		var roomTypeID uuid.UUID
+		var p searchPlan
+		if err := rows.Scan(&roomTypeID, &p.PlanID, &p.Code, &p.Name, &p.Refundable, &p.info.minNights,
+			&p.info.room.BaseOccupancy, &p.info.room.MaxAdults, &p.info.room.MaxChildren, &p.info.room.ExtraAdultPaise); err != nil {
+			rows.Close()
+			return sp, err
+		}
+		sp.plans[roomTypeID] = append(sp.plans[roomTypeID], p)
+		planIDs = append(planIDs, p.PlanID)
+	}
+	if err := rows.Err(); err != nil {
+		return sp, err
+	}
+
+	rows, err = s.pool.Query(ctx, `SELECT rate_plan_id, date, price_paise FROM night_rates
+		WHERE rate_plan_id = ANY($1) AND date >= $2 AND date < $3 ORDER BY rate_plan_id, date`, planIDs, req.CheckIn, req.CheckOut)
 	if err != nil {
-		return err
+		return sp, err
 	}
-	for _, p := range plans {
+	for rows.Next() {
+		var planID uuid.UUID
+		var n pricing.Night
+		if err := rows.Scan(&planID, &n.Date, &n.PricePaise); err != nil {
+			rows.Close()
+			return sp, err
+		}
+		sp.rates[planID] = append(sp.rates[planID], n)
+	}
+	if err := rows.Err(); err != nil {
+		return sp, err
+	}
+
+	if sp.typed, err = loadTyped(ctx, s.pool, req.PromoCode); err != nil {
+		return sp, err
+	}
+	sp.autos, err = loadAutoOffers(ctx, s.pool, today)
+	return sp, err
+}
+
+// attachQuotes prices every plan of one room type from what the search loaded, in memory.
+func attachQuotes(opt *Option, req SearchRequest, st settings, today time.Time, sp searchPricing) error {
+	for _, p := range sp.plans[opt.RoomTypeID] {
 		hr := HoldRequest{RoomTypeID: opt.RoomTypeID, RatePlanID: p.PlanID, Stay: req.Stay, Party: req.Party, PromoCode: req.PromoCode}
-		q, _, err := quoteStay(ctx, s.pool, hr, st, s.today(st))
+		q, _, err := priceStay(sp.rates[p.PlanID], p.info, hr, st, today, sp.typed, sp.autos)
 		var pe *PromoError
 		if errors.As(err, &pe) {
 			// Show prices anyway; tell the guest why the code didn't apply.
 			opt.PromoError = pe.Error()
-			hr.PromoCode = ""
-			q, _, err = quoteStay(ctx, s.pool, hr, st, s.today(st))
+			q, _, err = priceStay(sp.rates[p.PlanID], p.info, hr, st, today, nil, sp.autos)
 		}
 		var re *RestrictionError
 		if errors.As(err, &re) {
@@ -115,7 +178,7 @@ func (s *Service) attachQuotes(ctx context.Context, opt *Option, req SearchReque
 			return err
 		}
 		p.Quote = q
-		opt.Plans = append(opt.Plans, p)
+		opt.Plans = append(opt.Plans, p.PlanQuote)
 	}
 	return nil
 }
