@@ -1,0 +1,108 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.export {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.export input,
+.from input {
+  min-height: var(--tap);
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--hairline);
+  background: var(--surface-raised);
+}
+
+.error {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cherry);
+}
+
+.card {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.from {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--grey);
+}
+
+.scroller {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 14px;
+  transition: opacity var(--dur-med) var(--ease-out);
+}
+
+.stale {
+  opacity: 0.55;
+}
+
+.table th {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--grey);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--paper-2);
+  vertical-align: top;
+}
+
+.table tbody tr:hover {
+  background: var(--console-panel);
+}
+
+.num {
+  text-align: right;
+}
+
+.table th.num {
+  text-align: right;
+}
+
+.sub {
+  display: block;
+  font-size: 12px;
+  color: var(--grey);
+}
+
+.ics {
+  padding: 4px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}

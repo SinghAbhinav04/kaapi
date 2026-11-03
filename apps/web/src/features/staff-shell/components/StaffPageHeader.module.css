@@ -1,0 +1,26 @@
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 4px 0;
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.description {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--grey);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}

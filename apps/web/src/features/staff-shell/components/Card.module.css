@@ -1,0 +1,10 @@
+.card {
+  background: var(--surface-raised);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--e-card);
+}
+
+.dark {
+  background: var(--ink);
+  color: var(--on-dark);
+}
