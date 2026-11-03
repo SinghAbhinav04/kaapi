@@ -1192,6 +1192,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/staff/inbox/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Live inbox updates (server-sent events). One "inbox" event, data = the enquiry ref, whenever an enquiry or its draft changes; refetch with your own permissions. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description An open event stream. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/event-stream": string;
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/staff/enquiries/{ref}": {
         parameters: {
             query?: never;
@@ -1675,7 +1713,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Read new mail now instead of waiting for the next poll. */
+        /** Import everything that reached the mailbox since the last successful sync (catches up after downtime; never duplicates). */
         post: {
             parameters: {
                 query?: never;

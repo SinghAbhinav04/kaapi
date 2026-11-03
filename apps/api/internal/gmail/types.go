@@ -12,11 +12,16 @@ const (
 	// Read the inbox and send as the mailbox; nothing that can delete or change mail.
 	scopes = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send"
 
-	stateTTL      = 10 * time.Minute // how long the consent screen may take
-	httpTimeout   = 20 * time.Second
-	tokenSkew     = time.Minute // refresh the access token this long before Google says it expires
-	maxPerPoll    = 50          // messages imported per poll; the rest wait for the next
-	maxBodyRunes  = 5000        // the enquiries table's limit
+	stateTTL     = 10 * time.Minute // how long the consent screen may take
+	httpTimeout  = 20 * time.Second
+	tokenSkew    = time.Minute // refresh the access token this long before Google says it expires
+	maxPerPoll   = 50          // messages imported per poll; the rest wait for the next
+	maxCatchUp   = 2000        // a catch-up's ceiling, so one sync can't run unbounded
+	listPageSize = 100
+	// catchUpMargin re-reads a little before the last sync: Gmail's "after:" is coarse, and
+	// anything already imported is skipped without downloading it.
+	catchUpMargin = time.Hour
+	maxBodyRunes  = 5000 // the enquiries table's limit
 	maxErrorRunes = 300
 )
 

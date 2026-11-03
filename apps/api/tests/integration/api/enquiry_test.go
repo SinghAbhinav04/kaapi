@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"bufio"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -383,5 +384,54 @@ func TestEnquiryIntakeValidation(t *testing.T) {
 	staffLogin(t, gm, "gm@kaapiestate.test", nil)
 	if e := getEnquiry(t, gm, c.Ref); e.Channel != domain.ChannelEventForm || e.Lane != domain.LaneSales || !strings.Contains(e.Draft.Body, "Karthik") {
 		t.Fatalf("%+v", e)
+	}
+}
+
+// The inbox updates live: a new enquiry reaches an open stream as an event carrying its ref.
+func TestInboxStreamPushesChanges(t *testing.T) {
+	s := apitest.New(t)
+	staffLogin(t, s, "gm@kaapiestate.test", nil)
+	res := s.Stream("/v1/staff/inbox/stream")
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.HasPrefix(res.Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("stream: %d %s", res.StatusCode, res.Header.Get("Content-Type"))
+	}
+	lines := make(chan string, 64)
+	go func() {
+		sc := bufio.NewScanner(res.Body)
+		for sc.Scan() {
+			lines <- sc.Text()
+		}
+		close(lines)
+	}()
+	waitFor := func(prefix string) string {
+		deadline := time.After(5 * time.Second)
+		for {
+			select {
+			case l, ok := <-lines:
+				if !ok {
+					t.Fatalf("stream closed waiting for %q", prefix)
+				}
+				if strings.HasPrefix(l, prefix) {
+					return l
+				}
+			case <-deadline:
+				t.Fatalf("no %q within 5s", prefix)
+			}
+		}
+	}
+	waitFor(": connected")
+
+	var created struct {
+		Ref string `json:"ref"`
+	}
+	r := s.Do(http.MethodPost, "/v1/staff/inbound", map[string]any{"channel": "EMAIL", "sender_email": "live@example.test", "text": "Do you have a room this weekend?"}, nil)
+	r.JSON(t, &created)
+	if created.Ref == "" {
+		t.Fatalf("inbound: %d %s", r.Status, r.Body)
+	}
+	waitFor("event: inbox")
+	if got := waitFor("data: "); got != "data: "+created.Ref {
+		t.Fatalf("event data %q, want %q", got, created.Ref)
 	}
 }

@@ -103,7 +103,7 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("%s must be a positive number of seconds", EnvRequestTimeoutSec)
 	}
 	c.RequestTimeout = time.Duration(secs) * time.Second
-	poll, err := strconv.Atoi(get(EnvGmailPollSeconds, "30"))
+	poll, err := strconv.Atoi(get(EnvGmailPollSeconds, "5"))
 	if err != nil || poll < 5 {
 		return c, fmt.Errorf("%s must be 5 seconds or more", EnvGmailPollSeconds)
 	}

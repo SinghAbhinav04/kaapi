@@ -408,6 +408,17 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+  /v1/staff/inbox/stream:
+    get:
+      tags: [enquiries]
+      summary: Live inbox updates (server-sent events). One "inbox" event, data = the enquiry ref, whenever an enquiry or its draft changes; refetch with your own permissions.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: An open event stream.
+          content: { text/event-stream: { schema: { type: string } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
   /v1/staff/enquiries/{ref}:
     parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
     get:
@@ -564,7 +575,7 @@ paths:
   /v1/staff/integrations/gmail/sync:
     post:
       tags: [staff]
-      summary: Read new mail now instead of waiting for the next poll.
+      summary: Import everything that reached the mailbox since the last successful sync (catches up after downtime; never duplicates).
       security: [{ cookieAuth: [] }, { bearerAuth: [] }]
       responses:
         "200":

@@ -71,9 +71,10 @@ func (a *API) gmailDisconnect(w http.ResponseWriter, r *http.Request) error {
 	return a.gmailStatus(w, r)
 }
 
-// gmailSync: POST /v1/staff/integrations/gmail/sync → poll now instead of waiting for the tick.
+// gmailSync: POST /v1/staff/integrations/gmail/sync → import everything since the last
+// successful sync now (catches up after downtime; never duplicates).
 func (a *API) gmailSync(w http.ResponseWriter, r *http.Request) error {
-	n, err := a.gmail.Poll(r.Context())
+	n, err := a.gmail.CatchUp(r.Context())
 	if err != nil {
 		return err
 	}

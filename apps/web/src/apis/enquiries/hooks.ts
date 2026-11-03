@@ -1,8 +1,11 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 
-import { enquiryKeys } from './const';
+import { BROWSER_BASE_URL, http } from '@/apis/http';
+
+import { ENQUIRY_PATHS, enquiryKeys, STREAM_RETRY_MS } from './const';
 import { enquiriesApi } from './enquiries.api';
 import { enquiryQueries } from './queries';
 import type {
@@ -78,3 +81,43 @@ export const useSetEnquiryStatus = (ref: string) =>
   useEnquiryAction(ref, (status: EnquiryStatus) => enquiriesApi.setStatus(ref, status));
 
 export const useRetryAi = (ref: string) => useEnquiryAction(ref, () => enquiriesApi.retryAi(ref));
+
+/**
+ * Live inbox: the API pushes the ref of every enquiry that changes (new mail, AI finished,
+ * draft saved, sent). The lists and that enquiry refetch at once instead of on the next poll.
+ * If the stream drops for good (e.g. the session expired), it reopens after a pause; the
+ * regular refresh covers the gap.
+ */
+export function useInboxStream() {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    let source: EventSource | null = null;
+    let retry = 0;
+    const open = () => {
+      source = new EventSource(`${BROWSER_BASE_URL}${ENQUIRY_PATHS.stream}`);
+      source.addEventListener('inbox', (e) => {
+        void queryClient.invalidateQueries({ queryKey: enquiryKeys.lists() });
+        void queryClient.invalidateQueries({ queryKey: enquiryKeys.detail((e as MessageEvent<string>).data) });
+      });
+      source.onerror = () => {
+        if (source?.readyState === EventSource.CLOSED) {
+          retry = window.setTimeout(open, STREAM_RETRY_MS);
+        }
+      };
+    };
+    open();
+    return () => {
+      window.clearTimeout(retry);
+      source?.close();
+    };
+  }, [queryClient]);
+}
+
+/** Imports everything that reached the mailbox since the last sync (after downtime too). */
+export function useSyncMail() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => http.post<{ imported: number }>(ENQUIRY_PATHS.syncMail),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: enquiryKeys.lists() }),
+  });
+}

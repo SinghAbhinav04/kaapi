@@ -85,9 +85,17 @@ func every(ctx context.Context, d time.Duration, now bool, fn func()) {
 	}
 }
 
-// deliverEmail turns an imported email into an enquiry. A message the inbox refuses for
-// a reason that won't change on retry (no text, bad channel) is skipped, not retried forever.
-func (a *App) deliverEmail(ctx context.Context, in gmail.Inbound) error {
+// mailInbox is the enquiry inbox as the Gmail importer sees it.
+type mailInbox struct{ *App }
+
+func (m mailInbox) Has(ctx context.Context, messageID string) (bool, error) {
+	return m.Enquiries.HasExternal(ctx, messageID)
+}
+
+// Deliver turns an imported email into an enquiry. A message the inbox refuses for a reason
+// that won't change on retry (no text, bad channel) is skipped, not retried forever.
+func (m mailInbox) Deliver(ctx context.Context, in gmail.Inbound) error {
+	a := m.App
 	_, err := a.Enquiries.Intake(ctx, enquiry.IntakeInput{Channel: domain.ChannelEmail, SenderName: in.FromName,
 		SenderEmail: in.FromEmail, Subject: in.Subject, Text: in.Text,
 		External: &enquiry.External{ID: in.MessageID, ThreadID: in.ThreadID, RFCMessageID: in.RFCMessageID}})

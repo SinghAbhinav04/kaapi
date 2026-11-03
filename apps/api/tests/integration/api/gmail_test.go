@@ -60,6 +60,13 @@ func (f *fakeGoogle) handler(t *testing.T) http.Handler {
 			map[string]any{"messagesAdded": []any{map[string]any{"message": map[string]string{"id": "own"}}}},
 		}})
 	})
+	// The catch-up search returns the same messages history already delivered: neither may duplicate.
+	mux.HandleFunc("GET /gmail/v1/users/me/messages", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Query().Get("q"), "after:") {
+			t.Errorf("catch-up search without a start: %q", r.URL.Query().Get("q"))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"messages": []map[string]string{{"id": "m1"}, {"id": "own"}}})
+	})
 	mux.HandleFunc("GET /gmail/v1/users/me/messages/{id}", func(w http.ResponseWriter, r *http.Request) {
 		from, labels := "Asha Rao <asha@example.test>", []string{"INBOX", "UNREAD"}
 		if r.PathValue("id") == "own" { // our own sent copy must never become an enquiry

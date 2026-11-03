@@ -42,13 +42,14 @@ type API struct {
 	inventory *inventory.Service
 	outbox    *outbox.Service
 	retention *retention.Service
+	hub       *hub
 }
 
 // New exposes the app's services over HTTP.
 func New(a *app.App) *API {
 	return &API{cfg: a.Config, log: a.Log, pool: a.Pool, admin: a.Admin, analytics: a.Analytics, auth: a.Auth,
 		bookings: a.Bookings, catalog: a.Catalog, enquiries: a.Enquiries, gmail: a.Gmail, inventory: a.Inventory,
-		outbox: a.Outbox, retention: a.Retention}
+		outbox: a.Outbox, retention: a.Retention, hub: newHub(a.Pool, a.Log)}
 }
 
 // Router builds the handler tree. Middleware order matters: the request ID comes first so
@@ -61,7 +62,7 @@ func (a *API) Router() http.Handler {
 	r.Use(httpx.Recover(a.log))
 	r.Use(httpx.SecurityHeaders)
 	r.Use(httpx.CORS(append([]string{a.cfg.AppOrigin}, a.cfg.NativeAppOrigins...)))
-	r.Use(middleware.Timeout(a.cfg.RequestTimeout))
+	r.Use(timeoutExceptStreams(a.cfg.RequestTimeout))
 	r.NotFound(httpx.NotFound(a.log))
 	r.MethodNotAllowed(httpx.MethodNotAllowed(a.log))
 
@@ -116,10 +117,10 @@ func (a *API) Router() http.Handler {
 			r.With(a.requirePermission(auth.PermRetentionRun)).Post("/retention/run", h(a.runRetention))
 			r.With(a.requirePermission(auth.PermAnalyticsRead)).Get("/analytics", h(a.analyticsReport))
 			r.With(a.requirePermission(auth.PermEnquiriesRead)).Get("/integrations/gmail", h(a.gmailStatus))
+			r.With(a.requirePermission(auth.PermEnquiriesRead)).Post("/integrations/gmail/sync", h(a.gmailSync))
 			r.Group(func(r chi.Router) {
 				r.Use(a.requirePermission(auth.PermIntegrations))
 				r.Post("/integrations/gmail/connect", h(a.gmailConnect))
-				r.Post("/integrations/gmail/sync", h(a.gmailSync))
 				r.Delete("/integrations/gmail", h(a.gmailDisconnect))
 			})
 			r.With(a.requirePermission(auth.PermEnquirySend)).Post("/messages", h(a.composeMessage))
@@ -128,6 +129,7 @@ func (a *API) Router() http.Handler {
 				r.Use(a.requirePermission(auth.PermEnquiriesRead))
 				r.Post("/inbound", h(a.simulateInbound))
 				r.Get("/enquiries", h(a.listEnquiries))
+				r.Get("/inbox/stream", h(a.inboxStream))
 				r.Get("/enquiries/{ref}", h(a.getEnquiry))
 				r.Patch("/enquiries/{ref}/fields", h(a.correctEnquiry))
 				r.Put("/enquiries/{ref}/draft", h(a.editDraft))

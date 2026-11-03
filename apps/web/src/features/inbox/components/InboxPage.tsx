@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 
+import { useInboxStream } from '@/apis/enquiries';
 import { ComposeDialog, MailActions } from '@/features/operations';
 import { Card } from '@/features/staff-shell';
 import { cx } from '@/shared/lib/cx';
@@ -16,6 +17,7 @@ export function InboxPage() {
   const { lane, open, search, setSearch, inbox, all, list, navigate } = useInboxView();
   const [pasting, setPasting] = useState(false);
   const [composing, setComposing] = useState(false);
+  useInboxStream();
 
   return (
     <>

@@ -64,7 +64,7 @@ func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() tim
 	}
 	// One mailbox serves both directions: imported mail becomes enquiries, and replies and
 	// staff-written messages go out through it. Unconnected, everything stays simulated.
-	a.Gmail.SetDeliver(a.deliverEmail)
+	a.Gmail.SetInbox(mailInbox{a})
 	a.Enquiries.SetMailer(a.Gmail)
 	a.Outbox.SetMailer(a.Gmail)
 	return a

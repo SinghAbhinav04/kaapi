@@ -132,6 +132,23 @@ func (s *Server) NoRedirects() *Server {
 	return &c
 }
 
+// Stream opens a long-lived GET (server-sent events) with this session's cookies. The caller
+// reads and closes the body; it isn't validated against the contract like Do.
+func (s *Server) Stream(path string) *http.Response {
+	s.t.Helper()
+	req, err := http.NewRequestWithContext(s.Ctx, http.MethodGet, s.URL+path, nil)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	client := *s.client
+	client.Timeout = 0
+	res, err := client.Do(req)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	return res
+}
+
 // Do sends a request and validates the response against the contract. Routes that aren't
 // in the contract (deliberate 404/405 probes) are only checked for the error envelope.
 func (s *Server) Do(method, path string, body any, headers map[string]string) Response {

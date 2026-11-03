@@ -8,6 +8,12 @@
   margin-bottom: 12px;
 }
 
+.note {
+  margin-right: auto;
+  font-size: 13px;
+  color: var(--grey);
+}
+
 .failure {
   margin-right: auto;
   font-size: 13px;
