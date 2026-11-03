@@ -53,11 +53,14 @@ func (s *Service) Report(ctx context.Context, from, to time.Time) (Report, error
 		GROUP BY 1 ORDER BY 2 DESC`, start, end); err != nil {
 		return r, err
 	}
-	leads, err := s.store.leadDays(ctx, s.pool, start, end)
+	counts, err := s.store.leadCounts(ctx, s.pool, start, end, leadThresholds())
 	if err != nil {
 		return r, err
 	}
-	r.LeadTime = bucketLeads(leads)
+	r.LeadTime = make([]Count, len(leadBuckets))
+	for i, b := range leadBuckets {
+		r.LeadTime[i] = Count{Key: b.Label, Count: counts[i]}
+	}
 	if r.OnTheBooks, err = s.store.onTheBooks(ctx, s.pool, dateIn(s.now(), loc)); err != nil {
 		return r, err
 	}
@@ -80,18 +83,13 @@ func (k *KPIs) derive() {
 	k.CommissionSavedPaise = k.RoomRevenuePaise * agencyCommissionBps / bpsDenominator
 }
 
-// bucketLeads counts bookings per lead-time bucket, every bucket listed even when empty.
-func bucketLeads(leads []int) []Count {
-	out := make([]Count, len(leadBuckets))
-	for i, b := range leadBuckets {
-		out[i].Key = b.Label
-		for _, d := range leads {
-			if d >= b.Min && (b.Max < 0 || d <= b.Max) {
-				out[i].Count++
-			}
-		}
+// leadThresholds is each bucket's lower bound after the first, for width_bucket.
+func leadThresholds() []int {
+	t := make([]int, 0, len(leadBuckets)-1)
+	for _, b := range leadBuckets[1:] {
+		t = append(t, b.Min)
 	}
-	return out
+	return t
 }
 
 func ist() *time.Location {

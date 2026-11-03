@@ -81,14 +81,25 @@ func (st store) breakdown(ctx context.Context, q db.Querier, name, from string, 
 	})
 }
 
-// leadDays is days from booking to arrival, for each confirmed booking in the range.
-func (st store) leadDays(ctx context.Context, q db.Querier, start, end time.Time) ([]int, error) {
-	rows, err := q.Query(ctx, `SELECT check_in - (created_at AT TIME ZONE 'Asia/Kolkata')::date FROM bookings
-		WHERE status = $1 AND created_at >= $2 AND created_at < $3`, confirmed, start, end)
+// leadCounts counts confirmed bookings per lead-time bucket in the database, so only one
+// row per bucket comes back however many bookings there are. thresholds are the lower
+// bounds of every bucket after the first (width_bucket returns how many a value reaches).
+func (st store) leadCounts(ctx context.Context, q db.Querier, start, end time.Time, thresholds []int) ([]int, error) {
+	rows, err := q.Query(ctx, `SELECT width_bucket(check_in - (created_at AT TIME ZONE 'Asia/Kolkata')::date, $4::int[]) AS bucket, count(*)
+		FROM bookings WHERE status = $1 AND created_at >= $2 AND created_at < $3 GROUP BY 1`, confirmed, start, end, thresholds)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, pgx.RowTo[int])
+	counts := make([]int, len(thresholds)+1)
+	for rows.Next() {
+		var bucket, n int
+		if err := rows.Scan(&bucket, &n); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		counts[min(max(bucket, 0), len(thresholds))] += n
+	}
+	return counts, rows.Err()
 }
 
 // onTheBooks: for this month and the next few, nights already sold and their room revenue
