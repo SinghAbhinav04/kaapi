@@ -9,7 +9,8 @@ import { bookingKeys } from './const';
 import { bookingQueries } from './queries';
 import type { CreateBookingRequest, CreateHoldRequest, StaffBookingsParams } from './types';
 
-export const useBooking = (ref: string, holdToken?: string) => useQuery(bookingQueries.detail(ref, holdToken));
+/** `enabled: false` waits, e.g. until this tab's booking token has been read from storage. */
+export const useBooking = (ref: string, holdToken?: string, enabled = true) => useQuery({ ...bookingQueries.detail(ref, holdToken), enabled });
 
 export const useMyBookings = (enabled = true) => useQuery({ ...bookingQueries.mine(), enabled });
 

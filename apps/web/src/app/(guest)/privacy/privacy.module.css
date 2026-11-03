@@ -1,0 +1,22 @@
+.title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--text-display-md);
+  line-height: var(--leading-display);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 16px;
+}
+
+.body h2 {
+  margin-top: 16px;
+  font-size: 20px;
+}
+
+.body p {
+  color: var(--ink-muted);
+}

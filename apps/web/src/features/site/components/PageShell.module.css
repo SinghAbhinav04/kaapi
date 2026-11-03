@@ -1,0 +1,17 @@
+.narrow,
+.wide {
+  margin: 0 auto;
+  padding: 56px var(--gutter) 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  min-height: 60vh;
+}
+
+.narrow {
+  max-width: 760px;
+}
+
+.wide {
+  max-width: var(--container-narrow);
+}

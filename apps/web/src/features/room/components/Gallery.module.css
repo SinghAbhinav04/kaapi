@@ -1,0 +1,57 @@
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: 260px;
+  gap: 12px;
+}
+
+.item {
+  position: relative;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--paper-2);
+}
+
+.photo {
+  object-fit: cover;
+}
+
+/* One photo: full width. Two or three: the first spans two columns and two rows. */
+.gallery[data-count='1'] .item {
+  grid-column: 1 / -1;
+  grid-row: span 2;
+}
+
+.gallery[data-count='2'] .item:first-child,
+.gallery[data-count='3'] .item:first-child {
+  grid-column: span 2;
+  grid-row: span 2;
+}
+
+.gallery[data-count='2'] .item:nth-child(2) {
+  grid-row: span 2;
+}
+
+@media (max-width: 700px) {
+  .gallery,
+  .gallery[data-count] {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    margin-inline: calc(-1 * var(--gutter));
+    padding-inline: var(--gutter);
+    scrollbar-width: none;
+  }
+
+  .gallery .item,
+  .gallery[data-count] .item {
+    flex: 0 0 88%;
+    height: 280px;
+    scroll-snap-align: center;
+  }
+
+  .gallery[data-count='1'] .item {
+    flex-basis: 100%;
+  }
+}

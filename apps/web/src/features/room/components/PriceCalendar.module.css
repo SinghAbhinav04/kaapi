@@ -1,0 +1,195 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.nav {
+  display: flex;
+  gap: 6px;
+}
+
+.nav button {
+  width: var(--tap);
+  height: var(--tap);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  font-size: 20px;
+}
+
+.nav button:disabled {
+  opacity: 0.35;
+}
+
+.caption {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--grey);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  transition: opacity var(--dur-med) var(--ease-out);
+}
+
+.stale {
+  opacity: 0.55;
+}
+
+.weekday {
+  text-align: center;
+  padding: 6px 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--grey);
+}
+
+.day {
+  min-height: 64px;
+  padding: 4px 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.day:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+.num {
+  font-weight: 600;
+}
+
+.price {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--grey);
+  white-space: nowrap;
+}
+
+.season {
+  background: var(--amber-tint);
+}
+
+.season .price {
+  color: var(--amber-ink);
+}
+
+.past {
+  border-color: transparent;
+  background: transparent;
+  color: var(--grey-light);
+}
+
+.past .price {
+  color: var(--grey-light);
+}
+
+.closed {
+  background: repeating-linear-gradient(135deg, #f3d9d1 0 6px, #f8e7e1 6px 12px);
+  border-color: transparent;
+}
+
+.closed .price {
+  color: var(--cherry);
+}
+
+.night,
+.pending {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--on-dark);
+}
+
+.night .price,
+.pending .price {
+  color: var(--on-dark-muted);
+}
+
+.night .num,
+.pending .num {
+  font-weight: 700;
+}
+
+.checkout {
+  border: 1px dashed var(--ink);
+}
+
+.checkout .price {
+  color: var(--ink);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--grey);
+  min-height: 20px;
+}
+
+.key {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.swatchSeason {
+  background: var(--amber-tint);
+}
+
+.swatchStay {
+  background: var(--ink);
+}
+
+.prompt {
+  font-weight: 600;
+  color: var(--estate);
+}
+
+@media (max-width: 520px) {
+  .grid {
+    gap: 4px;
+  }
+
+  .day {
+    min-height: 54px;
+  }
+
+  .price {
+    font-size: 10px;
+  }
+}
