@@ -6,6 +6,7 @@ export {
   useEditDraft,
   useEnquiry,
   useInbox,
+  useInboxCounts,
   useInboundMessage,
   useInboxStream,
   useRetryAi,

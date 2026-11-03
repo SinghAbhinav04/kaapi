@@ -2,6 +2,7 @@ import type {
   CorrectEnquiryRequest,
   CreateEnquiryRequest,
   EnquiriesResponse,
+  InboxCountsResponse,
   EnquiryCreatedResponse,
   EnquiryResponse,
   EnquiryStatus,
@@ -16,6 +17,8 @@ export interface EnquiriesApi {
   /** Simulated email or WhatsApp message, entering the same pipeline a webhook would feed. */
   inbound(body: InboundMessageRequest): Promise<EnquiryCreatedResponse>;
   list(params: InboxParams, signal?: AbortSignal): Promise<EnquiriesResponse>;
+  /** The sidebar's lane counts and reply time, without downloading the inbox. */
+  counts(signal?: AbortSignal): Promise<InboxCountsResponse>;
   get(ref: string, signal?: AbortSignal): Promise<EnquiryResponse>;
   route(ref: string, body: RouteRequest): Promise<EnquiryResponse>;
   correct(ref: string, body: CorrectEnquiryRequest): Promise<EnquiryResponse>;

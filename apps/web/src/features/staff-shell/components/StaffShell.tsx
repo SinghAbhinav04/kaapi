@@ -6,8 +6,7 @@ import type { ReactNode } from 'react';
 
 import { hasPermission, useLogout, type Permission, type User } from '@/apis/auth';
 import { useDataChanges } from '@/apis/changes';
-import { useInbox } from '@/apis/enquiries';
-import { useDashboard } from '@/apis/operations';
+import { useInboxCounts } from '@/apis/enquiries';
 import { ROUTES } from '@/shared/const';
 import { cx } from '@/shared/lib/cx';
 import { initials } from '@/shared/lib/text';
@@ -19,7 +18,7 @@ import { NavIcon } from './NavIcon';
 import styles from './StaffShell.module.css';
 
 /** Permissions whose pages react to the live change stream. */
-const WATCHED: readonly Permission[] = ['rates:read', 'analytics:read', 'promos:write'];
+const WATCHED: readonly Permission[] = ['rates:read', 'analytics:read', 'promos:write', 'enquiries:read'];
 
 export function StaffShell({ children }: { children: ReactNode }) {
   const { me, user, isStaff } = useStaffGuard();
@@ -64,14 +63,14 @@ function Sidebar({ user }: { user: User }) {
   const logout = useLogout();
   const canInbox = hasPermission(user, 'enquiries:read');
   const allLanes = hasPermission(user, 'enquiries:read_all_lanes');
-  // One shared, cached inbox query (the inbox page uses the same key, so no extra request).
-  const inbox = useInbox({ limit: 300 });
-  const dashboard = useDashboard(hasPermission(user, 'dashboard:read'));
-  const counts = new Map<string, number>();
-  for (const e of inbox.data?.enquiries ?? []) counts.set(e.lane, (counts.get(e.lane) ?? 0) + 1);
+  // Lane counts and the reply time from one small endpoint, refreshed by the live streams.
+  const inbox = useInboxCounts(canInbox);
+  const counts = new Map<string, number>((inbox.data?.lanes ?? []).map((l) => [l.lane, l.count]));
+  const total = inbox.data ? [...counts.values()].reduce((a, b) => a + b, 0) : undefined;
   const activeLane = pathname.startsWith(ROUTES.staff.inbox) ? params.get('lane') : null;
-  const median = dashboard.data?.median_first_reply_minutes;
-  const target = dashboard.data?.first_reply_target_minutes ?? 30;
+  const replyTime = inbox.data?.reply_time ?? undefined;
+  const median = replyTime?.median_minutes;
+  const target = replyTime?.target_minutes ?? 30;
 
   return (
     <aside aria-label="Staff navigation" className={styles.sidebar}>
@@ -86,7 +85,7 @@ function Sidebar({ user }: { user: User }) {
               <Link href={item.href} className={cx(styles.navItem, active && !activeLane && styles.navActive)} aria-current={active ? 'page' : undefined}>
                 <NavIcon name={item.icon} active={active} />
                 {item.label}
-                {item.icon === 'inbox' && inbox.data && <span className={cx(styles.count, styles.countStrong)}>{inbox.data.enquiries.length}</span>}
+                {item.icon === 'inbox' && total !== undefined && <span className={cx(styles.count, styles.countStrong)}>{total}</span>}
               </Link>
               {item.icon === 'inbox' && canInbox && (
                 <div className={styles.lanes}>

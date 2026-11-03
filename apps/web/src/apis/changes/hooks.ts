@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 
 import { analyticsKeys } from '@/apis/analytics';
 import { bookingKeys } from '@/apis/booking';
+import { enquiryKeys } from '@/apis/enquiries';
 import { BROWSER_BASE_URL } from '@/apis/http';
 import { offersKeys } from '@/apis/offers';
 import { operationsKeys } from '@/apis/operations';
@@ -18,7 +19,7 @@ const AFFECTED: Record<Exclude<ChangeTopic, '*'>, readonly QueryKey[]> = {
   inventory: [ratesKeys.all, analyticsKeys.all, operationsKeys.dashboard()],
   bookings: [analyticsKeys.all, bookingKeys.all, operationsKeys.dashboard()],
   offers: [offersKeys.all],
-  enquiries: [analyticsKeys.all, operationsKeys.dashboard()],
+  enquiries: [analyticsKeys.all, operationsKeys.dashboard(), enquiryKeys.counts()],
 };
 
 /**

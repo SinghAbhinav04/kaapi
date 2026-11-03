@@ -2,6 +2,7 @@ import type { Category, EnquiryStatus, Lane } from '@/apis/generated/schema';
 
 export type {
   AiStatus,
+  InboxCountsResponse,
   Category,
   Channel,
   CorrectEnquiryRequest,

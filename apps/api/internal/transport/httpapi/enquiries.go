@@ -276,6 +276,32 @@ func (a *API) dashboard(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// inboxCounts: GET /v1/staff/inbox/counts: open enquiries per lane the caller can see, and the
+// week's median first reply when they can see the dashboard. What the sidebar shows, without
+// downloading the inbox; it refetches on the live streams, never on a timer.
+func (a *API) inboxCounts(w http.ResponseWriter, r *http.Request) error {
+	lanes := a.lanesFor(r)
+	counts, err := a.enquiries.LaneCounts(r.Context(), lanes)
+	if err != nil {
+		return err
+	}
+	out := InboxCountsResponse{Lanes: []LaneCountDTO{}}
+	for _, lane := range domain.Lanes {
+		if lanes == nil || slices.Contains(lanes, lane) {
+			out.Lanes = append(out.Lanes, LaneCountDTO{Lane: lane, Count: counts[lane]})
+		}
+	}
+	if a.can(r, auth.PermDashboardRead) {
+		median, err := a.enquiries.MedianFirstReply(r.Context())
+		if err != nil {
+			return err
+		}
+		out.ReplyTime = &ReplyTimeDTO{MedianMinutes: median, TargetMinutes: firstReplyTargetMinutes}
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+	return nil
+}
+
 func (a *API) writeEnquiry(w http.ResponseWriter, r *http.Request) error {
 	e, err := a.enquiries.Get(r.Context(), r.PathValue("ref"))
 	if err != nil {

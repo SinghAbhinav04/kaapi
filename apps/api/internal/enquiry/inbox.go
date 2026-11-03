@@ -454,6 +454,37 @@ func (s *Service) RetryAI(ctx context.Context, ref string) error {
 	return nil
 }
 
+// LaneCounts counts the enquiries the inbox lists by default (everything but closed and spam)
+// in each lane; nil lanes means every lane. The sidebar shows these, so it needs two small
+// queries instead of the whole inbox.
+func (s *Service) LaneCounts(ctx context.Context, lanes []domain.Lane) (map[domain.Lane]int, error) {
+	rows, err := s.pool.Query(ctx, `SELECT lane, count(*) FROM enquiries
+		WHERE status <> ALL($1) AND ($2::text[] IS NULL OR lane = ANY($2)) GROUP BY lane`,
+		[]domain.EnquiryStatus{domain.EnquiryClosed, domain.EnquirySpam}, lanes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[domain.Lane]int{}
+	for rows.Next() {
+		var lane domain.Lane
+		var n int
+		if err := rows.Scan(&lane, &n); err != nil {
+			return nil, err
+		}
+		out[lane] = n
+	}
+	return out, rows.Err()
+}
+
+// MedianFirstReply is the median minutes to a first reply over the stats window (nil: none yet).
+func (s *Service) MedianFirstReply(ctx context.Context) (*float64, error) {
+	var median *float64
+	err := s.pool.QueryRow(ctx, `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM first_response_at - received_at) / 60)
+		FROM enquiries WHERE first_response_at IS NOT NULL AND first_response_at >= $1`, s.now().Add(-statsWindow)).Scan(&median)
+	return median, err
+}
+
 // Stats are the dashboard numbers, measured against the brief's success targets.
 func (s *Service) Stats(ctx context.Context) (Stats, error) {
 	st := Stats{OpenByLane: map[domain.Lane]int{}}

@@ -516,6 +516,22 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+  /v1/staff/inbox/counts:
+    get:
+      tags: [enquiries]
+      summary: The sidebar's numbers, without downloading the inbox.
+      description: >
+        Open enquiries (everything but closed and spam) in each lane the caller can see, and the
+        week's median first reply when the caller can see the dashboard (else reply_time is null).
+        Refetch on the inbox or change stream; there is no need to poll.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/InboxCountsResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/changes/stream:
     get:
       tags: [staff]
@@ -524,8 +540,8 @@ paths:
         One "change" event per topic whenever the data behind it changes, from any process:
         bookings, inventory (prices, allotment, restrictions, sold, holds), offers, enquiries,
         or * after the API reconnected to the database (treat everything as changed). Consoles
-        refetch what the topic affects instead of polling. Needs rates:read, analytics:read or
-        promos:write.
+        refetch what the topic affects instead of polling. Needs rates:read, analytics:read,
+        promos:write or enquiries:read.
       security: [{ cookieAuth: [] }, { bearerAuth: [] }]
       responses:
         "200":
@@ -993,6 +1009,26 @@ components:
       properties:
         charged_in: { type: string, enum: [INR], description: Bookings are always charged in this currency. }
         rates: { type: array, items: { $ref: "#/components/schemas/FxRate" } }
+
+    InboxCountsResponse:
+      type: object
+      required: [lanes, reply_time]
+      properties:
+        lanes:
+          type: array
+          items:
+            type: object
+            required: [lane, count]
+            properties:
+              lane: { $ref: "#/components/schemas/Lane" }
+              count: { type: integer, minimum: 0 }
+        reply_time:
+          type: object
+          nullable: true
+          required: [median_minutes, target_minutes]
+          properties:
+            median_minutes: { type: number, nullable: true }
+            target_minutes: { type: integer }
 
     OfferRequest:
       type: object

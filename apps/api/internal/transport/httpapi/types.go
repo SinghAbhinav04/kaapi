@@ -902,3 +902,20 @@ type OffersResponse struct {
 type OfferResponse struct {
 	Offer OfferDTO `json:"offer"`
 }
+
+// ---- inbox counts (the sidebar)
+
+type LaneCountDTO struct {
+	Lane  domain.Lane `json:"lane"`
+	Count int         `json:"count"`
+}
+
+type ReplyTimeDTO struct {
+	MedianMinutes *float64 `json:"median_minutes"`
+	TargetMinutes int      `json:"target_minutes"`
+}
+
+type InboxCountsResponse struct {
+	Lanes     []LaneCountDTO `json:"lanes"`
+	ReplyTime *ReplyTimeDTO  `json:"reply_time"` // null when the caller can't see the dashboard
+}

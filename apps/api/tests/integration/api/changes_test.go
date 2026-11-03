@@ -114,3 +114,45 @@ func TestChangeStreamNeedsAStaffPermission(t *testing.T) {
 		t.Fatalf("a guest must not get the stream: %d", res.Status)
 	}
 }
+
+// The minute sweep runs UPDATEs that usually match nothing; those must not wake every console.
+func TestOnlyRealChangesAreAnnounced(t *testing.T) {
+	s := withChangeFeed(t)
+	topics, stop := s.App.Changes.Subscribe()
+	defer stop()
+	drain := func(wait time.Duration) []string {
+		var got []string
+		deadline := time.After(wait)
+		for {
+			select {
+			case topic := <-topics:
+				got = append(got, topic)
+			case <-deadline:
+				return got
+			}
+		}
+	}
+	drain(500 * time.Millisecond) // the "*" sent when the feed connected
+
+	for _, q := range []string{
+		`UPDATE holds SET status = status WHERE false`,
+		`UPDATE bookings SET updated_at = updated_at WHERE false`,
+		`DELETE FROM promo_codes WHERE false`,
+	} {
+		if _, err := s.Pool.Exec(s.Ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := drain(time.Second); len(got) != 0 {
+		t.Fatalf("statements that changed nothing were announced: %v", got)
+	}
+
+	holdVilla(t, s.NewSession())
+	got := drain(2 * time.Second)
+	for _, topic := range got {
+		if topic == "inventory" {
+			return
+		}
+	}
+	t.Fatalf("a real hold must be announced as inventory, got %v", got)
+}

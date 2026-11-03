@@ -14,6 +14,7 @@ export const ENQUIRY_PATHS = {
   status: (ref: string) => `${staff(ref)}/status`,
   retryAi: (ref: string) => `${staff(ref)}/retry-ai`,
   stream: '/v1/staff/inbox/stream',
+  counts: '/v1/staff/inbox/counts',
   syncMail: '/v1/staff/integrations/gmail/sync',
 } as const;
 
@@ -22,6 +23,7 @@ export const enquiryKeys = {
   lists: () => [...enquiryKeys.all, 'list'] as const,
   list: (params: InboxParams) => [...enquiryKeys.lists(), params] as const,
   detail: (ref: string) => [...enquiryKeys.all, 'detail', ref] as const,
+  counts: () => [...enquiryKeys.all, 'counts'] as const,
 };
 
 /**

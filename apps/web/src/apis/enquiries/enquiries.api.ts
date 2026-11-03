@@ -7,6 +7,7 @@ export function createEnquiriesApi(client: HttpClient): EnquiriesApi {
   return {
     create: (body) => client.post(ENQUIRY_PATHS.create, body),
     inbound: (body) => client.post(ENQUIRY_PATHS.inbound, body),
+    counts: (signal) => client.get(ENQUIRY_PATHS.counts, { signal }),
     list: (params, signal) =>
       client.get(ENQUIRY_PATHS.list, { signal, query: { lane: params.lane, status: params.status, q: params.q, limit: params.limit } }),
     get: (ref, signal) => client.get(ENQUIRY_PATHS.detail(ref), { signal }),

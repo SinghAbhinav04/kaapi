@@ -162,6 +162,7 @@ func (a *API) Router() http.Handler {
 				r.Post("/inbound", h(a.simulateInbound))
 				r.Get("/enquiries", h(a.listEnquiries))
 				r.Get("/inbox/stream", h(a.inboxStream))
+				r.Get("/inbox/counts", h(a.inboxCounts))
 				r.Get("/enquiries/{ref}", h(a.getEnquiry))
 				r.Patch("/enquiries/{ref}/fields", h(a.correctEnquiry))
 				r.Put("/enquiries/{ref}/draft", h(a.editDraft))

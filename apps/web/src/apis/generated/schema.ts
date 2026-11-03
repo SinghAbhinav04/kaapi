@@ -1413,6 +1413,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/staff/inbox/counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The sidebar's numbers, without downloading the inbox.
+         * @description Open enquiries (everything but closed and spam) in each lane the caller can see, and the week's median first reply when the caller can see the dashboard (else reply_time is null). Refetch on the inbox or change stream; there is no need to poll.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InboxCountsResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/staff/changes/stream": {
         parameters: {
             query?: never;
@@ -1422,7 +1464,7 @@ export interface paths {
         };
         /**
          * Live data changes (server-sent events) for staff consoles.
-         * @description One "change" event per topic whenever the data behind it changes, from any process: bookings, inventory (prices, allotment, restrictions, sold, holds), offers, enquiries, or * after the API reconnected to the database (treat everything as changed). Consoles refetch what the topic affects instead of polling. Needs rates:read, analytics:read or promos:write.
+         * @description One "change" event per topic whenever the data behind it changes, from any process: bookings, inventory (prices, allotment, restrictions, sold, holds), offers, enquiries, or * after the API reconnected to the database (treat everything as changed). Consoles refetch what the topic affects instead of polling. Needs rates:read, analytics:read, promos:write or enquiries:read.
          */
         get: {
             parameters: {
@@ -2498,6 +2540,16 @@ export interface components {
             charged_in: "INR";
             rates: components["schemas"]["FxRate"][];
         };
+        InboxCountsResponse: {
+            lanes: {
+                lane: components["schemas"]["Lane"];
+                count: number;
+            }[];
+            reply_time: {
+                median_minutes: number | null;
+                target_minutes: number;
+            } | null;
+        };
         OfferRequest: {
             /** @description Shown on the quote; guests type it unless the offer is automatic. */
             code: string;
@@ -3306,6 +3358,7 @@ export type PropertyResponse = components['schemas']['PropertyResponse'];
 export type Currency = components['schemas']['Currency'];
 export type FxRate = components['schemas']['FxRate'];
 export type FxRatesResponse = components['schemas']['FxRatesResponse'];
+export type InboxCountsResponse = components['schemas']['InboxCountsResponse'];
 export type OfferRequest = components['schemas']['OfferRequest'];
 export type Offer = components['schemas']['Offer'];
 export type OffersResponse = components['schemas']['OffersResponse'];

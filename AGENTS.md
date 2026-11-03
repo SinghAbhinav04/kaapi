@@ -116,7 +116,8 @@ migrations/   0001_init.sql (24 tables), 0002_lock_down_data_api.sql (RLS on eve
               0006_inbox_notify.sql, 0007_rbac.sql, 0008_analytics_covering_index.sql, 0009_fx.sql (fx_rates,
               bookings.display_currency + rate snapshot), 0010_outbox_delivery.sql (queued guest emails),
               0011_offers.sql (automatic offers), 0012_pii.sql (blind-index columns for encrypted data),
-              0013_data_changes.sql (change-capture triggers). New tables must ENABLE RLS. Two branches must never
+              0013_data_changes.sql (change-capture triggers),
+              0014_data_changes_rows.sql (notify only when rows changed). New tables must ENABLE RLS. Two branches must never
               add the same migration number: goose records versions, so the second 0005 is silently skipped.
 seed/data/    JSON fixtures: property, room_types, rate_plans, rates_rules, promos,
               users, enquiries (60, labelled), bookings (40)
@@ -240,10 +241,10 @@ The gateway is a layer in the API process, not a separate service (decision: one
 - **Existing rows:** `seed.EncryptExisting` runs on every API and seed start: it encrypts plaintext rows and fills the indexes in batches, once (a no-op afterwards). Reads pass old plaintext through, so nothing breaks before it runs.
 
 ### Change capture, caches and timing (`platform/changes`, `platform/cache`, migration 0013)
-- **Change data capture, the light way:** statement-level triggers on `bookings`, `night_inventory`, `night_rates`, `holds`, `promo_codes` and `enquiries` send a topic on `pg_notify('data_changes')`: `bookings`, `inventory`, `offers` or `enquiries`, delivered on commit, from any process. `changes.Feed` (run by `cmd/api`) keeps one LISTEN connection and, after any (re)connect, publishes `*` (notices may have been missed). Scale-up path: logical replication or Redis pub/sub behind the same `Subscribe`/`OnChange`.
+- **Change data capture, the light way:** statement-level triggers (migration 0014: they read the statement's transition table and stay silent when it changed no rows, because the minute sweep's UPDATEs usually match nothing) on `bookings`, `night_inventory`, `night_rates`, `holds`, `promo_codes` and `enquiries` send a topic on `pg_notify('data_changes')`: `bookings`, `inventory`, `offers` or `enquiries`, delivered on commit, from any process. `changes.Feed` (run by `cmd/api`) keeps one LISTEN connection and, after any (re)connect, publishes `*` (notices may have been missed). Scale-up path: logical replication or Redis pub/sub behind the same `Subscribe`/`OnChange`.
 - **Analytics cache:** `analytics.Service` keeps computed reports (`platform/cache`, in memory, behind the consumer's `reportCache` interface, so Redis can replace it when instances must share). Key: range + today. The feed clears it on `bookings`, `inventory`, `enquiries` or `*`; `ANALYTICS_CACHE_SECONDS` (default 600, 0 = off, the tests' default) is only the safety net. Measured: 13 queries on a miss, 0 on a hit.
 - **Never cache what decides a booking:** availability, holds and the hold's price always read the database (overbooking guard, prices from the rate table).
-- **Staff consoles:** `GET /v1/staff/changes/stream` (SSE; rates:read, analytics:read or promos:write) sends each topic; `apis/changes` `useDataChanges` (mounted once in `StaffShell`) invalidates what the topic affects. The rates grid and analytics use `staleTime: Infinity` and don't poll. A rate save applies at once with `setQueryData` (`apis/rates/optimistic.ts`), rolls back on error and reconciles on settle.
+- **Staff consoles:** `GET /v1/staff/changes/stream` (SSE; rates:read, analytics:read, promos:write or enquiries:read) sends each topic; `apis/changes` `useDataChanges` (mounted once in `StaffShell`) invalidates what the topic affects. The rates grid, analytics, the dashboard and the sidebar's counts use `staleTime: Infinity` and don't poll. The sidebar reads `GET /v1/staff/inbox/counts` (lane counts for the caller's lanes, plus the week's median reply when they have dashboard:read) instead of the whole inbox; the inbox and change streams refresh it. Measured on a production build: the rates page makes 5 API calls, each once, and none while idle. In `next dev` you will see requests twice, the first cancelled: that is React Strict Mode mounting twice, not a bug. A rate save applies at once with `setQueryData` (`apis/rates/optimistic.ts`), rolls back on error and reconciles on settle.
 - **Guest search batching:** availability loads plans, nightly rates, the typed code and live offers in four queries and prices in memory through `priceStay`, the same pure function the hold uses (`TestSearchQuotesMatchWhatAHoldFreezes` keeps them equal). Six queries per search, down from about fifty.
 - **Server-Timing:** every response carries `db;dur=…;desc="N queries", app;dur=…` (a pgx query tracer, `db.Tracer()`, counts per request), so production latency is read in the browser's network panel, not guessed.
 - Other per-process caches with short TTLs: permissions (`access`, 30 s), live sessions (`auth.SessionLive`, 30 s), in-memory rate-limit counters. Shared state lives in Postgres: `rate_limit_buckets`, `pg_notify`. There is no Redis yet; add it (Memorystore or Upstash) when several API instances must share the analytics cache and rate limits.
@@ -421,11 +422,11 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 - On `dev` (not yet on `main`): gateway policies (CORS and rate limits per group, live-session tokens, trusted client IP); real guest emails through the outbox; automatic offers with the console's Offers page; personal data encrypted at rest; `DOTENV_FILE` for dev/production settings; batched guest search; change capture with the analytics cache and live staff consoles; Server-Timing.
 
 **State of the two databases:**
-- Local devdb: on `dev`, migrations 1–13, seeded and encrypted. It has a test `DIWALI26` offer (15%, automatic) created while checking the Offers flow.
-- Supabase (production): migrations 1–9 from `main`. 10–13 and the encryption backfill run when `dev` is promoted and the API starts with `.env.production` (whose `PII_KEY` must be kept safe from then on).
+- Local devdb: on `dev`, migrations 1–14, seeded and encrypted. It has a test `DIWALI26` offer (15%, automatic) created while checking the Offers flow.
+- Supabase (production): migrations 1–9 from `main`. 10–14 and the encryption backfill run when `dev` is promoted and the API starts with `.env.production` (whose `PII_KEY` must be kept safe from then on).
 
 **To do, in order:**
-1. Promote `dev` to `main` once the owner has tested it (§ 6 Branches), then bring Supabase up to migration 13.
+1. Promote `dev` to `main` once the owner has tested it (§ 6 Branches), then bring Supabase up to migration 14.
 2. After deploying, read real latency from `Server-Timing` and decide whether Redis is needed (several instances).
 3. A visual pass in a browser at 1440 px and 390 px against the approved canvas (Claude Design artifact "Kaapi Estate — Direct Booking"), including the currency switcher in the header and the Offers page.
 4. Small API gaps:

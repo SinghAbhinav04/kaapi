@@ -21,6 +21,8 @@ import type {
 
 export const useInbox = (params: InboxParams) => useQuery(enquiryQueries.list(params));
 
+export const useInboxCounts = (enabled = true) => useQuery({ ...enquiryQueries.counts(), enabled });
+
 export const useEnquiry = (ref: string | null) => useQuery({ ...enquiryQueries.detail(ref ?? ''), enabled: ref !== null });
 
 export const useCreateEnquiry = () => useMutation({ mutationFn: (body: CreateEnquiryRequest) => enquiriesApi.create(body) });
@@ -97,6 +99,7 @@ export function useInboxStream() {
       source = new EventSource(`${BROWSER_BASE_URL}${ENQUIRY_PATHS.stream}`);
       source.addEventListener('inbox', (e) => {
         void queryClient.invalidateQueries({ queryKey: enquiryKeys.lists() });
+        void queryClient.invalidateQueries({ queryKey: enquiryKeys.counts() });
         void queryClient.invalidateQueries({ queryKey: enquiryKeys.detail((e as MessageEvent<string>).data) });
       });
       source.onerror = () => {

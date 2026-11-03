@@ -138,9 +138,10 @@ func (a *API) inboxStream(w http.ResponseWriter, r *http.Request) error {
 // changesStream: GET /v1/staff/changes/stream: server-sent events from the change feed, one
 // "change" event per topic (bookings, inventory, offers, enquiries, or * after the API
 // reconnected to the database). Staff consoles refetch what that topic affects instead of
-// polling. Only topic names are sent; every refetch goes through the caller's permissions.
+// polling (the sidebar's lane counts too, so anyone with an inbox gets it). Only topic names
+// are sent; every refetch goes through the caller's permissions.
 func (a *API) changesStream(w http.ResponseWriter, r *http.Request) error {
-	if !a.can(r, auth.PermRatesRead) && !a.can(r, auth.PermAnalyticsRead) && !a.can(r, auth.PermPromosWrite) {
+	if !a.can(r, auth.PermRatesRead) && !a.can(r, auth.PermAnalyticsRead) && !a.can(r, auth.PermPromosWrite) && !a.can(r, auth.PermEnquiriesRead) {
 		return auth.ErrForbidden
 	}
 	rc := http.NewResponseController(w)

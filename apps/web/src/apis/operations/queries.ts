@@ -10,11 +10,12 @@ export const operationsQueries = {
       queryFn: ({ signal }) => operationsApi.outbox(limit, signal),
       refetchInterval: OPERATIONS_REFRESH_MS,
     }),
+  // Bookings, inventory and enquiries changes refetch it through the change stream (apis/changes).
   dashboard: () =>
     queryOptions({
       queryKey: operationsKeys.dashboard(),
       queryFn: ({ signal }) => operationsApi.dashboard(signal),
-      refetchInterval: OPERATIONS_REFRESH_MS,
+      staleTime: Infinity,
     }),
   /** Refreshes on the inbox's rhythm so "last synced" stays honest. */
   gmail: () =>

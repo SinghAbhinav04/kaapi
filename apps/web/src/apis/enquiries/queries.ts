@@ -14,6 +14,13 @@ export const enquiryQueries = {
       refetchInterval: INBOX_REFRESH_MS,
       placeholderData: keepPreviousData,
     }),
+  /** Fresh until the inbox or change stream says otherwise: no timer, no refetch on focus. */
+  counts: () =>
+    queryOptions({
+      queryKey: enquiryKeys.counts(),
+      queryFn: ({ signal }) => enquiriesApi.counts(signal),
+      staleTime: Infinity,
+    }),
   detail: (ref: string) =>
     queryOptions({
       queryKey: enquiryKeys.detail(ref),
