@@ -17,20 +17,50 @@ export function DraftPanel({ enquiry, canSend }: { enquiry: Enquiry; canSend: bo
   const save = useEditDraft(enquiry.ref);
   const send = useSendReply(enquiry.ref);
 
+  const sent = !!draft?.sent_at;
+  // Staff can always write their own reply: from scratch when there's no draft (or the AI is
+  // still reading), as a follow-up after a send, or by editing the current draft.
+  const startEdit = () => {
+    setText(draft && !sent ? draft.body : '');
+    setEditing(true);
+  };
+
+  const editor = (
+    <div className={styles.editor}>
+      <TextAreaField label={draft && !sent ? 'Edit the reply' : 'Write your reply'} value={text} onChange={(e) => setText(e.target.value)} rows={12} />
+      {save.isError && (
+        <p className={styles.error} role="alert">
+          {save.error.message}
+        </p>
+      )}
+      <div className={styles.row}>
+        <Button variant="quiet" onClick={() => setEditing(false)}>
+          Cancel
+        </Button>
+        <Button loading={save.isPending} onClick={() => save.mutate(text, { onSuccess: () => setEditing(false) })} disabled={!text.trim()}>
+          Save draft
+        </Button>
+      </div>
+    </div>
+  );
+
   if (!draft) {
     return (
       <section className={styles.block}>
         <h3 className={styles.blockTitle}>Reply draft</h3>
-        <p className={styles.muted}>{enquiry.ai_status === 'PENDING' ? 'A draft appears once the AI has read the message.' : 'No draft for this enquiry.'}</p>
+        {editing ? (
+          editor
+        ) : (
+          <div className={styles.sendRow}>
+            <span className={styles.muted}>{enquiry.ai_status === 'PENDING' ? 'The AI is still reading this message. You can write the reply yourself.' : 'No draft for this enquiry yet.'}</span>
+            <Button variant="quiet" onClick={startEdit}>
+              Write a reply
+            </Button>
+          </div>
+        )}
       </section>
     );
   }
-
-  const sent = !!draft.sent_at;
-  const startEdit = () => {
-    setText(draft.body);
-    setEditing(true);
-  };
 
   return (
     <section aria-labelledby="draft-title" className={styles.block}>
@@ -50,22 +80,7 @@ export function DraftPanel({ enquiry, canSend }: { enquiry: Enquiry; canSend: bo
       )}
 
       {editing ? (
-        <div className={styles.editor}>
-          <TextAreaField label="Edit the reply" value={text} onChange={(e) => setText(e.target.value)} rows={12} />
-          {save.isError && (
-            <p className={styles.error} role="alert">
-              {save.error.message}
-            </p>
-          )}
-          <div className={styles.row}>
-            <Button variant="quiet" onClick={() => setEditing(false)}>
-              Cancel
-            </Button>
-            <Button loading={save.isPending} onClick={() => save.mutate(text, { onSuccess: () => setEditing(false) })} disabled={!text.trim()}>
-              Save draft
-            </Button>
-          </div>
-        </div>
+        editor
       ) : (
         <div className={styles.draft}>
           {parseDraft(draft.body).map((block, i) =>
@@ -105,9 +120,16 @@ export function DraftPanel({ enquiry, canSend }: { enquiry: Enquiry; canSend: bo
       )}
 
       {sent ? (
-        <p className={styles.sent} role="status">
-          Sent {formatTimestamp(draft.sent_at!)}. A copy is in the Outbox.
-        </p>
+        !editing && (
+          <div className={styles.sendRow}>
+            <p className={styles.sent} role="status">
+              Sent {formatTimestamp(draft.sent_at!)}. A copy is in the Outbox.
+            </p>
+            <Button variant="quiet" onClick={startEdit}>
+              Write a follow-up
+            </Button>
+          </div>
+        )
       ) : (
         !editing && (
           <div className={styles.sendRow}>
