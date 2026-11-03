@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { CurrencySwitcher } from '@/features/currency';
 import { ROUTES } from '@/shared/const';
 import { cx } from '@/shared/lib/cx';
 import { ButtonLink, Logo } from '@/shared/ui';
@@ -21,6 +22,7 @@ export function SiteHeader({ variant = 'solid' }: SiteHeaderProps) {
           ))}
         </div>
         <div className={styles.actions}>
+          <CurrencySwitcher />
           <Link href={ROUTES.myBookings} className={styles.myBooking}>
             MY BOOKING
           </Link>

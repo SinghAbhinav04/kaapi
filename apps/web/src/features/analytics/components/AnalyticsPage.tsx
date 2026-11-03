@@ -89,6 +89,10 @@ export function AnalyticsPage() {
             <Breakdown rows={d.by_plan} />
           </ChartCard>
 
+          <ChartCard title={COPY.currencyTitle} note={COPY.currencyNote}>
+            <Breakdown rows={d.by_display_currency} />
+          </ChartCard>
+
           <ChartCard title="How far ahead guests book" note={`Average ${k.avg_lead_days.toFixed(0)} days; stays average ${k.avg_stay_nights.toFixed(1)} nights.`}>
             <Counts rows={d.lead_time} />
           </ChartCard>

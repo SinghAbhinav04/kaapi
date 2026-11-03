@@ -47,6 +47,19 @@ paths:
           description: OK
           content: { application/json: { schema: { $ref: "#/components/schemas/PropertyResponse" } } }
 
+  /v1/fx-rates:
+    get:
+      tags: [catalog]
+      summary: Exchange rates for showing an estimate in the guest's currency.
+      description: >
+        Every booking is charged in INR; these rates only turn an INR amount into an estimate
+        ("≈ US$102"). ECB reference rates, refreshed every few hours. Rates older than 48 hours
+        are left out, so an empty list means "show INR only".
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/FxRatesResponse" } } }
+
   /v1/rooms:
     get:
       tags: [catalog]
@@ -723,6 +736,27 @@ components:
         hold_minutes: { type: integer }
         facts: { type: array, items: { $ref: "#/components/schemas/Fact" } }
 
+    Currency:
+      type: string
+      enum: [INR, USD, EUR, GBP, AUD, CAD, SGD, CHF, JPY]
+
+    FxRate:
+      type: object
+      required: [currency, inr_per_unit_micros, date]
+      additionalProperties: false
+      properties:
+        currency: { $ref: "#/components/schemas/Currency" }
+        inr_per_unit_micros: { type: integer, format: int64, minimum: 1, description: "INR per one unit of the currency × 1,000,000." }
+        date: { type: string, format: date, description: The ECB publication date. }
+
+    FxRatesResponse:
+      type: object
+      required: [charged_in, rates]
+      additionalProperties: false
+      properties:
+        charged_in: { type: string, enum: [INR], description: Bookings are always charged in this currency. }
+        rates: { type: array, items: { $ref: "#/components/schemas/FxRate" } }
+
     Photo:
       type: object
       required: [url, alt]
@@ -974,6 +1008,9 @@ components:
         special_requests: { type: string, maxLength: 1000 }
         consent: { type: boolean, description: "DPDP consent to use these details for the booking. Must be true." }
         marketing_opt_in: { type: boolean }
+        display_currency:
+          allOf: [{ $ref: "#/components/schemas/Currency" }]
+          description: The currency the guest was reading prices in, kept with that moment's rate for analytics. The charge is INR regardless.
 
     Payment:
       type: object
@@ -1369,7 +1406,7 @@ components:
 
     AnalyticsResponse:
       type: object
-      required: [range, kpis, daily, by_room, by_plan, status_mix, lead_time, on_the_books, enquiries]
+      required: [range, kpis, daily, by_room, by_plan, by_display_currency, status_mix, lead_time, on_the_books, enquiries]
       properties:
         range:
           type: object
@@ -1404,6 +1441,10 @@ components:
               revenue_paise: { $ref: "#/components/schemas/Paise" }
         by_room: { type: array, items: { $ref: "#/components/schemas/AnalyticsBreakdown" } }
         by_plan: { type: array, items: { $ref: "#/components/schemas/AnalyticsBreakdown" } }
+        by_display_currency:
+          description: Confirmed bookings by the currency the guest read prices in (`name` is the code). All were charged in INR.
+          type: array
+          items: { $ref: "#/components/schemas/AnalyticsBreakdown" }
         status_mix: { type: array, items: { $ref: "#/components/schemas/AnalyticsCount" } }
         lead_time: { type: array, items: { $ref: "#/components/schemas/AnalyticsCount" } }
         on_the_books:

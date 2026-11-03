@@ -29,7 +29,8 @@ labelled in the TDD, and only facts from the problem statement may be used.
 | AI | Classify → extract → route → draft. Gemini round-robin across every allowed model, Groq failover, keyword rules as the final fallback and complaint safety net |
 | Gmail | Admin connects a mailbox once (OAuth). New inbox mail is polled into enquiries; replies and new messages go out from it, threaded. Unconnected, everything stays simulated in the outbox |
 | Retention | Job archives finished bookings, wipes guest contact details at 12 months, deletes bookings after 8 financial years and messages at 12 months |
-| Analytics | Revenue, ADR, commission saved, cancellations, booking pace, lead time, on-the-books occupancy, enquiry mix |
+| Analytics | Revenue, ADR, commission saved, cancellations, booking pace, lead time, on-the-books occupancy, enquiry mix, currency guests read prices in |
+| Currency | Guests see "≈ $497" beside INR prices in their own currency (country from Vercel's header, else a time-zone guess, else INR; a switcher overrides). Always charged in INR; the currency shown and that day's rate are kept on the booking |
 
 ### Rules from the brief that must never break
 1. **Never overbook.** Enforced in three layers: row locks, live hold counting, and a DB `CHECK (sold <= allotment)`.
@@ -94,11 +95,13 @@ internal/
   gmail/      OAuth connect, encrypted token store, inbox polling, threaded sending (plain net/http)
   retention/  archive / anonymise / purge sweep (batched, SKIP LOCKED, audit-logged)
   analytics/  read-only revenue, pace, mix and on-the-books report
+  fx/         ECB rates via Frankfurter, stored as INR-per-unit micros; shown only while fresh (48 h)
   api/        HTTP layer: router (gateway), handlers, DTOs (types.go), mappers
   seed/       fixture loader + seeder (computes derived values, checks invariants)
 migrations/   0001_init.sql (24 tables), 0002_lock_down_data_api.sql (RLS on every table),
               0003_retention.sql (bookings.archived_at / anonymised_at), 0004_gmail.sql (integrations table,
-              enquiry external ids, draft send claim, outbox status + STAFF_MESSAGE). New tables must ENABLE RLS.
+              enquiry external ids, draft send claim, outbox status + STAFF_MESSAGE), 0005_fx.sql (fx_rates,
+              bookings.display_currency + rate snapshot). New tables must ENABLE RLS.
 seed/data/    JSON fixtures: property, room_types, rate_plans, rates_rules, promos,
               users, enquiries (60, labelled), bookings (40)
 tests/
@@ -165,10 +168,18 @@ Each run writes one `audit_logs` row with the counts.
 - `enquiry.Send` and `outbox.Send` take a small `Mailer` interface (defined in each consumer); with it connected, email replies go out with `In-Reply-To`/`threadId` and the outbox row is `SENT`, otherwise `SIMULATED`. WhatsApp stays simulated.
 - Tests use a fake Google server (`tests/integration/api/gmail_test.go`); `GOOGLE_OAUTH_BASE_URL` / `GMAIL_API_BASE_URL` point at it.
 
+### How currencies work (`fx/` + `features/currency`)
+- **Prices and charges are INR, always.** The quote, payment, GST and invoice never change; another currency is only an estimate printed beside the INR figure, marked "≈" with "you're charged in INR".
+- Rates: `RefreshFX` fetches the ECB rates from Frankfurter at start-up and every 6 h (EUR base, crossed to INR with exact rationals), stored as `inr_per_unit_micros` (INR per unit × 1,000,000, no floats). `GET /v1/fx-rates` returns only rates fetched in the last 48 h, so a broken feed shows INR only. ECB publishes no AED. A `-reset` keeps fetched rates (like the Gmail connection).
+- Which currency: the `kaapi_ccy` cookie. `src/proxy.ts` sets it on a first visit from `x-vercel-ip-country` (`features/currency/geo.ts` maps country → currency, India and unlisted countries → INR). Without the header the page guesses from the browser's time zone. The header and room-page switcher override both. The server renders INR only; the estimate appears after hydration (`useSyncExternalStore`), so there's no mismatch.
+- On booking, `display_currency` is sent and the server snapshots *its own* fresh rate (`fx.Snapshot`), never one from the client. Analytics groups confirmed bookings by it (`by_display_currency`; none recorded = INR).
+
 ### Auth model
 - **Access token:** JWE (dir + A256GCM), 15 minutes. Claims hold only user, role and session.
 - **Refresh token:** random, stored hashed, rotated on every use. Reusing an old one revokes the whole session chain.
 - **Web clients** get httpOnly cookies (`kaapi_at` and `kaapi_rt` in dev; `__Host-kaapi_at` and `__Secure-kaapi_rt` in production). Writes are CSRF-checked by `Origin`.
+- **The refresh cookie's path is the one the browser sees:** `BROWSER_API_PREFIX` (default `/api`, the web proxy) + `/v1/auth`. With the bare `/v1/auth` the browser never sent it and every staff session ended after 15 minutes. `TestRefreshCookiePathMatchesTheBrowserProxy` guards it.
+- **Tabs refresh one at a time** (`navigator.locks` in `apis/http/index.ts`): two tabs sending the same refresh token look like theft to the API, which then revokes every session.
 - **Native clients** send `X-Client: native` and get tokens in the response body, then use Bearer.
 - **Guests** sign in with an email OTP: HMAC-bound, single use, rate-limited. In `DEMO_MODE` the API returns the code, because demo email is simulated.
 
@@ -277,7 +288,7 @@ Segmented, Stepper, Skeleton, EmptyState/ErrorState and Logo.
 - **Local Postgres without devdb** (e.g. a network that blocks devdb's binary download): `brew install postgresql@17 && brew services start postgresql@17`, create role `kaapi`/`kaapi` and databases `kaapi` + `kaapi_test`, then use `postgres://kaapi:kaapi@127.0.0.1:5432/...`. Override `DATABASE_URL` on the command line (real env beats `.env`). On corporate Macs `psql` can hang on Kerberos: add `gssencmode=disable` (pgx is unaffected).
 - **No IPv6?** The Supabase direct host is unreachable; use the session pooler URL instead.
 - **Env names** (values never in git; see `.env.example`):
-  - API: `DATABASE_URL`, `JWE_SECRET` (32+ bytes), `MOCK_PAYMENT_WEBHOOK_SECRET` (32+ bytes), `APP_ORIGIN`, `APP_ENV`, `DEMO_MODE`, `SEED_DEMO_PASSWORD`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`, `GEMINI_API_KEY`, `GEMINI_MODELS`, `GEMINI_RPM`, `GROQ_API_KEY`, `GROQ_MODELS`, `GROQ_RPM`, `SENTRY_DSN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_REDIRECT_URL` (optional), `GMAIL_POLL_SECONDS` (optional), `PORT` (default 8080)
+  - API: `DATABASE_URL`, `BROWSER_API_PREFIX` (optional, default `/api`), `FX_API_BASE_URL` (optional), `JWE_SECRET` (32+ bytes), `MOCK_PAYMENT_WEBHOOK_SECRET` (32+ bytes), `APP_ORIGIN`, `APP_ENV`, `DEMO_MODE`, `SEED_DEMO_PASSWORD`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`, `GEMINI_API_KEY`, `GEMINI_MODELS`, `GEMINI_RPM`, `GROQ_API_KEY`, `GROQ_MODELS`, `GROQ_RPM`, `SENTRY_DSN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_REDIRECT_URL` (optional), `GMAIL_POLL_SECONDS` (optional), `PORT` (default 8080)
   - Web: `API_ORIGIN` (where `/api/*` is proxied; default `http://localhost:8080`), `NEXT_PUBLIC_APP_URL`
 - **Demo accounts:**
   - staff: `gm@`, `reservations@`, `reservations2@`, `sales@`, `admin@kaapiestate.test`
@@ -329,6 +340,8 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 - Data retention and deletion (`internal/retention`, privacy page updated). Policy from Abhinav: archive, anonymise, keep for the tax window.
 - Analytics tab.
 - Gmail integration (connect, poll, threaded send). Needs the redirect URI registered in Google Cloud and the mailbox added as a test user.
+- Currency estimates for foreign guests, kept per booking for analytics (3 Nov).
+- Fixed: web token refresh never worked through the `/api` proxy (refresh cookie path), and parallel tabs could revoke each other's sessions.
 
 **To do, in order:**
 1. A visual pass in a browser at 1440 px and 390 px against the approved canvas (Claude Design artifact "Kaapi Estate — Direct Booking").
@@ -338,6 +351,7 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
    - A rate limit on staff login.
    - Delete-my-data requests from guests (OTP-verified, staff queue, export), see `docs/notes/data-retention.md`.
    - Inbound replies on an existing Gmail thread become a new enquiry; linking them to the original is a next step.
+  - Sessions slide forever: each refresh grants 30 more days, with no absolute cap. Consider one (e.g. 12 h for ADMIN).
 3. Capacitor Android shell (`server.url` → production site; Bearer tokens in Preferences).
 4. Deploy:
    - API: Dockerfile, Cloud Run `asia-south1`, Supabase session pooler. The retention sweep and Gmail poller are in-process tickers, so either keep `min-instances=1` or have Cloud Scheduler call `POST /v1/staff/retention/run` and `/integrations/gmail/sync`.

@@ -35,6 +35,12 @@ export const catalogQueries = {
       staleTime: CATALOG_STALE_MS.calendar,
       placeholderData: keepPreviousData,
     }),
+  fxRates: () =>
+    queryOptions({
+      queryKey: catalogKeys.fxRates(),
+      queryFn: ({ signal }) => catalogApi.getFxRates(signal),
+      staleTime: CATALOG_STALE_MS.fxRates,
+    }),
   availability: (params: AvailabilityParams) =>
     queryOptions({
       queryKey: catalogKeys.availability(params),

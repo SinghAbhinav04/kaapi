@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 
 import type { AvailabilityOption, PlanQuote } from '@/apis/catalog';
 import type { ApiError } from '@/apis/http';
+import { ApproxPrice } from '@/features/currency';
 import type { StaySearch } from '@/features/stay-search';
 import { formatStay, formatWeekdayDay, nightsBetween } from '@/shared/lib/dates';
 import { formatDiscount, formatINR, formatRate } from '@/shared/lib/money';
@@ -92,6 +93,7 @@ export function StaySummary(props: StaySummaryProps) {
               <span>Total, incl. GST</span>
               <span className={styles.totalAmount}>{formatINR(quote.total_paise)}</span>
             </div>
+            <ApproxPrice paise={quote.total_paise} withNote />
             <p className={styles.note}>
               {gstSummary(quote.lines)}. GST is 5% on nights up to ₹7,500 and 18% above, after any discount.
             </p>

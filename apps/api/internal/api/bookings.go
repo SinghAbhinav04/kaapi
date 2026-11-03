@@ -31,7 +31,7 @@ func (a *API) createBooking(w http.ResponseWriter, r *http.Request) error {
 		HoldID: body.HoldID, HoldToken: r.Header.Get(headerHoldToken),
 		Guest:         booking.Guest{Name: body.Guest.Name, Email: body.Guest.Email, Phone: body.Guest.Phone, Country: body.Guest.Country},
 		ArrivalWindow: body.ArrivalWindow, SpecialRequests: body.SpecialRequests,
-		Consent: body.Consent, MarketingOptIn: body.MarketingOptIn,
+		Consent: body.Consent, MarketingOptIn: body.MarketingOptIn, DisplayCurrency: body.DisplayCurrency,
 	}
 	if p := principal(r.Context()); p.IsAuthenticated() && p.Role == domain.RoleGuest {
 		in.GuestUserID = &p.UserID

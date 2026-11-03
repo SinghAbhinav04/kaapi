@@ -46,4 +46,6 @@ export const COPY = {
   onTheBooksNote: 'Nights already sold on the website for this month and the next five, against its allotment.',
   revenueTitle: 'Revenue by day booked',
   emptyRange: 'No confirmed bookings in this range.',
+  currencyTitle: 'Currency guests read prices in',
+  currencyNote: 'All charged in INR. Shows where direct guests come from; bookings from before this was recorded count as INR.',
 } as const;

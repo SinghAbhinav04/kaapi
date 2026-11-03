@@ -246,6 +246,8 @@ type CreateBookingRequest struct {
 	SpecialRequests string    `json:"special_requests"`
 	Consent         bool      `json:"consent"`
 	MarketingOptIn  bool      `json:"marketing_opt_in"`
+	// DisplayCurrency: what the guest read prices in; analytics only, the charge is INR.
+	DisplayCurrency domain.Currency `json:"display_currency"`
 }
 
 type RoomRefDTO struct {
@@ -688,6 +690,7 @@ type AnalyticsResponse struct {
 	Daily      []AnalyticsDayDTO       `json:"daily"`
 	ByRoom     []AnalyticsBreakdownDTO `json:"by_room"`
 	ByPlan     []AnalyticsBreakdownDTO `json:"by_plan"`
+	ByCurrency []AnalyticsBreakdownDTO `json:"by_display_currency"`
 	StatusMix  []AnalyticsCountDTO     `json:"status_mix"`
 	LeadTime   []AnalyticsCountDTO     `json:"lead_time"`
 	OnTheBooks []AnalyticsMonthDTO     `json:"on_the_books"`
@@ -782,4 +785,15 @@ type ComposeRequest struct {
 
 type OutboxMessageResponse struct {
 	Message OutboxMessageDTO `json:"message"`
+}
+
+type FxRateDTO struct {
+	Currency         domain.Currency `json:"currency"`
+	INRPerUnitMicros int64           `json:"inr_per_unit_micros"`
+	Date             string          `json:"date"`
+}
+
+type FxRatesResponse struct {
+	ChargedIn domain.Currency `json:"charged_in"`
+	Rates     []FxRateDTO     `json:"rates"`
 }

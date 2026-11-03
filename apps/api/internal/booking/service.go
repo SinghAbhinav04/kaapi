@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"kaapi/api/internal/domain"
+	"kaapi/api/internal/fx"
 	"kaapi/api/internal/inventory"
 	"kaapi/api/internal/payment"
 	"kaapi/api/internal/platform/apperr"
@@ -92,6 +93,21 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Booking, error) {
 			return fmt.Errorf("hold quote: %w", err)
 		}
 
+		// What the guest was reading prices in, with that moment's rate. Never part of the charge.
+		var shown *domain.Currency
+		var rate *fx.Rate
+		if in.DisplayCurrency != "" {
+			shown = &in.DisplayCurrency
+			if rate, err = fx.Snapshot(ctx, tx, in.DisplayCurrency); err != nil {
+				return err
+			}
+		}
+		var rateMicros *int64
+		var rateDate *time.Time
+		if rate != nil {
+			rateMicros, rateDate = &rate.INRPerUnitMicros, &rate.Date
+		}
+
 		now := s.now()
 		for attempt := 0; attempt < refAttempts; attempt++ {
 			id := idgen.New()
@@ -99,13 +115,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Booking, error) {
 				(id, ref, hold_id, guest_user_id, guest_name, guest_email, guest_phone, guest_country, adults, children, rooms,
 				 room_type_id, rate_plan_id, check_in, check_out, arrival_window, special_requests, status,
 				 subtotal_paise, discount_paise, tax_paise, total_paise, price_breakdown, promo_code_id,
-				 consent_version, consent_at, marketing_opt_in, source)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
+				 consent_version, consent_at, marketing_opt_in, source, display_currency, fx_inr_per_unit_micros, fx_rate_date)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
 				ON CONFLICT (ref) DO NOTHING`,
 				id, idgen.BookingRef(), in.HoldID, in.GuestUserID, in.Guest.Name, in.Guest.Email, in.Guest.Phone, in.Guest.Country,
 				h.Adults, h.Children, h.Rooms, h.RoomTypeID, h.RatePlanID, h.CheckIn, h.CheckOut, nilIfEmpty(in.ArrivalWindow),
 				nilIfEmpty(in.SpecialRequests), domain.BookingPendingPayment, q.SubtotalPaise, q.DiscountPaise, q.TaxPaise,
-				q.TotalPaise, quoteJSON, promoID, ConsentVersion, now, in.MarketingOptIn, domain.BookingSourceDirectWeb)
+				q.TotalPaise, quoteJSON, promoID, ConsentVersion, now, in.MarketingOptIn, domain.BookingSourceDirectWeb,
+				shown, rateMicros, rateDate)
 			if err != nil {
 				return err
 			}
@@ -308,6 +325,9 @@ func validate(in *CreateInput) error {
 	}
 	if !in.Consent {
 		f["consent"] = "is needed so we can use your details for this booking"
+	}
+	if in.DisplayCurrency != "" && !in.DisplayCurrency.Valid() {
+		f["display_currency"] = "isn't a currency we show prices in"
 	}
 	if len(f) > 0 {
 		return apperr.Validation(f)

@@ -8,6 +8,7 @@ export function createCatalogApi(client: HttpClient): CatalogApi {
     getProperty: (signal) => client.get(CATALOG_PATHS.property, { signal }),
     listRooms: (signal) => client.get(CATALOG_PATHS.rooms, { signal }),
     getRoom: (slug, signal) => client.get(CATALOG_PATHS.room(slug), { signal }),
+    getFxRates: (signal) => client.get(CATALOG_PATHS.fxRates, { signal }),
     getCalendar: (slug, params, signal) =>
       client.get(CATALOG_PATHS.calendar(slug), { signal, query: { from: params.from, to: params.to, plan: params.plan } }),
     searchAvailability: (params, signal) =>

@@ -1,6 +1,7 @@
 import type { Plan, PlanQuote } from '@/apis/catalog';
 import { cancellationLine, inclusionsFor, nonRefundableSaving } from '@/features/booking-flow';
 import type { IsoDate } from '@/shared/lib/dates';
+import { ApproxPrice } from '@/features/currency';
 import { formatINR } from '@/shared/lib/money';
 
 import styles from './RoomPage.module.css';
@@ -34,7 +35,10 @@ export function RatePlans({ plans, catalogue, selected, checkIn, onSelect }: Rat
                 <strong>{plan.name}</strong>
                 <span>{detail}</span>
               </span>
-              <span className={styles.planPrice}>{formatINR(plan.quote.total_paise)}</span>
+              <span className={styles.planPrice}>
+                {formatINR(plan.quote.total_paise)}
+                <ApproxPrice paise={plan.quote.total_paise} />
+              </span>
             </label>
           );
         })}

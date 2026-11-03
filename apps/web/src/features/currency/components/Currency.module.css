@@ -1,0 +1,38 @@
+.approx {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--grey);
+  letter-spacing: 0.02em;
+}
+
+.note {
+  font-family: var(--font-body);
+  letter-spacing: 0;
+}
+
+.switcher select {
+  min-height: var(--tap);
+  padding: 0 28px 0 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-pill);
+  background: transparent
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23141210' stroke-width='1.4'/%3E%3C/svg%3E")
+    no-repeat right 12px center;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  appearance: none;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.switcher select:hover {
+  border-color: var(--ink);
+}
+
+.switcher select:focus-visible {
+  outline: 2px solid var(--estate);
+  outline-offset: 2px;
+}

@@ -49,6 +49,7 @@ func analyticsDTO(r analytics.Report) AnalyticsResponse {
 		Daily:      make([]AnalyticsDayDTO, len(r.Daily)),
 		ByRoom:     breakdownDTOs(r.ByRoom),
 		ByPlan:     breakdownDTOs(r.ByPlan),
+		ByCurrency: breakdownDTOs(r.ByCurrency),
 		StatusMix:  countDTOs(r.StatusMix),
 		LeadTime:   countDTOs(r.LeadTime),
 		OnTheBooks: make([]AnalyticsMonthDTO, len(r.OnTheBooks)),

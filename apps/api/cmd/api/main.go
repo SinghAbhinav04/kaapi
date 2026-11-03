@@ -38,6 +38,9 @@ const (
 
 	// Retention windows are months long, so a few runs a day is plenty.
 	retentionEvery = 6 * time.Hour
+
+	// The ECB publishes once a working day; a few fetches a day catch it without hammering.
+	fxEvery = 6 * time.Hour
 )
 
 func main() {
@@ -74,6 +77,7 @@ func main() {
 	go app.RunEnquiryWorker(ctx, enquiryTick)
 	go app.SweepRetention(ctx, retentionEvery)
 	go app.RunGmail(ctx)
+	go app.RefreshFX(ctx, fxEvery)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

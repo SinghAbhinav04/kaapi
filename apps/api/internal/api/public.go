@@ -173,3 +173,17 @@ func (a *API) readyz(w http.ResponseWriter, r *http.Request) error {
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	return nil
 }
+
+// fxRates: GET /v1/fx-rates → today's rates for the "≈" estimate. Empty when they're stale.
+func (a *API) fxRates(w http.ResponseWriter, r *http.Request) error {
+	rates, err := a.fx.Rates(r.Context())
+	if err != nil {
+		return err
+	}
+	out := FxRatesResponse{ChargedIn: domain.CurrencyINR, Rates: make([]FxRateDTO, len(rates))}
+	for i, x := range rates {
+		out.Rates[i] = FxRateDTO{Currency: x.Currency, INRPerUnitMicros: x.INRPerUnitMicros, Date: date(x.Date)}
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+	return nil
+}

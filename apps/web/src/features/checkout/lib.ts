@@ -1,4 +1,5 @@
 import type { CreateBookingRequest } from '@/apis/booking';
+import type { Currency } from '@/apis/catalog';
 
 import { EMAIL_PATTERN, LIMITS } from './const';
 import type { FormErrors, GuestForm } from './types';
@@ -18,7 +19,8 @@ export function validateGuest(form: GuestForm): FormErrors {
   return errors;
 }
 
-export function toBookingRequest(holdId: string, form: GuestForm): CreateBookingRequest {
+/** displayCurrency: what the guest read prices in, kept for analytics; the charge is INR. */
+export function toBookingRequest(holdId: string, form: GuestForm, displayCurrency?: Currency | null): CreateBookingRequest {
   return {
     hold_id: holdId,
     guest: { name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim(), country: form.country },
@@ -26,6 +28,7 @@ export function toBookingRequest(holdId: string, form: GuestForm): CreateBooking
     special_requests: form.specialRequests.trim() || undefined,
     consent: form.consent,
     marketing_opt_in: form.marketing,
+    display_currency: displayCurrency ?? undefined,
   };
 }
 

@@ -31,6 +31,7 @@ type Report struct {
 	Daily      []Day
 	ByRoom     []Breakdown
 	ByPlan     []Breakdown
+	ByCurrency []Breakdown // Name is the currency the guest read prices in; all charged in INR
 	StatusMix  []Count
 	LeadTime   []Count
 	OnTheBooks []Month

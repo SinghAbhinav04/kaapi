@@ -241,3 +241,23 @@ const OTPGuestLogin OTPPurpose = "GUEST_LOGIN"
 type BookingSource string
 
 const BookingSourceDirectWeb BookingSource = "DIRECT_WEB"
+
+// Currency is one a guest can see prices in. Every booking is charged in INR; the others are
+// an estimate for reading the price, from the ECB's daily reference rates (which have no AED).
+type Currency string
+
+const (
+	CurrencyINR Currency = "INR"
+	CurrencyUSD Currency = "USD"
+	CurrencyEUR Currency = "EUR"
+	CurrencyGBP Currency = "GBP"
+	CurrencyAUD Currency = "AUD"
+	CurrencyCAD Currency = "CAD"
+	CurrencySGD Currency = "SGD"
+	CurrencyCHF Currency = "CHF"
+	CurrencyJPY Currency = "JPY"
+)
+
+var Currencies = []Currency{CurrencyINR, CurrencyUSD, CurrencyEUR, CurrencyGBP, CurrencyAUD, CurrencyCAD, CurrencySGD, CurrencyCHF, CurrencyJPY}
+
+func (c Currency) Valid() bool { return valid(c, Currencies) }

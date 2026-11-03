@@ -58,6 +58,9 @@ func (s *Service) Report(ctx context.Context, from, to time.Time) (Report, error
 	if r.ByPlan, err = s.breakdown(ctx, `rp.name`, `rate_plans rp LEFT JOIN bookings b ON b.rate_plan_id = rp.id`, start, end); err != nil {
 		return r, err
 	}
+	if r.ByCurrency, err = s.byCurrency(ctx, start, end); err != nil {
+		return r, err
+	}
 	if r.StatusMix, err = s.counts(ctx, `SELECT status, count(*) FROM bookings WHERE created_at >= $1 AND created_at < $2
 		GROUP BY 1 ORDER BY 2 DESC`, start, end); err != nil {
 		return r, err
@@ -127,6 +130,22 @@ func (s *Service) breakdown(ctx context.Context, name, from string, start, end t
 	rows, err := s.pool.Query(ctx, `SELECT `+name+`, count(b.id), COALESCE(sum(b.nights * b.rooms), 0), COALESCE(sum(b.total_paise), 0)
 		FROM `+from+` AND b.status = $1 AND b.created_at >= $2 AND b.created_at < $3
 		GROUP BY 1 ORDER BY 4 DESC, 1`, confirmed, start, end)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Breakdown, error) {
+		var b Breakdown
+		err := r.Scan(&b.Name, &b.Bookings, &b.RoomNights, &b.RevenuePaise)
+		return b, err
+	})
+}
+
+// byCurrency groups confirmed bookings by the currency the guest was shown. Bookings made
+// before currencies existed, or without one sent, were shown INR.
+func (s *Service) byCurrency(ctx context.Context, start, end time.Time) ([]Breakdown, error) {
+	rows, err := s.pool.Query(ctx, `SELECT COALESCE(display_currency, $4), count(*), COALESCE(sum(nights * rooms), 0), COALESCE(sum(total_paise), 0)
+		FROM bookings WHERE status = $1 AND created_at >= $2 AND created_at < $3
+		GROUP BY 1 ORDER BY 4 DESC, 1`, confirmed, start, end, string(domain.CurrencyINR))
 	if err != nil {
 		return nil, err
 	}

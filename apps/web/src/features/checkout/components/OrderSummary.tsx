@@ -1,6 +1,7 @@
 import Image from 'next/image';
 
 import { cancellationLine, type HoldTicket } from '@/features/booking-flow';
+import { ApproxPrice } from '@/features/currency';
 import { formatStay } from '@/shared/lib/dates';
 import { formatDiscount, formatINR } from '@/shared/lib/money';
 import { formatParty, plural } from '@/shared/lib/text';
@@ -45,6 +46,7 @@ export function OrderSummary({ ticket }: { ticket: HoldTicket }) {
         <span>You pay</span>
         <span className={styles.youPayAmount}>{formatINR(quote.total_paise)}</span>
       </div>
+      <ApproxPrice paise={quote.total_paise} withNote />
     </aside>
   );
 }

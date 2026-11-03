@@ -20,6 +20,7 @@ import (
 	"kaapi/api/internal/booking"
 	"kaapi/api/internal/catalog"
 	"kaapi/api/internal/enquiry"
+	"kaapi/api/internal/fx"
 	"kaapi/api/internal/gmail"
 	"kaapi/api/internal/inventory"
 	"kaapi/api/internal/outbox"
@@ -39,6 +40,7 @@ type API struct {
 	bookings  *booking.Service
 	catalog   *catalog.Service
 	enquiries *enquiry.Service
+	fx        *fx.Service
 	gmail     *gmail.Service
 	inventory *inventory.Service
 	outbox    *outbox.Service
@@ -74,6 +76,7 @@ func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() tim
 		catalog:   catalog.NewService(pool),
 		inventory: inv,
 		enquiries: enquiry.NewService(pool, provider, inv, now),
+		fx:        fx.NewService(pool, cfg.FXBaseURL),
 		outbox:    outbox.NewService(pool),
 		retention: retention.NewService(pool, now),
 		gmail:     gmail.NewService(pool, cfg.Gmail, cfg.JWESecret, now, log),
@@ -123,6 +126,7 @@ func (a *API) Router() http.Handler {
 		r.Get("/rooms/{slug}", h(a.getRoom))
 		r.Get("/rooms/{slug}/calendar", h(a.roomCalendar))
 		r.Get("/availability", h(a.availability))
+		r.Get("/fx-rates", h(a.fxRates))
 		r.Post("/holds", h(a.createHold))
 		r.Delete("/holds/{id}", h(a.releaseHold))
 		r.Post("/bookings", h(a.createBooking))
@@ -217,6 +221,32 @@ func (a *API) SweepRetention(ctx context.Context, every time.Duration) {
 		}
 	}
 }
+
+// RefreshFX keeps the exchange rates current: once at start-up, then on every tick. A failed
+// fetch only logs; the site shows INR alone once the stored rates go stale.
+func (a *API) RefreshFX(ctx context.Context, every time.Duration) {
+	run := func() {
+		if n, err := a.fx.Refresh(ctx); err != nil {
+			a.log.Warn("fx refresh failed", "err", err)
+		} else {
+			a.log.Info("fx rates refreshed", "currencies", n)
+		}
+	}
+	run()
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			run()
+		}
+	}
+}
+
+// FX exposes the rate service to tests, which refresh it from a fake.
+func (a *API) FX() *fx.Service { return a.fx }
 
 // aiDiscoveryTimeout bounds the background call that lists the models each key can use.
 const aiDiscoveryTimeout = time.Minute

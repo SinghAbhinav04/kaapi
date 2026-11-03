@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { useCreateBooking } from '@/apis/booking';
 import { STORAGE_KEY, bookingTokens, holdTickets, type HoldTicket } from '@/features/booking-flow';
+import { useDisplayCurrency } from '@/features/currency';
 import { ROUTES } from '@/shared/const';
 import { useSessionValue } from '@/shared/hooks';
 
@@ -22,6 +23,7 @@ export function useCheckout(ticket: HoldTicket | null | undefined) {
   const [form, setForm] = useState<GuestForm>(EMPTY_FORM);
   const [clientErrors, setClientErrors] = useState<FormErrors>({});
   const createBooking = useCreateBooking();
+  const displayCurrency = useDisplayCurrency();
 
   const update = <K extends keyof GuestForm>(key: K, value: GuestForm[K]) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -31,7 +33,7 @@ export function useCheckout(ticket: HoldTicket | null | undefined) {
     setClientErrors(errors);
     if (Object.keys(errors).length > 0) return;
     createBooking.mutate(
-      { body: toBookingRequest(ticket.holdId, form), token: ticket.token },
+      { body: toBookingRequest(ticket.holdId, form, displayCurrency), token: ticket.token },
       {
         onSuccess: ({ booking }) => {
           bookingTokens.save(booking.ref, ticket.token);

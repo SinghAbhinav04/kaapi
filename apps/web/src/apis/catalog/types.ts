@@ -1,4 +1,7 @@
 export type {
+  Currency,
+  FxRate,
+  FxRatesResponse,
   AvailabilityResponse,
   CalendarDay,
   CalendarResponse,

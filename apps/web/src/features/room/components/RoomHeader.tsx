@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 
+import { CurrencySwitcher } from '@/features/currency';
 import { searchToQuery, StaySearchForm, useStaySearch, type StaySearch } from '@/features/stay-search';
 import { ROUTES } from '@/shared/const';
 import { useDismiss } from '@/shared/hooks';
@@ -48,9 +49,12 @@ export function RoomHeader() {
             </div>
           )}
         </div>
-        <Link href={ROUTES.myBookings} className={styles.back}>
-          My booking
-        </Link>
+        <div className={styles.headerEnd}>
+          <CurrencySwitcher />
+          <Link href={ROUTES.myBookings} className={styles.back}>
+            My booking
+          </Link>
+        </div>
       </nav>
     </header>
   );

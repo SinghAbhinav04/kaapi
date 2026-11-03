@@ -113,6 +113,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/fx-rates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Exchange rates for showing an estimate in the guest's currency.
+         * @description Every booking is charged in INR; these rates only turn an INR amount into an estimate ("≈ US$102"). ECB reference rates, refreshed every few hours. Rates older than 48 hours are left out, so an empty list means "show INR only".
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FxRatesResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/rooms": {
         parameters: {
             query?: never;
@@ -1918,6 +1957,29 @@ export interface components {
             hold_minutes: number;
             facts: components["schemas"]["Fact"][];
         };
+        /** @enum {string} */
+        Currency: "INR" | "USD" | "EUR" | "GBP" | "AUD" | "CAD" | "SGD" | "CHF" | "JPY";
+        FxRate: {
+            currency: components["schemas"]["Currency"];
+            /**
+             * Format: int64
+             * @description INR per one unit of the currency × 1,000,000.
+             */
+            inr_per_unit_micros: number;
+            /**
+             * Format: date
+             * @description The ECB publication date.
+             */
+            date: string;
+        };
+        FxRatesResponse: {
+            /**
+             * @description Bookings are always charged in this currency.
+             * @enum {string}
+             */
+            charged_in: "INR";
+            rates: components["schemas"]["FxRate"][];
+        };
         Photo: {
             url: string;
             alt: string;
@@ -2132,6 +2194,8 @@ export interface components {
             /** @description DPDP consent to use these details for the booking. Must be true. */
             consent: boolean;
             marketing_opt_in?: boolean;
+            /** @description The currency the guest was reading prices in, kept with that moment's rate for analytics. The charge is INR regardless. */
+            display_currency?: components["schemas"]["Currency"];
         };
         Payment: {
             order_id: string;
@@ -2508,6 +2572,8 @@ export interface components {
             }[];
             by_room: components["schemas"]["AnalyticsBreakdown"][];
             by_plan: components["schemas"]["AnalyticsBreakdown"][];
+            /** @description Confirmed bookings by the currency the guest read prices in (`name` is the code). All were charged in INR. */
+            by_display_currency: components["schemas"]["AnalyticsBreakdown"][];
             status_mix: components["schemas"]["AnalyticsCount"][];
             lead_time: components["schemas"]["AnalyticsCount"][];
             on_the_books: {
@@ -2599,6 +2665,9 @@ export type Date = components['schemas']['Date'];
 export type Paise = components['schemas']['Paise'];
 export type Fact = components['schemas']['Fact'];
 export type PropertyResponse = components['schemas']['PropertyResponse'];
+export type Currency = components['schemas']['Currency'];
+export type FxRate = components['schemas']['FxRate'];
+export type FxRatesResponse = components['schemas']['FxRatesResponse'];
 export type Photo = components['schemas']['Photo'];
 export type Plan = components['schemas']['Plan'];
 export type Room = components['schemas']['Room'];

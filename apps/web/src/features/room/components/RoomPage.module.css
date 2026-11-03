@@ -13,6 +13,12 @@
   gap: 24px;
 }
 
+.headerEnd {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .back {
   display: inline-flex;
   align-items: center;
@@ -248,6 +254,7 @@ section .description {
   font-family: var(--font-mono);
   font-size: 18px;
   font-weight: 700;
+  text-align: right;
 }
 
 /* summary */

@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 
+import { ApproxPrice } from '@/features/currency';
 import { ROUTES } from '@/shared/const';
 import { formatINR } from '@/shared/lib/money';
 import { plural } from '@/shared/lib/text';
@@ -42,6 +43,7 @@ export function StayCard({ card, nights, query, pricesLoading }: StayCardProps) 
             <>
               <span className={styles.caption}>{plural(nights, 'night')} · incl. GST</span>
               <span className={styles.amount}>{formatINR(card.fromPaise)}</span>
+              <ApproxPrice paise={card.fromPaise} />
             </>
           ) : card.note ? (
             <span className={styles.unavailable}>{card.note}</span>

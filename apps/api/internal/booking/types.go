@@ -27,6 +27,9 @@ type CreateInput struct {
 	Consent         bool // DPDP: the guest agreed to their details being used for this booking
 	MarketingOptIn  bool
 	GuestUserID     *uuid.UUID // set when the guest is signed in
+	// DisplayCurrency is what the guest was reading prices in (empty: not sent). It is kept
+	// with that moment's rate for analytics; the charge is INR either way.
+	DisplayCurrency domain.Currency
 }
 
 type Booking struct {
