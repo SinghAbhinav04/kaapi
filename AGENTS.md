@@ -25,8 +25,11 @@ labelled in the TDD, and only facts from the problem statement may be used.
 |---|---|
 | Guest site | Home with a scroll-story hero, room pages with price calendar and GST per night, 3-step booking (room → details → payment), mock payment gateway, confirmation, "My bookings" via email one-time code, enquiry/event form, privacy page |
 | Booking engine | 10-minute holds that lock inventory, idempotent bookings, HMAC-signed payment webhooks, late-payment refund path, background expiry |
-| Staff console | Inbox with AI routing, rates and allotment heat map with bulk edits, bookings list and daily CSV export, outbox, dashboard |
+| Staff console | Inbox with AI routing and staff-written replies, "New message" compose, rates and allotment heat map with bulk edits, bookings list (current / archived) and daily CSV export, outbox, dashboard, analytics (GM and admin) |
 | AI | Classify → extract → route → draft. Gemini round-robin across every allowed model, Groq failover, keyword rules as the final fallback and complaint safety net |
+| Gmail | Admin connects a mailbox once (OAuth). New inbox mail is polled into enquiries; replies and new messages go out from it, threaded. Unconnected, everything stays simulated in the outbox |
+| Retention | Job archives finished bookings, wipes guest contact details at 12 months, deletes bookings after 8 financial years and messages at 12 months |
+| Analytics | Revenue, ADR, commission saved, cancellations, booking pace, lead time, on-the-books occupancy, enquiry mix |
 
 ### Rules from the brief that must never break
 1. **Never overbook.** Enforced in three layers: row locks, live hold counting, and a DB `CHECK (sold <= allotment)`.
@@ -35,7 +38,7 @@ labelled in the TDD, and only facts from the problem statement may be used.
 4. **Low-confidence enquiries go to the Unsorted lane** (the GM sees it). **Re-routing is one click.**
 5. **Complaints always alert the GM.** If either the model or the keyword rules sees a complaint, the GM is alerted.
 6. **GST shown at the tariff's rate:** per night, 5% up to ₹7,500, 18% above, on the price after discount. This is a labelled assumption.
-7. **DPDP:** consent at checkout, minimal fields, no passport details online, personal data redacted before any AI call.
+7. **DPDP:** consent at checkout, minimal fields, no passport details online, personal data redacted before any AI call, and the retention rules in `internal/retention` (the privacy page states the same).
 8. **The booking flow is 3 steps or fewer.** It must be fast on slow mobile networks.
 
 ---
@@ -87,10 +90,15 @@ internal/
   admin/      rates/allotment grid + bulk edits (audit-logged)
   enquiry/    intake, worker, routing rules, drafts, inbox ops, stats
   ai/         redaction, keyword classifier, Gemini + Groq clients, model chain, prompts
-  outbox/     simulated sent messages
+  outbox/     every sent message (simulated or delivered) + staff-composed messages
+  gmail/      OAuth connect, encrypted token store, inbox polling, threaded sending (plain net/http)
+  retention/  archive / anonymise / purge sweep (batched, SKIP LOCKED, audit-logged)
+  analytics/  read-only revenue, pace, mix and on-the-books report
   api/        HTTP layer: router (gateway), handlers, DTOs (types.go), mappers
   seed/       fixture loader + seeder (computes derived values, checks invariants)
-migrations/   0001_init.sql (24 tables), 0002_lock_down_data_api.sql (RLS on every table)
+migrations/   0001_init.sql (24 tables), 0002_lock_down_data_api.sql (RLS on every table),
+              0003_retention.sql (bookings.archived_at / anonymised_at), 0004_gmail.sql (integrations table,
+              enquiry external ids, draft send claim, outbox status + STAFF_MESSAGE). New tables must ENABLE RLS.
 seed/data/    JSON fixtures: property, room_types, rate_plans, rates_rules, promos,
               users, enquiries (60, labelled), bookings (40)
 tests/
@@ -108,7 +116,7 @@ tests/
 - **Dates:** stay dates are `time.Time` at midnight UTC, representing IST calendar dates. On the wire they are `YYYY-MM-DD`.
 - **IDs** are UUIDv7. Booking refs match `^KS-[2-9A-HJ-NP-Z]{6}$`.
 - **No magic numbers.** Name constants next to their use (`const ( … )` in types.go).
-- **Transactions** go through `db.WithTx`. **Never hold a transaction open across a network call:** the AI worker reads, calls the model with no transaction open, then re-locks and re-checks before writing.
+- **Transactions** go through `db.WithTx`. **Never hold a transaction open across a network call:** the AI worker reads, calls the model with no transaction open, then re-locks and re-checks before writing. Sending works the same way: claim (`enquiry_drafts.sending_at`) → deliver → record in a second transaction; a failed delivery releases the claim.
 - **Comments** explain *why*, and stay short. Match the existing tone.
 - **Contract-first:** add or change an endpoint in `contract/openapi.yaml` first. `tests/apitest` fails if a real response doesn't match, which catches drift. Then regenerate the web types (`npm run gen:api` in apps/web).
 - **Permissions** are a closed enum in `auth/permissions.go`, granted per role in one table. Routes declare theirs with `requirePermission`. Lane scoping (which inbox lanes a role sees) lives in `api/enquiries.go`.
@@ -142,6 +150,21 @@ Tests prove it: 25 goroutines race for the last pool villa and exactly 1 wins. O
 7. **Drafts:** the model writes wording only, using the placeholders `{{GUEST_NAME}} {{QUOTE}} {{EVENT_TEAM_CONTACT}} {{SIGNATURE}}`. `ai.Guard` deletes any line where the model wrote money. The server fills `{{QUOTE}}` from `inventory.Search`, which gives the same numbers as the website.
 8. **Evaluation:** `go run ./cmd/eval` (with keys set) writes `docs/ai-eval-report.md`. The live result was 59/60 correct, 0 sent to the wrong team, and 11/11 complaints reached the GM. A keyword-based confidence blend was *removed* because the evaluation showed it changed nothing. Keep decisions data-driven like this.
 
+### How retention works (`retention/`)
+Runs at start-up and every 6 h (`SweepRetention`), and on demand via `POST /v1/staff/retention/run` (admin). Every step is idempotent.
+1. **Archive:** CONFIRMED / CANCELLED / REFUNDED bookings get `archived_at` once `check_out` has passed. Archived rows leave the default staff list (`?archived=true` shows them) but keep nights, payments and audit links. No separate archive table.
+2. **Anonymise:** 12 months after check-out, email → `erased+<ref>@example.invalid`, phone/notes/arrival window/guest account cleared. Name, dates, money and GST stay (the tax record).
+3. **Purge:** archived bookings are deleted once 8 full financial years (Apr–Mar) have passed after the stay's FY (`PurgeBefore`; Companies Act s.128 outlasts GST's 72 months). Labelled assumption.
+4. Also: all enquiries, outbox copies and notifications at 12 months; unpaid bookings at 90 days; dead holds at 7 days; OTPs after a day; sessions 30 days after expiry/revocation. Inventory `sold` is never touched.
+Each run writes one `audit_logs` row with the counts.
+
+### How Gmail works (`gmail/`)
+- `POST /v1/staff/integrations/gmail/connect` (GM/admin, `integrations:manage`) returns Google's consent URL with an HMAC-signed state. Google redirects to `GET /v1/integrations/gmail/callback`, which stores the refresh token AES-GCM-encrypted (key derived from `JWE_SECRET`; rotating that secret means reconnecting) and redirects to `/staff/inbox?gmail=connected`.
+- Scopes: `gmail.readonly` + `gmail.send` only. In Google Cloud the redirect URI must be exactly `APP_ORIGIN/api/v1/integrations/gmail/callback`, and while the consent screen is in Testing mode the mailbox must be a test user.
+- A poller (`GMAIL_POLL_SECONDS`, default 30) reads the history API from the stored `history_id` (falls back to the last day on a 404), skips SENT/DRAFT/SPAM and our own address, strips quoted history, and calls `enquiry.Intake` with the Gmail ids. `enquiries.external_id` is unique, so re-polling is harmless; imported mail skips the 5-per-hour sender cap.
+- `enquiry.Send` and `outbox.Send` take a small `Mailer` interface (defined in each consumer); with it connected, email replies go out with `In-Reply-To`/`threadId` and the outbox row is `SENT`, otherwise `SIMULATED`. WhatsApp stays simulated.
+- Tests use a fake Google server (`tests/integration/api/gmail_test.go`); `GOOGLE_OAUTH_BASE_URL` / `GMAIL_API_BASE_URL` point at it.
+
 ### Auth model
 - **Access token:** JWE (dir + A256GCM), 15 minutes. Claims hold only user, role and session.
 - **Refresh token:** random, stored hashed, rotated on every use. Reusing an old one revokes the whole session chain.
@@ -164,15 +187,15 @@ Tests prove it: 25 goroutines race for the last pool villa and exactly 1 wins. O
 src/
   app/          ROUTES ONLY — thin pages that prefetch and compose features
     (guest)/    / · rooms/[slug] · book/[holdId] · pay/[orderId] · booking/[ref] · my-bookings · enquire · privacy
-    staff/      login · (console)/{inbox,rates,bookings,outbox,dashboard} behind StaffShell
+    staff/      login · (console)/{inbox,rates,bookings,outbox,dashboard,analytics} behind StaffShell
   apis/         THE ENDPOINT LAYER
     http/       HttpClient interface + fetch implementation, ApiError, headers/consts
     query/      QueryClient factory, Hydrate (server → client cache), Register (error type)
     generated/  schema.ts — generated from contract/openapi.yaml (npm run gen:api)
-    <module>/   catalog · booking · payments · auth · enquiries · rates · operations
+    <module>/   catalog · booking · payments · auth · enquiries · rates · operations (+ Gmail, compose) · analytics
   features/<x>/ UI per domain (home, room, stay-search, booking-flow, checkout, payment,
                 confirmation, my-bookings, enquire, site, staff-shell, staff-login,
-                inbox, rates-admin, staff-bookings, operations)
+                inbox, rates-admin, staff-bookings, operations, analytics)
   shared/       reusable, domain-free: ui/ · lib/ · hooks/ · motion/ · styles/ · const/
 ```
 
@@ -222,6 +245,9 @@ Segmented, Stepper, Skeleton, EmptyState/ErrorState and Logo.
   - durations: .18s / .42s / .9s
 - **Type:** Anton for display, with one or two words in Instrument Serif italic (`.accent`). Manrope for body. Space Mono for data (prices, dates, refs, labels).
 - **Motion:** only transform and opacity, no bounce, everything off under `prefers-reduced-motion`. The hero is a pinned scroll story in pure CSS (`animation-timeline`). TrailSpine draws a Catmull-Rom line behind the content (z 1 behind content z 2), hidden below 900 px.
+- **Scroll performance (don't regress):** nothing may repaint per scroll frame. No SVG `filter` on anything that moves (the hero mist is CSS gradients). TrailSpine paints its path once and reveals it with two counter-translated layers; its dot is a gradient div moved by `transform`. Images that appear mid-scroll load eagerly.
+- **Charts** (analytics): hand-rolled HTML/CSS, one series colour `--viz-1: #2f7a4b` (brand green fails the chroma floor as a data colour), hover/focus tooltips, a "Show as table" view on each chart, no dual axes.
+- **Navigation:** every guest page can reach every other: the footer is a full sitemap, the room page header is sticky with "All stays", breadcrumbs link back with the stay search kept (`ROUTES.staysWith`).
 - **Images:** originals in `apps/web/assets/source` (credits in CREDITS.md). `python scripts/build-images.py` writes AVIF into `public/images`. Room photos must show only that room, with honest alt text.
 - **Accessibility:** 44 px tap targets, labelled controls, error text linked with `aria-describedby`, `role="alert"` and `role="status"` used correctly.
 
@@ -248,8 +274,10 @@ Segmented, Stepper, Skeleton, EmptyState/ErrorState and Logo.
   - Re-running resets its password and revokes its sessions.
   - It is never in the fixtures: a real email and password must stay out of git.
 - **Tests never touch Supabase.** They truncate tables. Run `go run ./cmd/devdb`, then `TEST_DATABASE_URL=postgres://kaapi:kaapi@localhost:54329/kaapi_test?sslmode=disable go test ./... -p 1`. `testdb` refuses Supabase URLs.
+- **Local Postgres without devdb** (e.g. a network that blocks devdb's binary download): `brew install postgresql@17 && brew services start postgresql@17`, create role `kaapi`/`kaapi` and databases `kaapi` + `kaapi_test`, then use `postgres://kaapi:kaapi@127.0.0.1:5432/...`. Override `DATABASE_URL` on the command line (real env beats `.env`). On corporate Macs `psql` can hang on Kerberos: add `gssencmode=disable` (pgx is unaffected).
+- **No IPv6?** The Supabase direct host is unreachable; use the session pooler URL instead.
 - **Env names** (values never in git; see `.env.example`):
-  - API: `DATABASE_URL`, `JWE_SECRET` (32+ bytes), `MOCK_PAYMENT_WEBHOOK_SECRET` (32+ bytes), `APP_ORIGIN`, `APP_ENV`, `DEMO_MODE`, `SEED_DEMO_PASSWORD`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`, `GEMINI_API_KEY`, `GEMINI_MODELS`, `GEMINI_RPM`, `GROQ_API_KEY`, `GROQ_MODELS`, `GROQ_RPM`, `SENTRY_DSN`
+  - API: `DATABASE_URL`, `JWE_SECRET` (32+ bytes), `MOCK_PAYMENT_WEBHOOK_SECRET` (32+ bytes), `APP_ORIGIN`, `APP_ENV`, `DEMO_MODE`, `SEED_DEMO_PASSWORD`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`, `GEMINI_API_KEY`, `GEMINI_MODELS`, `GEMINI_RPM`, `GROQ_API_KEY`, `GROQ_MODELS`, `GROQ_RPM`, `SENTRY_DSN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_REDIRECT_URL` (optional), `GMAIL_POLL_SECONDS` (optional), `PORT` (default 8080)
   - Web: `API_ORIGIN` (where `/api/*` is proxied; default `http://localhost:8080`), `NEXT_PUBLIC_APP_URL`
 - **Demo accounts:**
   - staff: `gm@`, `reservations@`, `reservations2@`, `sales@`, `admin@kaapiestate.test`
@@ -285,6 +313,8 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 - **Definition of done for a change:**
   - API: `go vet` and gofmt clean; unit and integration tests pass; the contract is updated and apitest-validated
   - Web: `tsc`, `eslint --max-warnings=0` and `next build` all pass
+- **Go toolchain:** `go.mod` needs Go 1.27.3; with an older Go installed, `GOTOOLCHAIN=auto` downloads it (or unpack it to `~/sdk/go1.27.3` and put its `bin` first on `PATH`).
+- **Port 8080 taken** (e.g. ZooKeeper's admin server): run the API with `PORT=8081` and the web with `API_ORIGIN=http://localhost:8081`.
 - **Windows dev box:** Git Bash plus PowerShell. LF line endings are enforced by `.gitattributes`. Stopping a `go run`/`npm` wrapper can leave its child process (postgres, node) holding the port, so check `Get-NetTCPConnection` and stop it.
 
 ---
@@ -292,25 +322,26 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 ## 7. Status and what's next (as of 3 Nov 2026)
 
 **Done:**
-- Backend core slice.
-- AI chain with an evaluation.
-- Full guest flow and staff console.
-- RLS lock-down.
-- `next build` passes, plus an end-to-end smoke test through the `/api` proxy.
+- Backend core slice, AI chain with an evaluation, full guest flow and staff console, RLS lock-down.
+- Supabase seeded and verified (public key reads nothing).
+- Navigation pass (every page reachable) and home scroll performance fix.
+- Staff-written replies and follow-ups; "New message" compose.
+- Data retention and deletion (`internal/retention`, privacy page updated). Policy from Abhinav: archive, anonymise, keep for the tax window.
+- Analytics tab.
+- Gmail integration (connect, poll, threaded send). Needs the redirect URI registered in Google Cloud and the mailbox added as a test user.
 
 **To do, in order:**
-1. ~~Seed Supabase and run the smoke test against it.~~ Done 3 Nov: seeded, and the public key reads nothing (RLS verified).
-2. A visual pass in a browser at 1440 px and 390 px against the approved canvas (Claude Design artifact "Kaapi Estate — Direct Booking").
-3. Small API gaps:
+1. A visual pass in a browser at 1440 px and 390 px against the approved canvas (Claude Design artifact "Kaapi Estate — Direct Booking").
+2. Small API gaps:
    - `GET /v1/staff/notifications`: GM alerts are stored but nothing reads them.
    - Promo admin.
    - A rate limit on staff login.
-4. **Data retention and deletion:** see `docs/notes/data-retention.md`. The logic is pending from Abhinav; don't invent it.
-5. Capacitor Android shell (`server.url` → production site; Bearer tokens in Preferences).
-6. Deploy:
-   - API: Dockerfile, Cloud Run `asia-south1`, Supabase session pooler.
+   - Delete-my-data requests from guests (OTP-verified, staff queue, export), see `docs/notes/data-retention.md`.
+   - Inbound replies on an existing Gmail thread become a new enquiry; linking them to the original is a next step.
+3. Capacitor Android shell (`server.url` → production site; Bearer tokens in Preferences).
+4. Deploy:
+   - API: Dockerfile, Cloud Run `asia-south1`, Supabase session pooler. The retention sweep and Gmail poller are in-process tickers, so either keep `min-instances=1` or have Cloud Scheduler call `POST /v1/staff/retention/run` and `/integrations/gmail/sync`.
+   - Production Gmail: add the production redirect URI and publish the consent screen (restricted scope → Google verification).
    - Web: Vercel `bom1`.
    - CI: GitHub Actions running vet, tests against a Postgres service, web lint, typecheck and build.
-7. Docs: the TDD as a PDF with the GitHub and live links at the top and every assumption labelled, plus `docs/deployment.md` (local run, env names only, demo logins).
-
-Known caveat: the privacy page promises deletion that isn't built yet (item 4). Label it in the TDD as policy and a next step.
+5. Docs: the TDD as a PDF with the GitHub and live links at the top and every assumption labelled (retention windows, 8 FY, 20% commission estimate), plus `docs/deployment.md` (local run, env names only, demo logins).

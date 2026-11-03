@@ -1,6 +1,6 @@
 # Data retention and deletion (notes, not built yet)
 
-Status: **waiting for the retention logic from Abhinav.** Nothing below is implemented.
+Status: **the scheduled sweep is built** (`apps/api/internal/retention`, see AGENTS.md § How retention works). Rules decided by Abhinav: finished bookings are archived, contact details wiped 12 months after check-out, financial records kept 8 financial years, then deleted. Items 2 and 4 below (guest delete-my-data requests, staff queue and export) are still to do.
 The privacy page (`apps/web/src/app/(guest)/privacy/page.tsx`) already promises parts of it,
 so the TDD must label those lines as policy plus a next step until this ships.
 
