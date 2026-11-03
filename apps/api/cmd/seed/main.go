@@ -13,6 +13,7 @@ import (
 
 	"kaapi/api/internal/platform/config"
 	"kaapi/api/internal/platform/db"
+	"kaapi/api/internal/platform/pii"
 	"kaapi/api/internal/seed"
 )
 
@@ -36,6 +37,15 @@ func main() {
 	if err := db.Migrate(ctx, url); err != nil {
 		log.Fatal(err)
 	}
+	// Personal data is encrypted with the API's key: PII_KEY, else (development) one derived
+	// from JWE_SECRET, exactly as the API does. Without either, nothing seeded would decrypt.
+	if os.Getenv(config.EnvPIIKey) == "" && len(os.Getenv(config.EnvJWESecret)) < 32 {
+		log.Fatalf("set %s (or %s for development) so seeded personal data uses the API's key", config.EnvPIIKey, config.EnvJWESecret)
+	}
+	if err := pii.Configure(config.PIIKey(os.Getenv(config.EnvPIIKey), []byte(os.Getenv(config.EnvJWESecret)))); err != nil {
+		log.Fatal(err)
+	}
+
 	fx, err := seed.Load(*dir)
 	if err != nil {
 		log.Fatal(err)
@@ -45,6 +55,13 @@ func main() {
 		log.Fatal(err)
 	}
 	defer pool.Close()
+
+	// A database seeded before encryption existed: encrypt what's there first.
+	if n, err := seed.EncryptExisting(ctx, pool); err != nil {
+		log.Fatal(err)
+	} else if n > 0 {
+		fmt.Printf("encrypted %d rows of existing personal data\n", n)
+	}
 
 	if *adminOnly {
 		if admin == nil {

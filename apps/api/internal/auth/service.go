@@ -23,6 +23,7 @@ import (
 	"kaapi/api/internal/platform/apperr"
 	"kaapi/api/internal/platform/db"
 	"kaapi/api/internal/platform/idgen"
+	"kaapi/api/internal/platform/pii"
 )
 
 type Service struct {
@@ -61,8 +62,9 @@ func (s *Service) StaffLogin(ctx context.Context, email, password string, client
 	var u User
 	var hash *string
 	var active bool
-	err := s.pool.QueryRow(ctx, `SELECT id, email, name, role, password_hash, is_active FROM users WHERE lower(email) = lower($1)`,
-		strings.TrimSpace(email)).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &hash, &active)
+	// Emails are encrypted at rest; the account is found by its email's blind index.
+	err := s.pool.QueryRow(ctx, `SELECT id, email, name, role, password_hash, is_active FROM users WHERE email_hash = $1`,
+		pii.EmailIndex(email)).Scan(&u.ID, pii.Into(&u.Email), pii.Into(&u.Name), &u.Role, &hash, &active)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return User{}, Tokens{}, err
 	}
@@ -97,23 +99,24 @@ func (s *Service) RequestOTP(ctx context.Context, email string) (string, error) 
 	}
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var recent int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM otp_codes WHERE lower(email) = $1 AND created_at > now() - make_interval(secs => $2)`,
-			email, OTPWindow.Seconds()).Scan(&recent); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM otp_codes WHERE email_hash = $1 AND created_at > now() - make_interval(secs => $2)`,
+			pii.EmailIndex(email), OTPWindow.Seconds()).Scan(&recent); err != nil {
 			return err
 		}
 		if recent >= OTPMaxPerWindow {
 			return ErrOTPRateLimited
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO otp_codes (id, email, purpose, code_hash, expires_at)
+		// A code is only ever matched, so the email itself isn't kept: only its blind index.
+		if _, err := tx.Exec(ctx, `INSERT INTO otp_codes (id, email_hash, purpose, code_hash, expires_at)
 			VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))`,
-			idgen.New(), email, domain.OTPGuestLogin, s.otpHash(email, code), OTPTTL.Seconds()); err != nil {
+			idgen.New(), pii.EmailIndex(email), domain.OTPGuestLogin, s.otpHash(email, code), OTPTTL.Seconds()); err != nil {
 			return err
 		}
 		// Queued with the code itself: the worker emails it through the connected mailbox.
 		_, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-			idgen.New(), domain.OutboxEmail, domain.OutboxOTP, domain.OutboxQueued, email, "Your Kaapi Estate sign-in code",
-			fmt.Sprintf("Your sign-in code is %s. It expires in %d minutes. If you didn't ask for it, you can ignore this email.",
-				code, int(OTPTTL.Minutes())))
+			idgen.New(), domain.OutboxEmail, domain.OutboxOTP, domain.OutboxQueued, pii.Text(email), "Your Kaapi Estate sign-in code",
+			pii.Text(fmt.Sprintf("Your sign-in code is %s. It expires in %d minutes. If you didn't ask for it, you can ignore this email.",
+				code, int(OTPTTL.Minutes()))))
 		return err
 	})
 	return code, err
@@ -133,8 +136,8 @@ func (s *Service) VerifyOTP(ctx context.Context, email, code string, client Clie
 		var stored []byte
 		var attempts int
 		err := tx.QueryRow(ctx, `SELECT id, code_hash, attempts FROM otp_codes
-			WHERE lower(email) = $1 AND purpose = $2 AND consumed_at IS NULL AND expires_at > now()
-			ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, email, domain.OTPGuestLogin).Scan(&id, &stored, &attempts)
+			WHERE email_hash = $1 AND purpose = $2 AND consumed_at IS NULL AND expires_at > now()
+			ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, pii.EmailIndex(email), domain.OTPGuestLogin).Scan(&id, &stored, &attempts)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrOTPInvalid
 		}
@@ -167,8 +170,8 @@ func (s *Service) VerifyOTP(ctx context.Context, email, code string, client Clie
 func (s *Service) guestFor(ctx context.Context, tx pgx.Tx, email string) (User, error) {
 	var u User
 	var active bool
-	err := tx.QueryRow(ctx, `SELECT id, email, name, role, is_active FROM users WHERE lower(email) = $1`, email).
-		Scan(&u.ID, &u.Email, &u.Name, &u.Role, &active)
+	err := tx.QueryRow(ctx, `SELECT id, email, name, role, is_active FROM users WHERE email_hash = $1`, pii.EmailIndex(email)).
+		Scan(&u.ID, pii.Into(&u.Email), pii.Into(&u.Name), &u.Role, &active)
 	switch {
 	case err == nil && (u.Role != domain.RoleGuest || !active):
 		return User{}, ErrOTPInvalid
@@ -178,12 +181,13 @@ func (s *Service) guestFor(ctx context.Context, tx pgx.Tx, email string) (User, 
 		return User{}, err
 	}
 	u = User{ID: idgen.New(), Email: email, Name: strings.SplitN(email, "@", 2)[0], Role: domain.RoleGuest}
-	if _, err = tx.Exec(ctx, `INSERT INTO users (id, email, name, role) VALUES ($1,$2,$3,$4)`, u.ID, u.Email, u.Name, u.Role); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO users (id, email, email_hash, name, role) VALUES ($1,$2,$3,$4,$5)`,
+		u.ID, pii.Text(u.Email), pii.EmailIndex(u.Email), pii.Text(u.Name), u.Role); err != nil {
 		return u, err
 	}
 	// First sign-in is registration: welcome them in the same transaction, so it's sent exactly once.
 	_, err = tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		idgen.New(), domain.OutboxEmail, domain.OutboxWelcome, domain.OutboxQueued, email, "Welcome to Kaapi Estate", welcomeBody)
+		idgen.New(), domain.OutboxEmail, domain.OutboxWelcome, domain.OutboxQueued, pii.Text(email), "Welcome to Kaapi Estate", pii.Text(welcomeBody))
 	return u, err
 }
 
@@ -204,7 +208,7 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string, client Clien
 		var replacedBy *uuid.UUID
 		err := tx.QueryRow(ctx, `SELECT s.id, s.expires_at <= now(), s.revoked_at, s.replaced_by, u.id, u.email, u.name, u.role, u.is_active
 			FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.refresh_hash = $1 FOR UPDATE OF s`, sum[:]).
-			Scan(&sid, &expired, &revokedAt, &replacedBy, &u.ID, &u.Email, &u.Name, &u.Role, &active)
+			Scan(&sid, &expired, &revokedAt, &replacedBy, &u.ID, pii.Into(&u.Email), pii.Into(&u.Name), &u.Role, &active)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrTokenInvalid
 		}
@@ -297,7 +301,7 @@ func (s *Service) forget(ids ...uuid.UUID) {
 func (s *Service) Me(ctx context.Context, userID uuid.UUID) (User, error) {
 	var u User
 	err := s.pool.QueryRow(ctx, `SELECT id, email, name, role FROM users WHERE id = $1 AND is_active`, userID).
-		Scan(&u.ID, &u.Email, &u.Name, &u.Role)
+		Scan(&u.ID, pii.Into(&u.Email), pii.Into(&u.Name), &u.Role)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrTokenInvalid
 	}

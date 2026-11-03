@@ -17,13 +17,22 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"kaapi/api/internal/platform/config"
 	"kaapi/api/internal/platform/db"
+	"kaapi/api/internal/platform/pii"
 	"kaapi/api/internal/seed"
 )
 
 // Seeded migrates, wipes and reseeds the database, and returns a pool sized for
 // concurrency tests. Tests using it must not run in parallel with each other.
+// JWESecret is the token secret every test API uses (apitest.TestConfig). The PII key is
+// derived from it exactly as the API derives it, so seeded rows decrypt in the API.
+const JWESecret = "test-only-jwe-secret-0123456789abcdef"
+
 func Seeded(t *testing.T) (context.Context, *pgxpool.Pool) {
+	if err := pii.Configure(config.PIIKey("", []byte(JWESecret))); err != nil {
+		t.Fatal(err)
+	}
 	t.Helper()
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {

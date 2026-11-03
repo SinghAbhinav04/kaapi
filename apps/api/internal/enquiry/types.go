@@ -157,3 +157,6 @@ const (
 	offerPercent  = "PERCENT"
 	bpsPerPercent = 100
 )
+
+// senderIndexKind keeps the sender's blind index apart from other hashed identifiers.
+const senderIndexKind = "sender"

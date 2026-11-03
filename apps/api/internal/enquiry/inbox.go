@@ -16,6 +16,7 @@ import (
 	"kaapi/api/internal/platform/apperr"
 	"kaapi/api/internal/platform/db"
 	"kaapi/api/internal/platform/idgen"
+	"kaapi/api/internal/platform/pii"
 )
 
 // List returns inbox rows, complaints first, then newest.
@@ -35,8 +36,9 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]Summary, error) {
 		add("e.status <> ALL($%d)", []domain.EnquiryStatus{domain.EnquiryClosed, domain.EnquirySpam})
 	}
 	if q := strings.TrimSpace(f.Query); q != "" {
-		// Same expression as enquiries_search_trgm_idx, so the trigram index serves it.
-		add("(coalesce(e.sender_name, '') || ' ' || e.ref || ' ' || e.raw_text) ILIKE '%%' || $%d || '%%'", q)
+		// Same expression as enquiries_search_trgm_idx, so the trigram index serves it. Sender
+		// names are encrypted at rest, so search covers the reference and the message.
+		add("(e.ref || ' ' || e.raw_text) ILIKE '%%' || $%d || '%%'", q)
 	}
 	args = append(args, ai.UnsortedBelow, f.Limit)
 	cond := strings.Join(where, " AND ")
@@ -63,7 +65,7 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]Summary, error) {
 		var x Summary
 		var text string
 		var noDates, unsure *bool
-		err := r.Scan(&x.Ref, &x.Channel, &x.SenderName, &text, &x.ReceivedAt, &x.Category, &x.Confidence, &x.Lane,
+		err := r.Scan(&x.Ref, &x.Channel, pii.IntoNull(&x.SenderName), &text, &x.ReceivedAt, &x.Category, &x.Confidence, &x.Lane,
 			&x.Status, &x.Priority, &x.AIStatus, &noDates, &unsure, &x.HasDraft)
 		x.Snippet = snippet(text)
 		x.NeedsCheck = (noDates != nil && *noDates) || (unsure != nil && *unsure)
@@ -82,9 +84,9 @@ func (s *Service) Get(ctx context.Context, ref string) (Enquiry, error) {
 		e.received_at, e.language, e.category, e.secondary_category, e.confidence::float8, e.extracted, e.summary, e.lane, e.priority,
 		e.status, e.ai_status, e.ai_model, e.first_response_at, u.id, u.name, u.role
 		FROM enquiries e LEFT JOIN users u ON u.id = e.assigned_user_id WHERE e.ref = $1`, strings.ToUpper(ref)).
-		Scan(&e.ID, &e.Ref, &e.Channel, &e.SenderName, &e.SenderEmail, &e.SenderPhone, &e.Subject, &e.Text, &e.ReceivedAt,
-			&e.Language, &e.Category, &e.Secondary, &e.Confidence, &extracted, &e.Summary, &e.Lane, &e.Priority, &e.Status,
-			&e.AIStatus, &e.AIModel, &e.FirstReply, &assignedID, &assignedName, &assignedRole)
+		Scan(&e.ID, &e.Ref, &e.Channel, pii.IntoNull(&e.SenderName), pii.IntoNull(&e.SenderEmail), pii.IntoNull(&e.SenderPhone),
+			&e.Subject, &e.Text, &e.ReceivedAt, &e.Language, &e.Category, &e.Secondary, &e.Confidence, &extracted, &e.Summary,
+			&e.Lane, &e.Priority, &e.Status, &e.AIStatus, &e.AIModel, &e.FirstReply, &assignedID, pii.IntoNull(&assignedName), &assignedRole)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return e, ErrNotFound
 	}
@@ -116,7 +118,7 @@ func (s *Service) Get(ctx context.Context, ref string) (Enquiry, error) {
 	e.Events, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (Event, error) {
 		var ev Event
 		var from, to []byte
-		err := r.Scan(&ev.Type, &ev.Actor, &ev.ActorName, &from, &to, &ev.CreatedAt)
+		err := r.Scan(&ev.Type, &ev.Actor, pii.IntoNull(&ev.ActorName), &from, &to, &ev.CreatedAt)
 		_ = json.Unmarshal(from, &ev.From)
 		_ = json.Unmarshal(to, &ev.To)
 		return ev, err
@@ -149,7 +151,7 @@ func (s *Service) Reroute(ctx context.Context, ref string, actor uuid.UUID, lane
 	var sender *string
 	var extracted []byte
 	err := s.pool.QueryRow(ctx, `SELECT category, raw_text, sender_name, extracted FROM enquiries WHERE ref = $1`,
-		strings.ToUpper(ref)).Scan(&oldCat, &text, &sender, &extracted)
+		strings.ToUpper(ref)).Scan(&oldCat, &text, pii.IntoNull(&sender), &extracted)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -215,7 +217,7 @@ func (s *Service) Correct(ctx context.Context, ref string, actor uuid.UUID, c Co
 		var cat *domain.Category
 		var owner *uuid.UUID
 		err := tx.QueryRow(ctx, `SELECT id, extracted, raw_text, sender_name, category, assigned_user_id FROM enquiries WHERE ref = $1 FOR UPDATE`,
-			strings.ToUpper(ref)).Scan(&id, &raw, &text, &sender, &cat, &owner)
+			strings.ToUpper(ref)).Scan(&id, &raw, &text, pii.IntoNull(&sender), &cat, &owner)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -361,7 +363,7 @@ func loadSendPlan(ctx context.Context, tx pgx.Tx, ref string) (sendPlan, error) 
 	var email, phone, subject, thread, msgID *string
 	err := tx.QueryRow(ctx, `SELECT id, channel, sender_email, sender_phone, subject, thread_id, rfc_message_id
 		FROM enquiries WHERE ref = $1 FOR UPDATE`, strings.ToUpper(ref)).
-		Scan(&p.enquiryID, &channel, &email, &phone, &subject, &thread, &msgID)
+		Scan(&p.enquiryID, &channel, pii.IntoNull(&email), pii.IntoNull(&phone), &subject, &thread, &msgID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -410,7 +412,7 @@ func (p sendPlan) record(ctx context.Context, tx pgx.Tx, actor uuid.UUID, status
 		return ErrAlreadySent
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, recipient, subject, body, enquiry_id, sent_by, status, external_id)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, idgen.New(), p.channel, domain.OutboxEnquiryReply, p.recipient, p.subject, p.body,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, idgen.New(), p.channel, domain.OutboxEnquiryReply, pii.Text(p.recipient), p.subject, pii.Text(p.body),
 		p.enquiryID, actor, status, nilIfEmpty(sent.MessageID)); err != nil {
 		return err
 	}

@@ -179,9 +179,7 @@ func TestComplaintSeenByEitherClassifierAlertsTheGM(t *testing.T) {
 		WHERE e.ref = 'ENQ-4420' AND n.type = 'COMPLAINT_ALERT' AND n.recipient_role = 'GM'`).Scan(&alerts); err != nil || alerts != 1 {
 		t.Fatalf("alerts %d %v", alerts, err)
 	}
-	var mails int
-	_ = s.Pool.QueryRow(s.Ctx, `SELECT count(*) FROM outbox_messages WHERE kind = 'ALERT' AND recipient = 'gm@kaapiestate.test'`).Scan(&mails)
-	if mails == 0 {
+	if len(outboxTo(t, s, domain.OutboxAlert, "gm@kaapiestate.test")) == 0 {
 		t.Fatal("GM got no alert email")
 	}
 	// The GM's queue puts unanswered complaints first.
@@ -333,9 +331,7 @@ func TestEnquiryToReply(t *testing.T) {
 	if r := s.Do(http.MethodPut, "/v1/staff/enquiries/"+created.Ref+"/draft", api.EditDraftRequest{Body: edited}, nil); r.Status != http.StatusOK {
 		t.Fatalf("%d %s", r.Status, r.Body)
 	}
-	var outboxBefore int
-	_ = s.Pool.QueryRow(s.Ctx, `SELECT count(*) FROM outbox_messages WHERE kind = 'ENQUIRY_REPLY' AND recipient = 'kavya@example.test'`).Scan(&outboxBefore)
-	if outboxBefore != 0 {
+	if outboxBefore := len(outboxTo(t, s, domain.OutboxEnquiryReply, "kavya@example.test")); outboxBefore != 0 {
 		t.Fatal("nothing is sent until a person presses Send")
 	}
 
@@ -345,11 +341,11 @@ func TestEnquiryToReply(t *testing.T) {
 	if res.Status != http.StatusOK || sent.Enquiry.Status != domain.EnquiryReplied || sent.Enquiry.FirstReplyAt == nil {
 		t.Fatalf("%d %s", res.Status, res.Body)
 	}
-	var body string
-	if err := s.Pool.QueryRow(s.Ctx, `SELECT body FROM outbox_messages WHERE kind = 'ENQUIRY_REPLY' AND recipient = 'kavya@example.test'`).Scan(&body); err != nil {
-		t.Fatal(err)
+	replies := outboxTo(t, s, domain.OutboxEnquiryReply, "kavya@example.test")
+	if len(replies) != 1 {
+		t.Fatalf("reply copies: %d", len(replies))
 	}
-	if body != edited {
+	if body := replies[0].Body; body != edited {
 		t.Fatalf("sent text differs from the staff's edit:\n%s", body)
 	}
 	if r := s.Do(http.MethodPost, "/v1/staff/enquiries/"+created.Ref+"/send", nil, nil); r.Status != http.StatusConflict {

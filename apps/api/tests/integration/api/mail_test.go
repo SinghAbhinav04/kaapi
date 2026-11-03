@@ -55,12 +55,11 @@ func sentTo(f *fakeGoogle, addr string) []string {
 
 func outboxStatus(t *testing.T, s *apitest.Server, kind domain.OutboxKind, to string) domain.OutboxStatus {
 	t.Helper()
-	var st domain.OutboxStatus
-	if err := s.Pool.QueryRow(s.Ctx, `SELECT status FROM outbox_messages WHERE kind = $1 AND recipient = $2
-		ORDER BY created_at DESC LIMIT 1`, kind, to).Scan(&st); err != nil {
-		t.Fatalf("%s to %s: %v", kind, to, err)
+	m := outboxTo(t, s, kind, to)
+	if len(m) == 0 {
+		t.Fatalf("no %s to %s", kind, to)
 	}
-	return st
+	return m[0].Status
 }
 
 func TestGuestEmailsGoOutThroughTheMailbox(t *testing.T) {
@@ -137,8 +136,9 @@ func TestFailedSendsRetryThenGiveUp(t *testing.T) {
 	if r := deliver(t, s); r.Retrying != 1 {
 		t.Fatalf("first failure should retry later: %+v", r)
 	}
+	id := outboxTo(t, s, domain.OutboxOTP, to)[0].ID
 	var due bool
-	if err := s.Pool.QueryRow(s.Ctx, `SELECT next_attempt_at <= now() FROM outbox_messages WHERE recipient = $1`, to).Scan(&due); err != nil || due {
+	if err := s.Pool.QueryRow(s.Ctx, `SELECT next_attempt_at <= now() FROM outbox_messages WHERE id = $1`, id).Scan(&due); err != nil || due {
 		t.Fatalf("a retry must wait (backoff), due=%v err=%v", due, err)
 	}
 	if r := deliver(t, s); r.Total() != 0 {
@@ -146,14 +146,14 @@ func TestFailedSendsRetryThenGiveUp(t *testing.T) {
 	}
 
 	// Four failures in, the fifth is the last try.
-	if _, err := s.Pool.Exec(s.Ctx, `UPDATE outbox_messages SET attempts = 4, next_attempt_at = now() WHERE recipient = $1`, to); err != nil {
+	if _, err := s.Pool.Exec(s.Ctx, `UPDATE outbox_messages SET attempts = 4, next_attempt_at = now() WHERE id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
 	if r := deliver(t, s); r.Failed != 1 {
 		t.Fatalf("fifth failure: %+v", r)
 	}
 	var reason string
-	if err := s.Pool.QueryRow(s.Ctx, `SELECT last_error FROM outbox_messages WHERE recipient = $1`, to).Scan(&reason); err != nil || reason == "" {
+	if err := s.Pool.QueryRow(s.Ctx, `SELECT last_error FROM outbox_messages WHERE id = $1`, id).Scan(&reason); err != nil || reason == "" {
 		t.Fatalf("the failure reason should be kept for staff: %q %v", reason, err)
 	}
 	if outboxStatus(t, s, domain.OutboxOTP, to) != domain.OutboxFailed {

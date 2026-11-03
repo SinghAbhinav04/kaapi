@@ -17,6 +17,7 @@ import (
 	"kaapi/api/internal/enquiry"
 	"kaapi/api/internal/platform/db"
 	"kaapi/api/internal/platform/idgen"
+	"kaapi/api/internal/platform/pii"
 	"kaapi/api/internal/pricing"
 )
 
@@ -98,8 +99,8 @@ func Run(ctx context.Context, pool *pgxpool.Pool, fx *Fixtures, opt Options) (Su
 			if u.Role.IsStaff() {
 				hash = &staffHash
 			}
-			if _, err := tx.Exec(ctx, `INSERT INTO users (id, email, name, phone, role, password_hash) VALUES ($1,$2,$3,$4,$5,$6)`,
-				id, u.Email, u.Name, u.Phone, u.Role, hash); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO users (id, email, email_hash, name, phone, role, password_hash) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+				id, pii.Text(u.Email), pii.EmailIndex(u.Email), pii.Text(u.Name), pii.Null(u.Phone), u.Role, hash); err != nil {
 				return fmt.Errorf("user %s: %w", u.Email, err)
 			}
 			userIDs[strings.ToLower(u.Email)] = id
@@ -283,12 +284,13 @@ func insertBooking(ctx context.Context, tx pgx.Tx, b BookingFx, rt RoomType, roo
 		(id, ref, guest_user_id, guest_name, guest_email, guest_phone, guest_country, adults, children, rooms,
 		 room_type_id, rate_plan_id, check_in, check_out, special_requests, status,
 		 subtotal_paise, discount_paise, tax_paise, total_paise, price_breakdown, promo_code_id,
-		 consent_version, consent_at, source, created_at, updated_at, confirmed_at, cancelled_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$27,$24,$24,$25,$26)`,
-		id, b.Ref, guestUser, b.Guest.Name, b.Guest.Email, b.Guest.Phone, b.Guest.Country, b.Adults, b.Children, b.Rooms,
+		 consent_version, consent_at, source, created_at, updated_at, confirmed_at, cancelled_at, guest_email_hash)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$27,$24,$24,$25,$26,$28)`,
+		id, b.Ref, guestUser, pii.Text(b.Guest.Name), pii.Text(b.Guest.Email), pii.Text(b.Guest.Phone), pii.Text(b.Guest.Country),
+		b.Adults, b.Children, b.Rooms,
 		roomID, planID, in, out, requests, b.Status,
 		q.SubtotalPaise, q.DiscountPaise, q.TaxPaise, q.TotalPaise, breakdown, promoID,
-		consentVersion, created, confirmedAt, cancelledAt, domain.BookingSourceDirectWeb); err != nil {
+		consentVersion, created, confirmedAt, cancelledAt, domain.BookingSourceDirectWeb, pii.EmailIndex(b.Guest.Email)); err != nil {
 		return err
 	}
 
@@ -342,10 +344,11 @@ func insertEnquiry(ctx context.Context, tx pgx.Tx, e EnquiryFx) error {
 		firstResponse = ptr(received.Add(time.Duration(*e.SeedState.FirstResponseMinutes) * time.Minute))
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO enquiries
-		(id, ref, channel, sender_name, sender_email, sender_phone, subject, raw_text, received_at, dedupe_hash, status, first_response_at, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$9,$9)`,
-		newID(), e.Ref, e.Channel, nilIfEmpty(e.Sender.Name), nilIfEmpty(e.Sender.Email), nilIfEmpty(e.Sender.Phone),
-		nilIfEmpty(e.Subject), e.Text, received, enquiry.DedupeHash(e.Text), e.SeedState.Status, firstResponse)
+		(id, ref, channel, sender_name, sender_email, sender_phone, subject, raw_text, received_at, dedupe_hash, status, first_response_at, created_at, updated_at, sender_hash)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$9,$9,$13)`,
+		newID(), e.Ref, e.Channel, pii.Null(nilIfEmpty(e.Sender.Name)), pii.Null(nilIfEmpty(e.Sender.Email)), pii.Null(nilIfEmpty(e.Sender.Phone)),
+		nilIfEmpty(e.Subject), e.Text, received, enquiry.DedupeHash(e.Text), e.SeedState.Status, firstResponse,
+		enquiry.SenderIndex(e.Sender.Email, e.Sender.Phone))
 	if err != nil {
 		return err
 	}

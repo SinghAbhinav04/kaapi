@@ -3,6 +3,8 @@ package access
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -11,6 +13,7 @@ import (
 	"kaapi/api/internal/auth"
 	"kaapi/api/internal/platform/db"
 	"kaapi/api/internal/platform/idgen"
+	"kaapi/api/internal/platform/pii"
 )
 
 // store is every query this package runs.
@@ -128,15 +131,26 @@ const memberSelect = `SELECT u.id, u.email, u.name, u.phone, u.role_id, r.name, 
 
 func scanMember(r pgx.CollectableRow) (Member, error) {
 	var m Member
-	return m, r.Scan(&m.ID, &m.Email, &m.Name, &m.Phone, &m.RoleID, &m.RoleName, &m.Team, &m.Active, &m.CreatedAt)
+	return m, r.Scan(&m.ID, pii.Into(&m.Email), pii.Into(&m.Name), pii.IntoNull(&m.Phone), &m.RoleID, &m.RoleName, &m.Team, &m.Active, &m.CreatedAt)
 }
 
 func (store) members(ctx context.Context, q db.Querier) ([]Member, error) {
-	rows, err := q.Query(ctx, memberSelect+` WHERE r.key <> $1 ORDER BY u.is_active DESC, u.name`, guestRoleKey)
+	rows, err := q.Query(ctx, memberSelect+` WHERE r.key <> $1`, guestRoleKey)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, scanMember)
+	members, err := pgx.CollectRows(rows, scanMember)
+	// Names are encrypted at rest, so the database can't sort them: active people first, by name.
+	slices.SortStableFunc(members, func(a, b Member) int {
+		if a.Active != b.Active {
+			if a.Active {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	})
+	return members, err
 }
 
 // member locks the account when q is a transaction; pgx.ErrNoRows for guests and unknown ids.
@@ -150,9 +164,9 @@ func (store) member(ctx context.Context, q db.Querier, id uuid.UUID) (Member, er
 
 func (store) insertMember(ctx context.Context, q db.Querier, m NewMember, hash string) (uuid.UUID, error) {
 	id := idgen.New()
-	_, err := q.Exec(ctx, `INSERT INTO users (id, email, name, phone, role, role_id, password_hash)
-		VALUES ($1, $2, $3, $4, (SELECT team FROM roles WHERE id = $5), $5, $6)`,
-		id, m.Email, m.Name, nilIfEmpty(m.Phone), m.RoleID, hash)
+	_, err := q.Exec(ctx, `INSERT INTO users (id, email, email_hash, name, phone, role, role_id, password_hash)
+		VALUES ($1, $2, $3, $4, $5, (SELECT team FROM roles WHERE id = $6), $6, $7)`,
+		id, pii.Text(m.Email), pii.EmailIndex(m.Email), pii.Text(m.Name), pii.Null(nilIfEmpty(m.Phone)), m.RoleID, hash)
 	if isUnique(err) {
 		return id, ErrEmailTaken
 	}
@@ -162,7 +176,7 @@ func (store) insertMember(ctx context.Context, q db.Querier, m NewMember, hash s
 func (store) updateMember(ctx context.Context, q db.Querier, id uuid.UUID, c MemberChange, hash *string) error {
 	_, err := q.Exec(ctx, `UPDATE users SET name = coalesce($2, name), phone = coalesce($3, phone), role_id = coalesce($4, role_id),
 		is_active = coalesce($5, is_active), password_hash = coalesce($6, password_hash), updated_at = now() WHERE id = $1`,
-		id, c.Name, c.Phone, c.RoleID, c.Active, hash)
+		id, pii.Null(c.Name), pii.Null(c.Phone), c.RoleID, c.Active, hash)
 	return err
 }
 

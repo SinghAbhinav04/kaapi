@@ -3,6 +3,8 @@
 package config
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -38,6 +40,7 @@ const (
 	EnvWorkerInProcess   = "WORKER_IN_PROCESS"  // run background jobs inside cmd/api (default: on in development)
 	EnvRateLimits        = "RATE_LIMITS"        // "off" disables the gateway's limits (load tests); on by default
 	EnvTrustedProxyHops  = "TRUSTED_PROXY_HOPS" // proxies in front of the API that append X-Forwarded-For; default 1 (the web proxy)
+	EnvPIIKey            = "PII_KEY"            // encrypts guests' personal data at rest; 32+ bytes, required in production
 
 	// Gmail: the inbox reads and replies from a real mailbox once an admin connects it.
 	EnvGoogleClientID     = "GOOGLE_CLIENT_ID"
@@ -93,6 +96,9 @@ type Config struct {
 	// TrustedProxyHops is how many proxies we run in front of the API; the caller's IP is that
 	// many entries from the right of X-Forwarded-For, so a client can't forge its address.
 	TrustedProxyHops int
+	// PIIKey encrypts personal data at rest (package pii). Losing it loses that data, and
+	// changing it needs a re-encryption, so production must set its own and keep it safe.
+	PIIKey []byte
 }
 
 func (c Config) IsProduction() bool { return c.Environment == EnvProduction }
@@ -124,6 +130,7 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("%s must be a whole number from 0 to %d", EnvTrustedProxyHops, maxProxyHops)
 	}
 	c.TrustedProxyHops = hops
+	c.PIIKey = PIIKey(os.Getenv(EnvPIIKey), c.JWESecret)
 	for _, o := range strings.Split(os.Getenv(EnvNativeAppOrigins), ",") {
 		if o = strings.TrimSpace(o); o != "" {
 			c.NativeAppOrigins = append(c.NativeAppOrigins, o)
@@ -160,6 +167,12 @@ func Load() (Config, error) {
 	}
 	if len(c.PaymentSecret) < minSecretBytes {
 		problems = append(problems, fmt.Sprintf("%s must be at least %d bytes", EnvPaymentSecret, minSecretBytes))
+	}
+	if c.IsProduction() && os.Getenv(EnvPIIKey) == "" {
+		problems = append(problems, EnvPIIKey+" is required in production (it encrypts guests' personal data)")
+	}
+	if len(c.PIIKey) < minSecretBytes {
+		problems = append(problems, fmt.Sprintf("%s must be at least %d bytes", EnvPIIKey, minSecretBytes))
 	}
 	if c.BrowserAPIPrefix != "" && !strings.HasPrefix(c.BrowserAPIPrefix, "/") {
 		problems = append(problems, EnvBrowserAPIPrefix+" must be empty or start with /")
@@ -235,4 +248,16 @@ func list(v string) []string {
 		}
 	}
 	return out
+}
+
+// PIIKey is the key for personal data: PII_KEY when set; otherwise, for development only, one
+// derived from the token secret so a local run needs no extra setup. The seeder, the API and
+// the tests all call this, so they always agree on the key.
+func PIIKey(explicit string, jweSecret []byte) []byte {
+	if explicit != "" {
+		return []byte(explicit)
+	}
+	m := hmac.New(sha256.New, jweSecret)
+	m.Write([]byte("kaapi/pii/development-key"))
+	return m.Sum(nil)
 }

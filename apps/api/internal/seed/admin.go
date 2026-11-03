@@ -12,6 +12,7 @@ import (
 	"kaapi/api/internal/auth"
 	"kaapi/api/internal/domain"
 	"kaapi/api/internal/platform/db"
+	"kaapi/api/internal/platform/pii"
 )
 
 // minAdminPassword is the shortest administrator password the seeder accepts.
@@ -55,10 +56,10 @@ func ensureAdmin(ctx context.Context, tx pgx.Tx, a Account) error {
 		return err
 	}
 	var id string
-	err = tx.QueryRow(ctx, `INSERT INTO users (id, email, name, role, password_hash) VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT ((lower(email))) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role,
+	err = tx.QueryRow(ctx, `INSERT INTO users (id, email, email_hash, name, role, password_hash) VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (email_hash) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, role = EXCLUDED.role,
 			password_hash = EXCLUDED.password_hash, is_active = true, updated_at = now()
-		RETURNING id`, newID(), a.Email, a.Name, domain.RoleAdmin, hash).Scan(&id)
+		RETURNING id`, newID(), pii.Text(a.Email), pii.EmailIndex(a.Email), pii.Text(a.Name), domain.RoleAdmin, hash).Scan(&id)
 	if err != nil {
 		return err
 	}

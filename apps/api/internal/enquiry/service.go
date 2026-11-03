@@ -23,6 +23,7 @@ import (
 	"kaapi/api/internal/inventory"
 	"kaapi/api/internal/platform/db"
 	"kaapi/api/internal/platform/idgen"
+	"kaapi/api/internal/platform/pii"
 )
 
 type Service struct {
@@ -80,8 +81,9 @@ func (s *Service) Intake(ctx context.Context, in IntakeInput) (string, error) {
 				return err
 			}
 		}
-		sender := coalesceStr(in.SenderEmail, in.SenderPhone)
-		err := tx.QueryRow(ctx, `SELECT ref FROM enquiries WHERE dedupe_hash = $1 AND coalesce(sender_email, sender_phone) = $2
+		// Sender details are encrypted, so "the same sender" is matched on a keyed hash.
+		sender := SenderIndex(in.SenderEmail, in.SenderPhone)
+		err := tx.QueryRow(ctx, `SELECT ref FROM enquiries WHERE dedupe_hash = $1 AND sender_hash = $2
 			AND received_at > now() - make_interval(secs => $3) LIMIT 1`, hash, sender, dedupeWindow.Seconds()).Scan(&ref)
 		if err == nil {
 			return nil
@@ -90,7 +92,7 @@ func (s *Service) Intake(ctx context.Context, in IntakeInput) (string, error) {
 			return err
 		}
 		var recent int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM enquiries WHERE coalesce(sender_email, sender_phone) = $1
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM enquiries WHERE sender_hash = $1
 			AND received_at > now() - interval '1 hour'`, sender).Scan(&recent); err != nil {
 			return err
 		}
@@ -101,12 +103,12 @@ func (s *Service) Intake(ctx context.Context, in IntakeInput) (string, error) {
 		for attempt := 0; attempt < refAttempts; attempt++ {
 			var id uuid.UUID
 			err := tx.QueryRow(ctx, `INSERT INTO enquiries (id, ref, channel, sender_name, sender_email, sender_phone, subject, raw_text, dedupe_hash,
-					external_id, thread_id, rfc_message_id)
-				SELECT $1, 'ENQ-' || (coalesce(max(substring(ref from 5)::int), $9 - 1) + 1), $2, $3, $4, $5, $6, $7, $8, $10, $11, $12 FROM enquiries
+					external_id, thread_id, rfc_message_id, sender_hash)
+				SELECT $1, 'ENQ-' || (coalesce(max(substring(ref from 5)::int), $9 - 1) + 1), $2, $3, $4, $5, $6, $7, $8, $10, $11, $12, $13 FROM enquiries
 				ON CONFLICT (ref) DO NOTHING RETURNING id, ref`,
-				idgen.New(), in.Channel, nilIfEmpty(in.SenderName), nilIfEmpty(in.SenderEmail), nilIfEmpty(in.SenderPhone),
-				nilIfEmpty(in.Subject), in.Text, hash, firstRefNumber,
-				nilIfEmpty(ext.ID), nilIfEmpty(ext.ThreadID), nilIfEmpty(ext.RFCMessageID)).Scan(&id, &ref)
+				idgen.New(), in.Channel, pii.NullText{Text: nilIfEmpty(in.SenderName)}, pii.NullText{Text: nilIfEmpty(in.SenderEmail)},
+				pii.NullText{Text: nilIfEmpty(in.SenderPhone)}, nilIfEmpty(in.Subject), in.Text, hash, firstRefNumber,
+				nilIfEmpty(ext.ID), nilIfEmpty(ext.ThreadID), nilIfEmpty(ext.RFCMessageID), sender).Scan(&id, &ref)
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue // another message took that number; try the next
 			}
@@ -183,7 +185,7 @@ func (s *Service) processOne(ctx context.Context) (bool, error) {
 	var (
 		id         uuid.UUID
 		text       string
-		senderName *string
+		senderName pii.NullText
 		status     domain.EnquiryStatus
 	)
 	err := s.pool.QueryRow(ctx, `SELECT id, raw_text, sender_name, status FROM enquiries WHERE ai_status = $1
@@ -194,7 +196,7 @@ func (s *Service) processOne(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	res, err := s.classifier.Classify(ctx, text, deref(senderName), s.today())
+	res, err := s.classifier.Classify(ctx, text, deref(senderName.Text), s.today())
 	if err != nil {
 		return true, err
 	}
@@ -206,7 +208,7 @@ func (s *Service) processOne(ctx context.Context) (bool, error) {
 	wantsDraft := status == domain.EnquiryNew || status == domain.EnquiryInProgress
 	var p prose
 	if wantsDraft {
-		if p, err = s.writeProse(ctx, s.pool, text, deref(senderName), res.Category, res.Extracted, owner); err != nil {
+		if p, err = s.writeProse(ctx, s.pool, text, deref(senderName.Text), res.Category, res.Extracted, owner); err != nil {
 			return true, err
 		}
 	}
@@ -257,7 +259,7 @@ func (s *Service) processOne(ctx context.Context) (bool, error) {
 		if err != nil {
 			return err
 		}
-		return s.storeDraft(ctx, tx, id, next, p, text, deref(senderName), res.Category, res.Extracted)
+		return s.storeDraft(ctx, tx, id, next, p, text, deref(senderName.Text), res.Category, res.Extracted)
 	})
 	if err != nil && ctx.Err() == nil {
 		// Park it as FAILED so one bad message can't block the queue; staff can retry it.
@@ -328,10 +330,11 @@ func (s *Service) alerts(ctx context.Context, tx pgx.Tx, id uuid.UUID, r ai.Resu
 			idgen.New(), domain.RoleGM, domain.NotifyComplaintAlert, id, fmt.Sprintf("Complaint %s: %s", ref, snippet)); err != nil {
 			return err
 		}
+		// The GM's email is copied as stored: it is already ciphertext under the same key.
 		if _, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, recipient, subject, body, enquiry_id)
 			SELECT $1, $2, $3, email, $4, $5, $6 FROM users WHERE role = $7 AND is_active ORDER BY created_at LIMIT 1`,
 			idgen.New(), domain.OutboxEmail, domain.OutboxAlert, "Complaint needs you: "+ref,
-			fmt.Sprintf("A guest complaint arrived and is waiting in your lane.\n\n%s\n\nOpen the inbox to reply.", snippet),
+			pii.Text(fmt.Sprintf("A guest complaint arrived and is waiting in your lane.\n\n%s\n\nOpen the inbox to reply.", snippet)),
 			id, domain.RoleGM); err != nil {
 			return err
 		}
@@ -411,3 +414,9 @@ func nullJSON(b []byte) any {
 }
 
 func round3(v float64) float64 { return float64(int(v*1000+0.5)) / 1000 }
+
+// SenderIndex is the blind index that identifies a sender (their email, else their phone),
+// for intake's dedupe and per-sender cap; the seeder uses it too.
+func SenderIndex(email, phone string) string {
+	return pii.Index(senderIndexKind, coalesceStr(strings.TrimSpace(email), strings.TrimSpace(phone)))
+}

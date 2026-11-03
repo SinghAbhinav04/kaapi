@@ -18,6 +18,7 @@ import (
 
 	"kaapi/api/internal/domain"
 	"kaapi/api/internal/platform/money"
+	"kaapi/api/internal/platform/pii"
 )
 
 // bookingSelect reads a booking with its room, plan, hold expiry and latest payment.
@@ -39,13 +40,15 @@ func scanBooking(r pgx.CollectableRow) (Booking, error) {
 	var payStatus *domain.PaymentStatus
 	var amount *int64
 	var failure *string
+	var name, email, phone, country pii.Text // decrypted on scan
 	err := r.Scan(&b.ID, &b.Ref, &b.Status, &b.RoomTypeID, &b.RoomTypeName, &b.RoomTypeSlug, &b.RatePlanName, &b.Refundable,
 		&b.CheckIn, &b.CheckOut, &b.Rooms, &b.Adults, &b.Children,
-		&b.Guest.Name, &b.Guest.Email, &b.Guest.Phone, &b.Guest.Country, &b.ArrivalWindow, &b.SpecialRequests,
+		&name, &email, &phone, &country, &b.ArrivalWindow, &b.SpecialRequests,
 		&quote, &b.HoldExpiresAt, &b.CreatedAt, &b.ConfirmedAt, &b.ArchivedAt, &orderID, &payStatus, &amount, &failure)
 	if err != nil {
 		return b, err
 	}
+	b.Guest = Guest{Name: string(name), Email: string(email), Phone: string(phone), Country: string(country)}
 	if err := json.Unmarshal(quote, &b.Quote); err != nil {
 		return b, fmt.Errorf("booking %s quote: %w", b.Ref, err)
 	}
@@ -106,8 +109,8 @@ func (s *Service) HoldTokenMatches(ctx context.Context, bookingID uuid.UUID, tok
 
 // Mine returns a guest's bookings: made while signed in, or under their email.
 func (s *Service) Mine(ctx context.Context, userID uuid.UUID, email string) ([]Booking, error) {
-	rows, err := s.pool.Query(ctx, bookingSelect+` WHERE b.guest_user_id = $1 OR lower(b.guest_email) = lower($2)
-		ORDER BY b.check_in DESC`, userID, email)
+	rows, err := s.pool.Query(ctx, bookingSelect+` WHERE b.guest_user_id = $1 OR b.guest_email_hash = $2
+		ORDER BY b.check_in DESC`, userID, pii.EmailIndex(email))
 	if err != nil {
 		return nil, err
 	}

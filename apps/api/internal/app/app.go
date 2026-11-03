@@ -23,6 +23,7 @@ import (
 	"kaapi/api/internal/inventory"
 	"kaapi/api/internal/outbox"
 	"kaapi/api/internal/platform/config"
+	"kaapi/api/internal/platform/pii"
 	"kaapi/api/internal/retention"
 )
 
@@ -50,6 +51,13 @@ type App struct {
 }
 
 func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() time.Time) *App {
+	key := cfg.PIIKey
+	if len(key) == 0 { // a hand-built config (tests): the same derivation config.Load uses
+		key = config.PIIKey("", cfg.JWESecret)
+	}
+	if err := pii.Configure(key); err != nil {
+		panic(err) // config.Load already refused a short key; only a hand-built config gets here
+	}
 	inv := inventory.NewService(pool, now)
 	a := &App{
 		Config:    cfg,

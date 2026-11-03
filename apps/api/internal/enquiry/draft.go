@@ -16,6 +16,7 @@ import (
 	"kaapi/api/internal/inventory"
 	"kaapi/api/internal/platform/idgen"
 	"kaapi/api/internal/platform/money"
+	"kaapi/api/internal/platform/pii"
 )
 
 // Who the sales team is for event enquiries. In production this comes from the owner of the
@@ -139,7 +140,7 @@ func (s *Service) render(ctx context.Context, tx pgx.Tx, template, message, send
 	eventTeam := eventTeamFallback
 	var salesName, salesPhone *string
 	if err := tx.QueryRow(ctx, `SELECT name, phone FROM users WHERE role = $1 AND is_active ORDER BY created_at LIMIT 1`,
-		domain.RoleSales).Scan(&salesName, &salesPhone); err == nil && salesName != nil && salesPhone != nil {
+		domain.RoleSales).Scan(pii.IntoNull(&salesName), pii.IntoNull(&salesPhone)); err == nil && salesName != nil && salesPhone != nil {
 		eventTeam = fmt.Sprintf("%s from our events team on %s", firstName(*salesName), *salesPhone)
 	}
 	r := strings.NewReplacer(
@@ -248,7 +249,7 @@ func staffFor(ctx context.Context, tx querier, owner *uuid.UUID) (Staff, error) 
 	if owner == nil {
 		return st, nil
 	}
-	err := tx.QueryRow(ctx, `SELECT id, name, role FROM users WHERE id = $1`, *owner).Scan(&st.ID, &st.Name, &st.Role)
+	err := tx.QueryRow(ctx, `SELECT id, name, role FROM users WHERE id = $1`, *owner).Scan(&st.ID, pii.Into(&st.Name), &st.Role)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Staff{Name: "The Kaapi Estate team"}, nil
 	}

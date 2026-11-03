@@ -78,10 +78,12 @@ func (store) archive(ctx context.Context, q db.Querier, ids []uuid.UUID, now tim
 	return err
 }
 
-// anonymise wipes contact details. The email becomes a reserved .invalid address, so the
-// column stays NOT NULL and "My bookings" can no longer find it.
+// anonymise wipes contact details. The email becomes a reserved .invalid address (a
+// placeholder, not personal data, so it is stored plain), so the column stays NOT NULL; its
+// blind index is cleared, so "My bookings" can no longer find it. The name stays, encrypted,
+// for the tax record.
 func (store) anonymise(ctx context.Context, q db.Querier, ids []uuid.UUID, now time.Time) error {
-	_, err := q.Exec(ctx, `UPDATE bookings SET guest_email = 'erased+' || lower(ref) || '@example.invalid', guest_phone = '',
+	_, err := q.Exec(ctx, `UPDATE bookings SET guest_email = 'erased+' || lower(ref) || '@example.invalid', guest_email_hash = NULL, guest_phone = '',
 		special_requests = NULL, arrival_window = NULL, guest_user_id = NULL, marketing_opt_in = false,
 		anonymised_at = $2, updated_at = $2 WHERE id = ANY($1)`, ids, now)
 	return err

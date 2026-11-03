@@ -36,7 +36,7 @@ var Today = func() time.Time { return time.Date(2026, 11, 2, 9, 0, 0, 0, time.UT
 func TestConfig() config.Config {
 	return config.Config{
 		AppOrigin:      "http://localhost:3000",
-		JWESecret:      []byte("test-only-jwe-secret-0123456789abcdef"),
+		JWESecret:      []byte(testdb.JWESecret),
 		PaymentSecret:  []byte("test-only-payment-secret-0123456789ab"),
 		Environment:    config.EnvDevelopment,
 		RequestTimeout: 15 * time.Second,

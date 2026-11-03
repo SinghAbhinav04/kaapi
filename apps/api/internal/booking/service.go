@@ -26,6 +26,7 @@ import (
 	"kaapi/api/internal/platform/db"
 	"kaapi/api/internal/platform/idgen"
 	"kaapi/api/internal/platform/money"
+	"kaapi/api/internal/platform/pii"
 	"kaapi/api/internal/pricing"
 )
 
@@ -112,13 +113,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Booking, error) {
 		for attempt := 0; attempt < refAttempts; attempt++ {
 			id := idgen.New()
 			tag, err := tx.Exec(ctx, `INSERT INTO bookings
-				(id, ref, hold_id, guest_user_id, guest_name, guest_email, guest_phone, guest_country, adults, children, rooms,
+				(id, ref, hold_id, guest_user_id, guest_name, guest_email, guest_email_hash, guest_phone, guest_country, adults, children, rooms,
 				 room_type_id, rate_plan_id, check_in, check_out, arrival_window, special_requests, status,
 				 subtotal_paise, discount_paise, tax_paise, total_paise, price_breakdown, promo_code_id,
 				 consent_version, consent_at, marketing_opt_in, source, display_currency, fx_inr_per_unit_micros, fx_rate_date)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
 				ON CONFLICT (ref) DO NOTHING`,
-				id, idgen.BookingRef(), in.HoldID, in.GuestUserID, in.Guest.Name, in.Guest.Email, in.Guest.Phone, in.Guest.Country,
+				id, idgen.BookingRef(), in.HoldID, in.GuestUserID, pii.Text(in.Guest.Name), pii.Text(in.Guest.Email),
+				pii.EmailIndex(in.Guest.Email), pii.Text(in.Guest.Phone), pii.Text(in.Guest.Country),
 				h.Adults, h.Children, h.Rooms, h.RoomTypeID, h.RatePlanID, h.CheckIn, h.CheckOut, nilIfEmpty(in.ArrivalWindow),
 				nilIfEmpty(in.SpecialRequests), domain.BookingPendingPayment, q.SubtotalPaise, q.DiscountPaise, q.TaxPaise,
 				q.TotalPaise, quoteJSON, promoID, ConsentVersion, now, in.MarketingOptIn, domain.BookingSourceDirectWeb,
@@ -158,7 +160,8 @@ func (s *Service) HandlePaymentEvent(ctx context.Context, e payment.Event) (Book
 			paymentID, holdID uuid.UUID
 			payStatus         domain.PaymentStatus
 			amount            int64
-			guestEmail, ref   string
+			guestEmail        pii.Text
+			ref               string
 			promoID           *uuid.UUID
 			holdRef           *uuid.UUID
 		)
@@ -199,7 +202,7 @@ func (s *Service) HandlePaymentEvent(ctx context.Context, e payment.Event) (Book
 		case payment.EventCaptured:
 			err := inventory.Confirm(ctx, tx, holdID, bookingID)
 			if errors.Is(err, inventory.ErrSoldOut) || errors.Is(err, inventory.ErrHoldNotActive) {
-				return s.refundPath(ctx, tx, paymentID, bookingID, ref, guestEmail, e)
+				return s.refundPath(ctx, tx, paymentID, bookingID, ref, string(guestEmail), e)
 			}
 			if err != nil {
 				return err // rolled back; the provider retries the delivery
@@ -243,10 +246,10 @@ func (s *Service) refundPath(ctx context.Context, tx pgx.Tx, paymentID, bookingI
 		return err
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body, booking_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		idgen.New(), domain.OutboxEmail, domain.OutboxRefundNotice, domain.OutboxQueued, email, "We couldn't complete booking "+ref,
-		fmt.Sprintf("We're sorry: your payment of %s reached us after your 10-minute hold ended, and the room had been booked by then. "+
+		idgen.New(), domain.OutboxEmail, domain.OutboxRefundNotice, domain.OutboxQueued, pii.Text(email), "We couldn't complete booking "+ref,
+		pii.Text(fmt.Sprintf("We're sorry: your payment of %s reached us after your 10-minute hold ended, and the room had been booked by then. "+
 			"We've started a full refund, and it should reach you in 5 to 7 working days. Our reservations team will also call you with other dates.",
-			money.FormatINR(e.AmountPaise)), bookingID)
+			money.FormatINR(e.AmountPaise))), bookingID)
 	return err
 }
 
@@ -261,7 +264,8 @@ func (s *Service) confirmationMessages(ctx context.Context, tx pgx.Tx, bookingID
 		b.Nights(), b.Rooms, money.FormatINR(b.Quote.TotalPaise), money.FormatINR(b.Quote.TaxPaise))
 	// Queued in the payment's transaction, so a confirmed booking always gets its email.
 	if _, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body, booking_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		idgen.New(), domain.OutboxEmail, domain.OutboxBookingConfirmation, domain.OutboxQueued, b.Guest.Email, "Booking confirmed: "+b.Ref, body, bookingID); err != nil {
+		idgen.New(), domain.OutboxEmail, domain.OutboxBookingConfirmation, domain.OutboxQueued, pii.Text(b.Guest.Email), "Booking confirmed: "+b.Ref,
+		pii.Text(body), bookingID); err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO notifications (id, recipient_role, type, booking_id, body) VALUES ($1,$2,$3,$4,$5)`,

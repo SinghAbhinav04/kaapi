@@ -15,6 +15,7 @@ import (
 	"kaapi/api/internal/platform/config"
 	"kaapi/api/internal/platform/db"
 	"kaapi/api/internal/platform/logging"
+	"kaapi/api/internal/seed"
 	"kaapi/api/internal/transport/httpapi"
 )
 
@@ -59,6 +60,13 @@ func main() {
 	defer pool.Close()
 
 	a := app.New(cfg, log, pool, time.Now)
+	// Personal data written before encryption existed is encrypted now (a no-op once done).
+	if n, err := seed.EncryptExisting(ctx, pool); err != nil {
+		log.Error("encrypting existing personal data failed", "err", err)
+		os.Exit(1)
+	} else if n > 0 {
+		log.Info("encrypted existing personal data", "rows", n)
+	}
 	if cfg.WorkerInProcess { // local development: one process does everything
 		go a.RunWorkers(ctx)
 	}

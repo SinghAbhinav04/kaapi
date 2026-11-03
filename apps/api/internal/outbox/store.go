@@ -10,6 +10,7 @@ import (
 	"kaapi/api/internal/domain"
 	"kaapi/api/internal/platform/db"
 	"kaapi/api/internal/platform/idgen"
+	"kaapi/api/internal/platform/pii"
 )
 
 // store is every query this package runs.
@@ -28,12 +29,12 @@ func (store) list(ctx context.Context, q db.Querier, limit int) ([]Message, erro
 func (store) insertStaffMessage(ctx context.Context, q db.Querier, actor uuid.UUID, c Compose, status domain.OutboxStatus, externalID *string) (Message, error) {
 	return scanMessage(q.QueryRow(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body, sent_by, external_id)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING `+messageColumns,
-		idgen.New(), domain.OutboxEmail, domain.OutboxStaffMessage, status, c.To, c.Subject, c.Body, actor, externalID))
+		idgen.New(), domain.OutboxEmail, domain.OutboxStaffMessage, status, pii.Text(c.To), c.Subject, pii.Text(c.Body), actor, externalID))
 }
 
 func scanMessage(r pgx.Row) (Message, error) {
 	var m Message
-	return m, r.Scan(&m.ID, &m.Channel, &m.Kind, &m.Status, &m.Recipient, &m.Subject, &m.Body, &m.CreatedAt)
+	return m, r.Scan(&m.ID, &m.Channel, &m.Kind, &m.Status, pii.Into(&m.Recipient), &m.Subject, pii.Into(&m.Body), &m.CreatedAt)
 }
 
 // claim takes up to limit queued emails that are due and not being sent by another worker
@@ -52,7 +53,7 @@ func (store) claim(ctx context.Context, q db.Querier, limit int) ([]queued, erro
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (queued, error) {
 		var m queued
-		return m, r.Scan(&m.ID, &m.Recipient, &m.Subject, &m.Body, &m.Attempts)
+		return m, r.Scan(&m.ID, pii.Into(&m.Recipient), &m.Subject, pii.Into(&m.Body), &m.Attempts)
 	})
 }
 
