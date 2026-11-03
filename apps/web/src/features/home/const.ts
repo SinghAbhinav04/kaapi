@@ -50,6 +50,20 @@ export const GETTING_HERE = [
   { distance: '5–6 H', text: 'By road from Bengaluru. Signal drops in the last 10 km, so download the map before you leave.' },
 ] as const;
 
+/**
+ * Where the map points. The brief names only Chikkamagaluru; the estate's exact pin is a
+ * labelled assumption until the resort confirms it.
+ */
+const MAP_QUERY = 'Baba Budangiri, Chikkamagaluru, Karnataka';
+export const MAP = {
+  label: 'Baba Budan Hills',
+  sub: 'Chikkamagaluru, Karnataka',
+  /** Google's keyless embed, loaded only when the guest asks for it. */
+  embedSrc: `https://maps.google.com/maps?q=${encodeURIComponent(MAP_QUERY)}&z=11&output=embed`,
+  /** Opens the Google Maps app on phones, the website elsewhere. */
+  openHref: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(MAP_QUERY)}`,
+} as const;
+
 export const ENQUIRE_EVENT_HREF = `${ROUTES.enquire}?kind=event`;
 
 /** "1 left" shows when this few or fewer rooms remain on the website. */

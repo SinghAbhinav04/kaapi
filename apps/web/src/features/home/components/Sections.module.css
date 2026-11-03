@@ -237,6 +237,126 @@
   align-items: start;
 }
 
+.gettingBody {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  min-width: 0;
+}
+
+/* map */
+.map {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mapFrame {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  background: var(--estate-tint);
+}
+
+.mapPreview {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: radial-gradient(120% 90% at 50% 45%, var(--estate-tint-2) 0%, var(--estate-tint) 60%, var(--estate-tint-3) 100%);
+  color: var(--estate-deep);
+  cursor: pointer;
+}
+
+.mapArt {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.35;
+}
+
+.mapPin {
+  position: absolute;
+  left: 51%;
+  top: 51%;
+  transform: translate(-50%, -100%);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.mapPreview:hover .mapPin,
+.mapPreview:focus-visible .mapPin {
+  transform: translate(-50%, calc(-100% - 4px));
+}
+
+.mapCta {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 18px;
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  color: var(--on-dark);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mapIframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.mapCaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  font-size: 14px;
+  color: var(--grey);
+}
+
+.mapCaption strong {
+  color: var(--ink);
+}
+
+.mapLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.mapLink:hover {
+  color: var(--estate);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mapPin {
+    transition: none;
+  }
+}
+
 .route {
   list-style: none;
   margin: 0;
