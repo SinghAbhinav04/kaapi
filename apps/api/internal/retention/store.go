@@ -23,7 +23,6 @@ var (
 	unpaid     = []string{string(domain.BookingExpired), string(domain.BookingPaymentFailed)}
 )
 
-
 func (store) pick(ctx context.Context, q db.Querier, where string, args ...any) ([]uuid.UUID, error) {
 	rows, err := q.Query(ctx, where+` ORDER BY id LIMIT `+strconv.Itoa(batchSize)+` FOR UPDATE SKIP LOCKED`, args...)
 	if err != nil {

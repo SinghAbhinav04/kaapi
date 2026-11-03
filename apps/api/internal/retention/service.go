@@ -37,7 +37,9 @@ func (s *Service) Sweep(ctx context.Context) (Result, error) {
 	st := s.store
 	messagesBefore := now.AddDate(0, -messageRetention, 0)
 	deleteFrom := func(table string) actor {
-		return func(ctx context.Context, q db.Querier, ids []uuid.UUID) error { return st.deleteFrom(ctx, q, table, ids) }
+		return func(ctx context.Context, q db.Querier, ids []uuid.UUID) error {
+			return st.deleteFrom(ctx, q, table, ids)
+		}
 	}
 	at := func(t time.Time, pick func(context.Context, db.Querier, time.Time) ([]uuid.UUID, error)) picker {
 		return func(ctx context.Context, q db.Querier) ([]uuid.UUID, error) { return pick(ctx, q, t) }
