@@ -35,7 +35,7 @@ const (
 func main() {
 	saveOnly := flag.Bool("save", false, "save the current connection to .env without asking Google again")
 	flag.Parse()
-	if err := config.LoadDotEnv(config.DotEnvFile); err != nil {
+	if err := config.LoadDotEnv(config.DotEnvPath()); err != nil {
 		log.Fatal(err)
 	}
 	cfg, err := config.Load()
@@ -59,10 +59,10 @@ func main() {
 		if err != nil {
 			log.Fatalf("nothing to save: %v", err)
 		}
-		if err := saveEnv(config.DotEnvFile, envKey, token); err != nil {
+		if err := saveEnv(config.DotEnvPath(), envKey, token); err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("Saved the connection for %s to %s as %s.\n", email, config.DotEnvFile, envKey)
+		fmt.Printf("Saved the connection for %s to %s as %s.\n", email, config.DotEnvPath(), envKey)
 		return
 	}
 
@@ -89,10 +89,10 @@ func main() {
 			log.Fatal(err)
 		}
 		if token != "" && token != before {
-			if err := saveEnv(config.DotEnvFile, envKey, token); err != nil {
+			if err := saveEnv(config.DotEnvPath(), envKey, token); err != nil {
 				log.Fatal(err)
 			}
-			fmt.Printf("Connected as %s. Saved %s to %s; the API stays connected on every start.\n", email, envKey, config.DotEnvFile)
+			fmt.Printf("Connected as %s. Saved %s to %s; the API stays connected on every start.\n", email, envKey, config.DotEnvPath())
 			return
 		}
 		time.Sleep(pollEvery)

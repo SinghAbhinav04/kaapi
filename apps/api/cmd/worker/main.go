@@ -27,7 +27,7 @@ const (
 )
 
 func main() {
-	if err := config.LoadDotEnv(config.DotEnvFile); err != nil { // local development only
+	if err := config.LoadDotEnv(config.DotEnvPath()); err != nil { // local development only
 		log.Fatal(err)
 	}
 	cfg, err := config.Load()
