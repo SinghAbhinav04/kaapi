@@ -78,3 +78,26 @@ func assertConstraint(t *testing.T, err error, name string) {
 		t.Errorf("want violation of %s, got %v", name, err)
 	}
 }
+
+// Every table must have row-level security on, so a hosted database's public REST API
+// (Supabase exposes `public` with a key that is public by design) can read nothing.
+func TestEveryTableHasRowLevelSecurity(t *testing.T) {
+	ctx, pool := testdb.Seeded(t)
+	rows, err := pool.Query(ctx, `SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = current_schema() AND c.relkind = 'r' AND NOT c.relrowsecurity AND c.relname <> 'goose_db_version'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var open []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		open = append(open, name)
+	}
+	if len(open) > 0 {
+		t.Fatalf("tables without row-level security: %s (add them to a migration like 0002)", strings.Join(open, ", "))
+	}
+}
