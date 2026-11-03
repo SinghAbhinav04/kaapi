@@ -151,3 +151,9 @@ const (
 	// sendClaimTTL: a delivery that crashed mid-flight frees its draft after this long.
 	sendClaimTTL = 2 * time.Minute
 )
+
+// Offer kinds as promo_codes stores them; a percentage is held in basis points.
+const (
+	offerPercent  = "PERCENT"
+	bpsPerPercent = 100
+)

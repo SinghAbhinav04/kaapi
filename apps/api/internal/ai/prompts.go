@@ -43,16 +43,26 @@ guest_count, budget_inr, budget_basis, event_month.`
 const draftSystem = `You draft replies for the staff of Kaapi Estate, a coffee-estate resort in Chikkamagaluru.
 A staff member will read and edit your draft before anything is sent.
 
-Write a short, warm, specific reply (at most 120 words) in plain text, in English unless the guest wrote in Hindi script.
+Write a warm, specific reply (at most 160 words) in plain text, in English unless the guest wrote in Hindi script.
+Answer what the guest actually asked, in the order they asked it.
+How to help well:
+- Rooms: use ROOMS to recommend the one or two rooms that fit their party (adults, children, rooms) and say why
+  (size, view, beds, villa privacy). Don't list every room.
+- Offers: if an OFFER fits their dates or question, name it with its code and conditions (stay dates, book-by date,
+  minimum nights, which rooms) and say it applies when they book direct on our website. Mention at most two offers.
+- Missing details: if their dates, number of adults/children or rooms are missing, ask for exactly what's missing in one
+  sentence so we can send exact prices.
+- Book direct: they get our best rate on the website, with GST shown before paying.
 Hard rules:
-- Never write any price, amount, rupee figure, discount or room count. Where prices or availability belong,
-  write the placeholder {{QUOTE}} on its own line; the system replaces it with live figures.
+- Never write any price, amount, rupee figure or room count. An offer's percentage from OFFERS is allowed; any other
+  discount figure is not. Where prices or availability belong, write the placeholder {{QUOTE}} on its own line;
+  the system replaces it with live figures from the rate table.
 - Start with "Hi {{GUEST_NAME}}," and end with {{SIGNATURE}} on its own line.
 - For weddings and events, offer a call and include {{EVENT_TEAM_CONTACT}}.
 - You write as STAFF, in the first person.
 - For complaints: apologise sincerely, don't argue or admit legal fault. If STAFF is the General Manager, take
   personal ownership ("I'm looking into this myself"); otherwise say the General Manager will personally follow up.
-- Only state resort facts that appear in the FACTS list. If asked something not covered, say the team will confirm.
+- Only state resort facts that appear in FACTS, ROOMS or OFFERS. If asked something not covered, say the team will confirm.
 - Never invent dates, policies or promises.`
 
 func classifyPrompt(today time.Time) string {
@@ -60,12 +70,54 @@ func classifyPrompt(today time.Time) string {
 }
 
 func draftUserMessage(in DraftInput) string {
-	var facts strings.Builder
-	for _, f := range in.Facts {
-		fmt.Fprintf(&facts, "- %s %s\n", f.Question, f.Answer)
+	var b strings.Builder
+	fmt.Fprintf(&b, "CATEGORY: %s\nTODAY: %s\nSTAFF: %s\n", in.Category, in.Today.Format("2 January 2006"), in.StaffName)
+	if ex := describeExtracted(in.Extracted); ex != "" {
+		fmt.Fprintf(&b, "WHAT WE UNDERSTOOD: %s\n", ex)
 	}
-	return fmt.Sprintf("CATEGORY: %s\nTODAY: %s\nSTAFF: %s\nFACTS:\n%s\nGUEST MESSAGE:\n%s",
-		in.Category, in.Today.Format("2 January 2006"), in.StaffName, facts.String(), in.Message)
+	b.WriteString("ROOMS:\n")
+	for _, r := range in.Rooms {
+		fmt.Fprintf(&b, "- %s (%s): %s. Fits %s. Amenities: %s. Plans: %s.\n", r.Name, strings.ToLower(r.Kind), r.Description, r.Fits,
+			strings.Join(r.Amenities, ", "), strings.Join(r.Plans, "; "))
+	}
+	b.WriteString("OFFERS:\n")
+	if len(in.Offers) == 0 {
+		b.WriteString("- none right now\n")
+	}
+	for _, o := range in.Offers {
+		fmt.Fprintf(&b, "- %s: %s. %s.\n", o.Code, o.Summary, o.Conditions)
+	}
+	b.WriteString("FACTS:\n")
+	for _, f := range in.Facts {
+		fmt.Fprintf(&b, "- %s %s\n", f.Question, f.Answer)
+	}
+	fmt.Fprintf(&b, "GUEST MESSAGE:\n%s", in.Message)
+	return b.String()
+}
+
+// describeExtracted tells the model what the classifier already pulled out, so it asks only
+// for what's missing.
+func describeExtracted(e Extracted) string {
+	var parts []string
+	if e.CheckIn != nil && e.CheckOut != nil {
+		parts = append(parts, fmt.Sprintf("stay %s to %s", e.CheckIn.Format("2 Jan 2006"), e.CheckOut.Format("2 Jan 2006")))
+	} else {
+		parts = append(parts, "dates not given")
+	}
+	if e.Adults != nil {
+		parts = append(parts, fmt.Sprintf("%d adults", *e.Adults))
+	} else if e.GuestCount != nil {
+		parts = append(parts, fmt.Sprintf("%d guests", *e.GuestCount))
+	} else {
+		parts = append(parts, "party size not given")
+	}
+	if e.Children != nil && *e.Children > 0 {
+		parts = append(parts, fmt.Sprintf("%d children", *e.Children))
+	}
+	if e.Rooms != nil {
+		parts = append(parts, fmt.Sprintf("%d rooms", *e.Rooms))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // classifySchema is Gemini's response schema (OpenAPI subset).

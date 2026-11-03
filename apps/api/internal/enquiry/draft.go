@@ -91,8 +91,16 @@ func (s *Service) writeProse(ctx context.Context, q querier, message, senderName
 		if err != nil {
 			return prose{}, err
 		}
+		rooms, err := roomsFor(ctx, q)
+		if err != nil {
+			return prose{}, err
+		}
+		offers, err := offersFor(ctx, q, s.today())
+		if err != nil {
+			return prose{}, err
+		}
 		text, derr := s.provider.Draft(ctx, ai.DraftInput{Message: ai.Redact(message, senderName), Category: category,
-			Extracted: ex, Facts: facts, StaffName: staffLabel(staff), Today: s.today()})
+			Extracted: ex, Facts: facts, Rooms: rooms, Offers: offers, StaffName: staffLabel(staff), Today: s.today()})
 		if derr == nil {
 			p.template, p.flag = ai.Guard(text)
 		} else if errors.Is(derr, context.Canceled) {
@@ -255,6 +263,70 @@ func factsFor(ctx context.Context, tx querier) ([]ai.Fact, error) {
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ai.Fact, error) {
 		var f ai.Fact
 		return f, r.Scan(&f.Question, &f.Answer)
+	})
+}
+
+// roomsFor describes every room type on sale, with its plans, for the draft. No prices.
+func roomsFor(ctx context.Context, q querier) ([]ai.RoomFact, error) {
+	rows, err := q.Query(ctx, `SELECT rt.name, rt.kind, rt.size_sqm, rt.bed, rt.view, rt.base_occupancy, rt.max_adults, rt.max_children,
+			rt.amenities,
+			coalesce((SELECT array_agg(rp.name || CASE WHEN rp.refundable THEN ' (' || rp.cancellation_policy || ')' ELSE ' (non-refundable)' END
+				|| CASE WHEN rp.min_nights > 1 THEN ', min ' || rp.min_nights || ' nights' ELSE '' END ORDER BY rp.sort)
+				FROM rate_plans rp WHERE rp.room_type_id = rt.id AND rp.is_active), '{}')
+		FROM room_types rt WHERE rt.is_active ORDER BY rt.sort`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ai.RoomFact, error) {
+		var f ai.RoomFact
+		var size, base, maxAdults, maxChildren int
+		var bed, view string
+		if err := r.Scan(&f.Name, &f.Kind, &size, &bed, &view, &base, &maxAdults, &maxChildren, &f.Amenities, &f.Plans); err != nil {
+			return f, err
+		}
+		f.Description = fmt.Sprintf("%d sq m, %s bed, %s view", size, bed, view)
+		f.Fits = fmt.Sprintf("%d adults included, up to %d adults and %d children", base, maxAdults, maxChildren)
+		return f, nil
+	})
+}
+
+// offersFor lists offers a guest can book today, with their conditions. Fixed-amount offers
+// don't state the amount: money in the model's words is stripped, and totals come from the quote.
+func offersFor(ctx context.Context, q querier, today time.Time) ([]ai.OfferFact, error) {
+	rows, err := q.Query(ctx, `SELECT p.code, p.type, p.value, p.stay_from, p.stay_to, p.book_to, p.min_nights,
+			coalesce((SELECT string_agg(rt.name, ', ' ORDER BY rt.sort) FROM room_types rt WHERE rt.id = ANY(p.room_type_ids)), '')
+		FROM promo_codes p
+		WHERE p.is_active AND p.book_from <= $1 AND p.book_to >= $1 AND p.stay_to >= $1
+		  AND (p.max_uses IS NULL OR p.used_count < p.max_uses)
+		ORDER BY p.stay_from, p.code`, today)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ai.OfferFact, error) {
+		var o ai.OfferFact
+		var kind string
+		var value int64
+		var stayFrom, stayTo, bookTo time.Time
+		var minNights int
+		var rooms string
+		if err := r.Scan(&o.Code, &kind, &value, &stayFrom, &stayTo, &bookTo, &minNights, &rooms); err != nil {
+			return o, err
+		}
+		o.Summary = "money off the stay"
+		if kind == offerPercent {
+			o.Summary = fmt.Sprintf("%d%% off", value/bpsPerPercent)
+		}
+		cond := fmt.Sprintf("Stays %s to %s, book by %s", stayFrom.Format("2 Jan 2006"), stayTo.Format("2 Jan 2006"), bookTo.Format("2 Jan 2006"))
+		if minNights > 1 {
+			cond += fmt.Sprintf(", minimum %d nights", minNights)
+		}
+		if rooms != "" {
+			cond += ", " + rooms + " only"
+		} else {
+			cond += ", every room"
+		}
+		o.Conditions = cond
+		return o, nil
 	})
 }
 
