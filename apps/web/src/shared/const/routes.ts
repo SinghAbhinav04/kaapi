@@ -21,5 +21,6 @@ export const ROUTES = {
     outbox: '/staff/outbox',
     dashboard: '/staff/dashboard',
     analytics: '/staff/analytics',
+    team: '/staff/team',
   },
 } as const;

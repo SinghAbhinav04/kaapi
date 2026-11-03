@@ -22,9 +22,10 @@ import (
 	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"kaapi/api/internal/api"
+	"kaapi/api/internal/app"
 	"kaapi/api/internal/platform/config"
 	"kaapi/api/internal/platform/httpx"
+	"kaapi/api/internal/transport/httpapi"
 	"kaapi/api/tests/testdb"
 )
 
@@ -44,7 +45,7 @@ func TestConfig() config.Config {
 }
 
 type Server struct {
-	API    *api.API
+	App    *app.App
 	t      *testing.T
 	Ctx    context.Context
 	Pool   *pgxpool.Pool
@@ -61,10 +62,10 @@ func NewWith(t *testing.T, cfg config.Config) *Server {
 	t.Helper()
 	ctx, pool := testdb.Seeded(t)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	app := api.New(cfg, log, pool, Today)
-	srv := httptest.NewServer(app.Router())
+	a := app.New(cfg, log, pool, Today)
+	srv := httptest.NewServer(httpapi.New(a).Router())
 	t.Cleanup(srv.Close)
-	s := &Server{API: app, t: t, Ctx: ctx, Pool: pool, URL: srv.URL, router: loadContract(t)}
+	s := &Server{App: a, t: t, Ctx: ctx, Pool: pool, URL: srv.URL, router: loadContract(t)}
 	return s.NewSession()
 }
 
@@ -129,6 +130,23 @@ func (s *Server) NoRedirects() *Server {
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	c.client = &client
 	return &c
+}
+
+// Stream opens a long-lived GET (server-sent events) with this session's cookies. The caller
+// reads and closes the body; it isn't validated against the contract like Do.
+func (s *Server) Stream(path string) *http.Response {
+	s.t.Helper()
+	req, err := http.NewRequestWithContext(s.Ctx, http.MethodGet, s.URL+path, nil)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	client := *s.client
+	client.Timeout = 0
+	res, err := client.Do(req)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	return res
 }
 
 // Do sends a request and validates the response against the contract. Routes that aren't

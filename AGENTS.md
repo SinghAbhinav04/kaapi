@@ -69,7 +69,9 @@ labelled in the TDD, and only facts from the problem statement may be used.
 
 ```
 cmd/
-  api/      HTTP server: config → migrate → serve; booking sweep + enquiry worker goroutines
+  api/      HTTP server: config → migrate → serve (runs the worker jobs too when WORKER_IN_PROCESS, the dev default)
+  worker/   background jobs: AI queue, Gmail poll, booking sweep, retention; /healthz on PORT
+  gmail-auth/ one-time Gmail consent → saves GMAIL_REFRESH_TOKEN to .env (-save stores an existing connection)
   seed/     migrate + load seed/data/*.json (flags: -reset)
   eval/     AI evaluation over the 60 labelled enquiries → docs/ai-eval-report.md
   devdb/    throwaway embedded Postgres 17 on :54329 (+ kaapi_test db) — tests only
@@ -96,12 +98,16 @@ internal/
   retention/  archive / anonymise / purge sweep (batched, SKIP LOCKED, audit-logged)
   analytics/  read-only revenue, pace, mix and on-the-books report
   fx/         ECB rates via Frankfurter, stored as INR-per-unit micros; shown only while fresh (48 h)
-  api/        HTTP layer: router (gateway), handlers, DTOs (types.go), mappers
+  app/        composition root: builds every service once (cmd/api, cmd/worker and tests all use it) + RunWorkers
+  transport/httpapi/  HTTP layer: router (gateway), handlers, DTOs (types.go), mappers, SSE inbox stream
+  access/     RBAC: roles, grants, staff accounts, cached per-request permission lookup
   seed/       fixture loader + seeder (computes derived values, checks invariants)
 migrations/   0001_init.sql (24 tables), 0002_lock_down_data_api.sql (RLS on every table),
               0003_retention.sql (bookings.archived_at / anonymised_at), 0004_gmail.sql (integrations table,
-              enquiry external ids, draft send claim, outbox status + STAFF_MESSAGE), 0005_fx.sql (fx_rates,
-              bookings.display_currency + rate snapshot). New tables must ENABLE RLS.
+              enquiry external ids, draft send claim, outbox status + STAFF_MESSAGE), 0005_query_indexes.sql,
+              0006_inbox_notify.sql, 0007_rbac.sql, 0008_analytics_covering_index.sql, 0009_fx.sql (fx_rates,
+              bookings.display_currency + rate snapshot). New tables must ENABLE RLS. Two branches must never
+              add the same migration number: goose records versions, so the second 0005 is silently skipped.
 seed/data/    JSON fixtures: property, room_types, rate_plans, rates_rules, promos,
               users, enquiries (60, labelled), bookings (40)
 tests/
@@ -111,7 +117,8 @@ tests/
 ```
 
 ### Backend conventions (follow these)
-- **Files per package:** `service.go` (the package's main entry point, with constructor and methods), `types.go` (structs), `errors.go` (sentinel and typed errors), plus one file per concern (`hold.go`, `quote.go`, …). No barrel files. Interfaces are defined where they are consumed.
+- **Files per package:** `service.go` (rules and transaction boundaries, no SQL), `store.go` (every query, as methods taking a `db.Querier` so the service decides pool vs transaction), `types.go`, `errors.go`, plus one file per concern. No barrel files. Interfaces are defined where they are consumed. Done for outbox, retention, analytics, catalog, admin, access; auth, booking, inventory, enquiry and gmail still mix SQL into services and are next.
+- **Queries:** aggregate in Postgres and return totals, never rows to sum in Go. Select only the columns needed (the inbox reads `left(raw_text, 400)`). Any new hot query gets an `EXPLAIN ANALYZE` on production-scale data first; indexes go in migrations as `CREATE INDEX CONCURRENTLY` (`-- +goose NO TRANSACTION`). Avoid `ORDER BY <expression>` on large sets (split into index-ordered halves, as the inbox list does).
 - **Shared types live in `internal/domain`** (`Stay`, `Party`, every enum). Never pass raw state strings; use the typed enums, which have `Valid()`.
 - **Imports** are short module paths: `kaapi/api/internal/...`.
 - **Errors:** domain errors implement `AppError() *apperr.Error`, or are `apperr.New(code, msg)` sentinels. Handlers just `return err`, and one place (`httpx.Handle` → `WriteError`) maps every error to the envelope `{error:{code,message,details,request_id}}`. Messages are written for people. Causes are never leaked. Validation details go in `details.fields` with keys like `guest.email`.
@@ -170,9 +177,20 @@ Each run writes one `audit_logs` row with the counts.
 
 ### How currencies work (`fx/` + `features/currency`)
 - **Prices and charges are INR, always.** The quote, payment, GST and invoice never change; another currency is only an estimate printed beside the INR figure, marked "≈" with "you're charged in INR".
-- Rates: `RefreshFX` fetches the ECB rates from Frankfurter at start-up and every 6 h (EUR base, crossed to INR with exact rationals), stored as `inr_per_unit_micros` (INR per unit × 1,000,000, no floats). `GET /v1/fx-rates` returns only rates fetched in the last 48 h, so a broken feed shows INR only. ECB publishes no AED. A `-reset` keeps fetched rates (like the Gmail connection).
+- Rates: the worker (`app.RunWorkers`) fetches the ECB rates from Frankfurter at start-up and every 6 h (EUR base, crossed to INR with exact rationals), stored as `inr_per_unit_micros` (INR per unit × 1,000,000, no floats). `GET /v1/fx-rates` returns only rates fetched in the last 48 h, so a broken feed shows INR only. ECB publishes no AED. A `-reset` keeps fetched rates (like the Gmail connection).
 - Which currency: the `kaapi_ccy` cookie. `src/proxy.ts` sets it on a first visit from `x-vercel-ip-country` (`features/currency/geo.ts` maps country → currency, India and unlisted countries → INR). Without the header the page guesses from the browser's time zone. The header and room-page switcher override both. The server renders INR only; the estimate appears after hydration (`useSyncExternalStore`), so there's no mismatch.
 - On booking, `display_currency` is sent and the server snapshots *its own* fresh rate (`fx.Snapshot`), never one from the client. Analytics groups confirmed bookings by it (`by_display_currency`; none recorded = INR).
+
+### Access control (`access/`, migration 0007)
+- Tables: `permissions` (catalogue with labels and groups), `roles` (name, description, team, `is_system`), `role_permissions`. `users.role_id` points at the role; a trigger keeps `users.role` (the team) in step. The team still drives lane assignment, GM alerts and signature titles; permissions drive everything a person can see or do.
+- Administrator and Guest are system roles (fixed). The Administrator holds every permission in code, including future ones. Built-in GM / Reservations / Sales roles start with the grants the code used to hard-code and are editable.
+- Every request checks `access.Service.Can` (30 s cache per process, cleared at once by the process making a change). Deactivating someone cuts access immediately even with a live token; role changes, deactivation and password resets also revoke their sessions. The last active Administrator can't be removed and nobody can lock themselves out.
+- Console: `/staff/team` (permission `users:manage`). A test keeps the permissions table and `auth.KnownPermissions()` identical.
+
+### Live inbox
+- Migration 0006: a trigger sends the enquiry's ref with `pg_notify('inbox_changes', …)` on every enquiry or draft change, from any process. The API holds one LISTEN connection while any inbox page is open and streams refs as server-sent events (`GET /v1/staff/inbox/stream`); the page refetches. Streams bypass the request timeout and clear the write deadline.
+- Gmail is checked every `GMAIL_POLL_SECONDS` (5). "Sync mail" (`POST /v1/staff/integrations/gmail/sync`) catches up on everything since the last successful sync; Gmail message ids are the duplicate guard. Real push (Gmail → Pub/Sub → webhook) needs a public URL and comes with deployment.
+- Gmail connects once from the terminal (`go run ./cmd/gmail-auth`) and stays connected via `GMAIL_REFRESH_TOKEN`; there is no connect button in the UI. Google's OAuth client lists only the site root as redirect, so `apps/web/src/proxy.ts` forwards `/?code&state` to the API callback.
 
 ### Auth model
 - **Access token:** JWE (dir + A256GCM), 15 minutes. Claims hold only user, role and session.
@@ -288,6 +306,7 @@ Segmented, Stepper, Skeleton, EmptyState/ErrorState and Logo.
 - **Local Postgres without devdb** (e.g. a network that blocks devdb's binary download): `brew install postgresql@17 && brew services start postgresql@17`, create role `kaapi`/`kaapi` and databases `kaapi` + `kaapi_test`, then use `postgres://kaapi:kaapi@127.0.0.1:5432/...`. Override `DATABASE_URL` on the command line (real env beats `.env`). On corporate Macs `psql` can hang on Kerberos: add `gssencmode=disable` (pgx is unaffected).
 - **No IPv6?** The Supabase direct host is unreachable; use the session pooler URL instead.
 - **Env names** (values never in git; see `.env.example`):
+  - API (new): `WORKER_IN_PROCESS`, `GMAIL_REFRESH_TOKEN`; `GMAIL_POLL_SECONDS` defaults to 5.
   - API: `DATABASE_URL`, `BROWSER_API_PREFIX` (optional, default `/api`), `FX_API_BASE_URL` (optional), `JWE_SECRET` (32+ bytes), `MOCK_PAYMENT_WEBHOOK_SECRET` (32+ bytes), `APP_ORIGIN`, `APP_ENV`, `DEMO_MODE`, `SEED_DEMO_PASSWORD`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`, `GEMINI_API_KEY`, `GEMINI_MODELS`, `GEMINI_RPM`, `GROQ_API_KEY`, `GROQ_MODELS`, `GROQ_RPM`, `SENTRY_DSN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_REDIRECT_URL` (optional), `GMAIL_POLL_SECONDS` (optional), `PORT` (default 8080)
   - Web: `API_ORIGIN` (where `/api/*` is proxied; default `http://localhost:8080`), `NEXT_PUBLIC_APP_URL`
 - **Demo accounts:**
@@ -339,7 +358,9 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 - Staff-written replies and follow-ups; "New message" compose.
 - Data retention and deletion (`internal/retention`, privacy page updated). Policy from Abhinav: archive, anonymise, keep for the tax window.
 - Analytics tab.
-- Gmail integration (connect, poll, threaded send). Needs the redirect URI registered in Google Cloud and the mailbox added as a test user.
+- Gmail integration: always connected (resorts.kaapi@gmail.com locally), 5 s check, catch-up sync, threaded send, drafts that know rooms and offers.
+- Production layout: composition root, separate worker, transport layer, repositories for six packages.
+- Query audit at production scale with indexes (0005, 0008); live inbox (0006); database-backed RBAC with an admin console (0007).
 - Currency estimates for foreign guests, kept per booking for analytics (3 Nov).
 - Fixed: web token refresh never worked through the `/api` proxy (refresh cookie path), and parallel tabs could revoke each other's sessions.
 
@@ -352,6 +373,7 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
    - Delete-my-data requests from guests (OTP-verified, staff queue, export), see `docs/notes/data-retention.md`.
    - Inbound replies on an existing Gmail thread become a new enquiry; linking them to the original is a next step.
   - Sessions slide forever: each refresh grants 30 more days, with no absolute cap. Consider one (e.g. 12 h for ADMIN).
+   - Finish the store.go split for auth, booking, inventory, enquiry and gmail.
 3. Capacitor Android shell (`server.url` → production site; Bearer tokens in Preferences).
 4. Deploy:
    - API: Dockerfile, Cloud Run `asia-south1`, Supabase session pooler. The retention sweep and Gmail poller are in-process tickers, so either keep `min-instances=1` or have Cloud Scheduler call `POST /v1/staff/retention/run` and `/integrations/gmail/sync`.

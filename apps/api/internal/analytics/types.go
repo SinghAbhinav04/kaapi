@@ -54,6 +54,8 @@ type KPIs struct {
 	AvgBookingValuePaise  int64
 	PreviousRevenuePaise  int64 // same-length window just before From, for the trend
 	PreviousBookingsCount int
+
+	cancellations int // raw count behind CancellationRate
 }
 
 type Day struct {

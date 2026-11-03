@@ -46,6 +46,8 @@ type DraftInput struct {
 	Category  domain.Category
 	Extracted Extracted
 	Facts     []Fact
+	Rooms     []RoomFact  // what each room is like and who fits; never prices
+	Offers    []OfferFact // offers a guest can book today
 	StaffName string
 	Today     time.Time
 }
@@ -53,6 +55,26 @@ type DraftInput struct {
 type Fact struct {
 	Question string
 	Answer   string
+}
+
+// RoomFact describes a room type for the draft: size, beds, who fits and the plans, so the
+// reply can recommend rooms and answer questions about them. No prices.
+type RoomFact struct {
+	Name        string
+	Kind        string // ROOM or VILLA
+	Description string // size, bed, view
+	Fits        string // e.g. "2 adults included, up to 3 adults and 1 child"
+	Amenities   []string
+	Plans       []string // e.g. "Breakfast included (free cancellation up to 7 days before)"
+}
+
+// OfferFact is a live offer: its code and conditions. Percentage offers say the percentage
+// (it comes from the database, not the model); fixed-amount offers deliberately don't, since
+// money in the model's words is stripped. Totals with the offer come from {{QUOTE}} and the website.
+type OfferFact struct {
+	Code       string
+	Summary    string // e.g. "10% off" or "money off"
+	Conditions string // stay window, book-by date, minimum nights, rooms
 }
 
 // Provider is an LLM that can classify and draft. Gemini implements it; tests use a fake.
@@ -72,7 +94,7 @@ const (
 
 // Tuning. The unsorted threshold is chosen from the evaluation report (cmd/eval).
 const (
-	PromptVersion      = "2026-11-03.2"
+	PromptVersion      = "2026-11-03.3" // drafts see rooms and current offers
 	UnsortedBelow      = 0.6
 	maxMessageRunes    = 4000
 	maxGuests          = 2000

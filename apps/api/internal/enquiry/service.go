@@ -124,6 +124,13 @@ func (s *Service) Intake(ctx context.Context, in IntakeInput) (string, error) {
 	return ref, nil
 }
 
+// HasExternal reports whether a provider's message (a Gmail id) is already an enquiry.
+func (s *Service) HasExternal(ctx context.Context, externalID string) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM enquiries WHERE external_id = $1)`, externalID).Scan(&ok)
+	return ok, err
+}
+
 // Wake nudges the worker to process the queue now rather than at its next tick.
 func (s *Service) Wake() {
 	select {

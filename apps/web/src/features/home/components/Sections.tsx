@@ -3,6 +3,7 @@ import Image from 'next/image';
 import { ButtonLink } from '@/shared/ui';
 
 import { ENQUIRE_EVENT_HREF, ESTATE_DAY, ESTATE_IMAGES, EVENTS_IMAGE, GETTING_HERE, VENUES, WHY_DIRECT } from '../const';
+import { MapCard } from './MapCard';
 import styles from './Sections.module.css';
 
 export function WhyDirect() {
@@ -74,8 +75,8 @@ export function EventsSection() {
             Up to 400 guests on the <span className="accent">Estate Lawn.</span>
           </h2>
           <p className={styles.eventsLead}>
-            Tell us your dates, guest count and budget. The right person on our team replies with availability and a quote, usually within 30 minutes
-            during working hours.
+            Tell us your dates, guest count and budget. The right person on our team replies with availability and a quote, usually within 30 minutes during
+            working hours.
           </p>
         </div>
         <div className={`${styles.venues} reveal`}>
@@ -103,14 +104,17 @@ export function GettingHere() {
         <h2 id="getting-title" className={`${styles.heading} reveal`}>
           Getting <span className="accent">here</span>
         </h2>
-        <ol className={styles.route}>
-          {GETTING_HERE.map((leg) => (
-            <li key={leg.distance} className={`${styles.leg} reveal`}>
-              <span className={styles.distance}>{leg.distance}</span>
-              <span>{leg.text}</span>
-            </li>
-          ))}
-        </ol>
+        <div className={styles.gettingBody}>
+          <MapCard />
+          <ol className={styles.route}>
+            {GETTING_HERE.map((leg) => (
+              <li key={leg.distance} className={`${styles.leg} reveal`}>
+                <span className={styles.distance}>{leg.distance}</span>
+                <span>{leg.text}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
       </div>
     </section>
   );

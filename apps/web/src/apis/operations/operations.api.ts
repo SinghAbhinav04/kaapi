@@ -9,9 +9,6 @@ export function createOperationsApi(client: HttpClient): OperationsApi {
     dashboard: (signal) => client.get(OPERATIONS_PATHS.dashboard, { signal }),
     compose: (body) => client.post(OPERATIONS_PATHS.messages, body),
     gmailStatus: (signal) => client.get(OPERATIONS_PATHS.gmail, { signal }),
-    gmailConnect: () => client.post(OPERATIONS_PATHS.gmailConnect),
-    gmailSync: () => client.post(OPERATIONS_PATHS.gmailSync),
-    gmailDisconnect: () => client.delete(OPERATIONS_PATHS.gmail),
   };
 }
 

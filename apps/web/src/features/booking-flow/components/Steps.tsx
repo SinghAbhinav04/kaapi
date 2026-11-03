@@ -18,7 +18,7 @@ export function Steps({ current, roomHref }: StepsProps) {
         const done = step < current;
         return (
           <li key={label} aria-current={step === current ? 'step' : undefined} className={styles.step} data-state={done ? 'done' : step === current ? 'current' : 'next'}>
-            <span className="mono">{done ? '✓' : step}</span>
+            <span className="mono">{step}</span>
             {done && step === 1 && roomHref ? <Link href={roomHref}>{label}</Link> : label}
           </li>
         );

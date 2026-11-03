@@ -2,7 +2,7 @@ import type { Lane } from '@/apis/enquiries';
 import type { Permission } from '@/apis/auth';
 import { ROUTES } from '@/shared/const';
 
-export type NavIcon = 'inbox' | 'rates' | 'bookings' | 'outbox' | 'dashboard' | 'analytics';
+export type NavIcon = 'inbox' | 'rates' | 'bookings' | 'outbox' | 'dashboard' | 'analytics' | 'team';
 
 export const STAFF_NAV: readonly { href: string; label: string; icon: NavIcon; permission: Permission }[] = [
   { href: ROUTES.staff.inbox, label: 'Inbox', icon: 'inbox', permission: 'enquiries:read' },
@@ -11,6 +11,7 @@ export const STAFF_NAV: readonly { href: string; label: string; icon: NavIcon; p
   { href: ROUTES.staff.outbox, label: 'Outbox', icon: 'outbox', permission: 'outbox:read' },
   { href: ROUTES.staff.dashboard, label: 'Dashboard', icon: 'dashboard', permission: 'dashboard:read' },
   { href: ROUTES.staff.analytics, label: 'Analytics', icon: 'analytics', permission: 'analytics:read' },
+  { href: ROUTES.staff.team, label: 'Team & access', icon: 'team', permission: 'users:manage' },
 ];
 
 /** Lane order and colours in the sidebar (from the Inbox board). */

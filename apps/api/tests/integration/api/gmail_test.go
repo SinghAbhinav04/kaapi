@@ -3,6 +3,7 @@ package api_test
 import (
 	"encoding/base64"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,9 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"kaapi/api/internal/api"
+	"kaapi/api/internal/gmail"
 	"kaapi/api/internal/platform/config"
+	api "kaapi/api/internal/transport/httpapi"
 	"kaapi/api/tests/apitest"
+	"kaapi/api/tests/testdb"
 )
 
 // fakeGoogle plays Google's OAuth and Gmail endpoints: one guest email waits in the inbox.
@@ -56,6 +59,13 @@ func (f *fakeGoogle) handler(t *testing.T) http.Handler {
 			map[string]any{"messagesAdded": []any{map[string]any{"message": map[string]string{"id": "m1"}}}},
 			map[string]any{"messagesAdded": []any{map[string]any{"message": map[string]string{"id": "own"}}}},
 		}})
+	})
+	// The catch-up search returns the same messages history already delivered: neither may duplicate.
+	mux.HandleFunc("GET /gmail/v1/users/me/messages", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Query().Get("q"), "after:") {
+			t.Errorf("catch-up search without a start: %q", r.URL.Query().Get("q"))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"messages": []map[string]string{{"id": "m1"}, {"id": "own"}}})
 	})
 	mux.HandleFunc("GET /gmail/v1/users/me/messages/{id}", func(w http.ResponseWriter, r *http.Request) {
 		from, labels := "Asha Rao <asha@example.test>", []string{"INBOX", "UNREAD"}
@@ -208,5 +218,30 @@ func TestComposeWithoutGmailIsSimulated(t *testing.T) {
 	}
 	if r := s.Do(http.MethodPost, "/v1/staff/integrations/gmail/connect", nil, nil); r.Status != http.StatusForbidden {
 		t.Fatalf("sales connect: %d, want 403", r.Status)
+	}
+}
+
+// With GMAIL_REFRESH_TOKEN set, the server connects itself on start: no button, and a
+// re-seed or fresh database comes back connected.
+func TestGmailBootstrapFromEnvironment(t *testing.T) {
+	fake := &fakeGoogle{}
+	google := httptest.NewServer(fake.handler(t))
+	defer google.Close()
+	ctx, pool := testdb.Seeded(t)
+	cfg := config.Gmail{ClientID: "client", ClientSecret: "secret", RedirectURL: "http://localhost:3000", PollEvery: time.Hour,
+		RefreshToken: "refresh-1", OAuthBaseURL: google.URL, APIBaseURL: google.URL}
+	svc := gmail.NewService(pool, cfg, apitest.TestConfig().JWESecret, time.Now, slog.New(slog.DiscardHandler))
+
+	for range 2 { // the second start finds the same grant and leaves the row alone
+		if err := svc.Bootstrap(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := svc.Status(ctx)
+	if err != nil || !st.Connected || st.AccountEmail != "stay@kaapiestate.test" {
+		t.Fatalf("status %+v err %v", st, err)
+	}
+	if token, _, err := svc.RefreshToken(ctx); err != nil || token != "refresh-1" {
+		t.Fatalf("stored token %q err %v", token, err)
 	}
 }

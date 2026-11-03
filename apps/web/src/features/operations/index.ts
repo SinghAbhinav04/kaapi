@@ -1,4 +1,4 @@
 export { ComposeDialog } from './components/ComposeDialog';
 export { DashboardPage } from './components/DashboardPage';
-export { GmailBar } from './components/GmailBar';
+export { MailActions } from './components/MailActions';
 export { OutboxPage } from './components/OutboxPage';

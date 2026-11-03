@@ -1,4 +1,4 @@
-package api
+package httpapi
 
 import (
 	"context"
@@ -91,11 +91,25 @@ func (a *API) requireAuth(next http.Handler) http.Handler {
 	})
 }
 
-// requirePermission lets a route through only for roles granted the permission.
+// can reports whether the caller holds a permission, as the database grants it now (a
+// short cache in package access). Anonymous callers hold none.
+func (a *API) can(r *http.Request, p auth.Permission) bool {
+	who := principal(r.Context())
+	if !who.IsAuthenticated() {
+		return false
+	}
+	ok, err := a.access.Can(r.Context(), who.UserID, p)
+	if err != nil {
+		a.log.ErrorContext(r.Context(), "permission lookup failed", "err", err)
+	}
+	return ok
+}
+
+// requirePermission lets a route through only for people whose role grants the permission.
 func (a *API) requirePermission(p auth.Permission) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return a.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !auth.Can(principal(r.Context()).Role, p) {
+			if !a.can(r, p) {
 				httpx.WriteError(a.log, w, r, auth.ErrForbidden)
 				return
 			}

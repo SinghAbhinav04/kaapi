@@ -59,6 +59,10 @@ func Run(ctx context.Context, pool *pgxpool.Pool, fx *Fixtures, opt Options) (Su
 				otp_codes, sessions, rate_limit_buckets, idempotency_keys CASCADE`); err != nil {
 				return err
 			}
+			// Roles the administrator created go too; built-in roles and their grants stay.
+			if _, err := tx.Exec(ctx, `DELETE FROM roles WHERE NOT is_system AND key NOT IN ('GM', 'RESERVATIONS', 'SALES')`); err != nil {
+				return err
+			}
 		} else {
 			var n int
 			if err := tx.QueryRow(ctx, `SELECT count(*) FROM room_types`).Scan(&n); err != nil {

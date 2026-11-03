@@ -1,4 +1,4 @@
-package api
+package httpapi
 
 import (
 	"net/http"
@@ -8,14 +8,22 @@ import (
 	"kaapi/api/internal/platform/httpx"
 )
 
-func userDTO(u auth.User) UserDTO {
-	return UserDTO{ID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role, Permissions: auth.PermissionsOf(u.Role)}
+// userDTO includes what the person may do, so the client can hide what they can't use.
+func (a *API) userDTO(r *http.Request, u auth.User) UserDTO {
+	perms, err := a.access.Permissions(r.Context(), u.ID)
+	if err != nil {
+		a.log.ErrorContext(r.Context(), "permission lookup failed", "err", err)
+	}
+	if perms == nil {
+		perms = []auth.Permission{}
+	}
+	return UserDTO{ID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role, Permissions: perms}
 }
 
 // signedIn writes the user, and either sets httpOnly cookies (web) or returns the tokens
 // in the body (native app, which keeps them in secure storage).
 func (a *API) signedIn(w http.ResponseWriter, r *http.Request, u auth.User, t auth.Tokens) {
-	out := AuthResponse{User: userDTO(u)}
+	out := AuthResponse{User: a.userDTO(r, u)}
 	if isNative(r) {
 		out.AccessToken, out.AccessExpiresAt, out.RefreshToken = &t.Access, &t.AccessExpiresAt, &t.Refresh
 	} else {
@@ -103,7 +111,7 @@ func (a *API) me(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]UserDTO{"user": userDTO(u)})
+	httpx.WriteJSON(w, http.StatusOK, map[string]UserDTO{"user": a.userDTO(r, u)})
 	return nil
 }
 

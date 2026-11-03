@@ -57,7 +57,7 @@ export function EnquiryList({ lane, list, all, open, search, onSearch, onOpen, o
             </strong>
             {complaints.oldest && `Oldest waiting ${formatAge(complaints.oldest)}`}
           </span>
-          <span className={styles.alertGo}>Open →</span>
+          <span className={styles.alertGo}>Open</span>
         </button>
       )}
 

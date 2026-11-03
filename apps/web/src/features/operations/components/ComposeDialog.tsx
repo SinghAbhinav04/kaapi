@@ -55,7 +55,7 @@ export function ComposeDialog({ open, onClose }: { open: boolean; onClose: () =>
         <TextField label="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} error={fieldError('subject')} maxLength={200} required />
         <TextAreaField label="Message" rows={8} value={body} onChange={(e) => setBody(e.target.value)} error={fieldError('body')} maxLength={4000} required />
         {compose.isError && Object.keys(compose.error.fieldErrors).length === 0 && (
-          <p className={styles.barError} role="alert">
+          <p className={styles.failure} role="alert">
             {compose.error.message}
           </p>
         )}

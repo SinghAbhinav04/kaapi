@@ -7,10 +7,12 @@ export {
   useEnquiry,
   useInbox,
   useInboundMessage,
+  useInboxStream,
   useRetryAi,
   useRouteEnquiry,
   useSendReply,
   useSetEnquiryStatus,
+  useSyncMail,
 } from './hooks';
 export type { EnquiriesApi } from './interface';
 export { enquiryQueries } from './queries';

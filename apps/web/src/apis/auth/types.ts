@@ -27,4 +27,5 @@ export type Permission =
   | 'dashboard:read'
   | 'retention:run'
   | 'integrations:manage'
+  | 'users:manage'
   | 'analytics:read';

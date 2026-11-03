@@ -9,7 +9,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
+	"time"
 )
 
 // google talks to Google's OAuth and Gmail REST endpoints with plain net/http.
@@ -99,6 +101,7 @@ type messageList struct {
 	Messages []struct {
 		ID string `json:"id"`
 	} `json:"messages"`
+	NextPageToken string `json:"nextPageToken"`
 }
 
 type part struct {
@@ -150,14 +153,26 @@ func (g *google) history(ctx context.Context, access, since string) (ids []strin
 	}
 }
 
-func (g *google) recent(ctx context.Context, access string) ([]string, error) {
-	var l messageList
-	err := g.get(ctx, access, "/gmail/v1/users/me/messages", url.Values{"q": {"in:inbox newer_than:1d"}, "maxResults": {fmt.Sprint(maxPerPoll)}}, &l)
-	ids := make([]string, 0, len(l.Messages))
-	for i := len(l.Messages) - 1; i >= 0; i-- { // oldest first, like history
-		ids = append(ids, l.Messages[i].ID)
+// since lists inbox messages that arrived after t (minus our own sent mail), oldest first,
+// following every page. Gmail's search takes "after:" as Unix seconds.
+func (g *google) since(ctx context.Context, access string, t time.Time) ([]string, error) {
+	q := url.Values{"q": {fmt.Sprintf("in:inbox -from:me after:%d", t.Unix())}, "maxResults": {fmt.Sprint(listPageSize)}}
+	var ids []string
+	for {
+		var l messageList
+		if err := g.get(ctx, access, "/gmail/v1/users/me/messages", q, &l); err != nil {
+			return nil, err
+		}
+		for _, m := range l.Messages {
+			ids = append(ids, m.ID)
+		}
+		if l.NextPageToken == "" || len(ids) >= maxCatchUp {
+			break
+		}
+		q.Set("pageToken", l.NextPageToken)
 	}
-	return ids, err
+	slices.Reverse(ids) // Gmail lists newest first; import in arrival order
+	return ids, nil
 }
 
 func (g *google) message(ctx context.Context, access, id string) (message, error) {

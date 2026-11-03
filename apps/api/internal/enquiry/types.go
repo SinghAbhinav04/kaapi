@@ -108,7 +108,7 @@ type Event struct {
 }
 
 type ListFilter struct {
-	Lanes  []domain.Lane // empty: every lane
+	Lanes  []domain.Lane // nil: every lane; empty: none
 	Status domain.EnquiryStatus
 	Query  string
 	Limit  int
@@ -135,18 +135,25 @@ type Stats struct {
 }
 
 const (
-	DefaultListLimit  = 100
-	MaxListLimit      = 300
-	snippetRunes      = 140
-	maxDraftRunes     = 4000
-	intakePerHour     = 5 // per sender, against spam floods
-	dedupeWindow      = 24 * time.Hour
-	firstRefNumber    = 4410
-	refAttempts       = 5
-	workerBatch       = 10
-	maxQuoteOptions   = 3
-	statsWindow       = 7 * 24 * time.Hour
-	defaultQuoteAdult = 2
+	DefaultListLimit   = 100
+	MaxListLimit       = 300
+	snippetRunes       = 140
+	snippetSourceChars = 400 // read this much of each message for the list's snippet
+	maxDraftRunes      = 4000
+	intakePerHour      = 5 // per sender, against spam floods
+	dedupeWindow       = 24 * time.Hour
+	firstRefNumber     = 4410
+	refAttempts        = 5
+	workerBatch        = 10
+	maxQuoteOptions    = 3
+	statsWindow        = 7 * 24 * time.Hour
+	defaultQuoteAdult  = 2
 	// sendClaimTTL: a delivery that crashed mid-flight frees its draft after this long.
 	sendClaimTTL = 2 * time.Minute
+)
+
+// Offer kinds as promo_codes stores them; a percentage is held in basis points.
+const (
+	offerPercent  = "PERCENT"
+	bpsPerPercent = 100
 )

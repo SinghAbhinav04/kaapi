@@ -35,12 +35,14 @@ const (
 	EnvDemoMode          = "DEMO_MODE"
 	EnvBrowserAPIPrefix  = "BROWSER_API_PREFIX" // where browsers reach the API; default /api (the web app's proxy)
 	EnvFXBaseURL         = "FX_API_BASE_URL"    // exchange rates; empty = Frankfurter (ECB). Tests point it at a fake
+	EnvWorkerInProcess   = "WORKER_IN_PROCESS"  // run background jobs inside cmd/api (default: on in development)
 
 	// Gmail: the inbox reads and replies from a real mailbox once an admin connects it.
 	EnvGoogleClientID     = "GOOGLE_CLIENT_ID"
 	EnvGoogleClientSecret = "GOOGLE_CLIENT_SECRET"
 	EnvGmailRedirectURL   = "GMAIL_REDIRECT_URL" // optional; default APP_ORIGIN + /api/v1/integrations/gmail/callback
 	EnvGmailPollSeconds   = "GMAIL_POLL_SECONDS"
+	EnvGmailRefreshToken  = "GMAIL_REFRESH_TOKEN"   // written by cmd/gmail-auth; keeps the mailbox connected on every start
 	EnvGoogleOAuthBaseURL = "GOOGLE_OAUTH_BASE_URL" // tests point these at a fake
 	EnvGmailAPIBaseURL    = "GMAIL_API_BASE_URL"
 )
@@ -78,6 +80,9 @@ type Config struct {
 	// here, so cookies scoped to a path must use the path the browser sees.
 	BrowserAPIPrefix string
 	FXBaseURL        string
+	// WorkerInProcess runs the background jobs inside the API process. Production runs
+	// cmd/worker separately so the API can scale to zero.
+	WorkerInProcess bool
 }
 
 func (c Config) IsProduction() bool { return c.Environment == EnvProduction }
@@ -102,6 +107,7 @@ func Load() (Config, error) {
 		c.BrowserAPIPrefix = strings.TrimRight(v, "/")
 	}
 	c.CookieSecure = get(EnvCookieSecure, strconv.FormatBool(c.IsProduction())) == "true"
+	c.WorkerInProcess = get(EnvWorkerInProcess, strconv.FormatBool(!c.IsProduction())) == "true"
 	for _, o := range strings.Split(os.Getenv(EnvNativeAppOrigins), ",") {
 		if o = strings.TrimSpace(o); o != "" {
 			c.NativeAppOrigins = append(c.NativeAppOrigins, o)
@@ -112,7 +118,7 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("%s must be a positive number of seconds", EnvRequestTimeoutSec)
 	}
 	c.RequestTimeout = time.Duration(secs) * time.Second
-	poll, err := strconv.Atoi(get(EnvGmailPollSeconds, "30"))
+	poll, err := strconv.Atoi(get(EnvGmailPollSeconds, "5"))
 	if err != nil || poll < 5 {
 		return c, fmt.Errorf("%s must be 5 seconds or more", EnvGmailPollSeconds)
 	}
@@ -121,6 +127,7 @@ func Load() (Config, error) {
 		ClientSecret: os.Getenv(EnvGoogleClientSecret),
 		RedirectURL:  get(EnvGmailRedirectURL, c.AppOrigin+"/api/v1/integrations/gmail/callback"),
 		PollEvery:    time.Duration(poll) * time.Second,
+		RefreshToken: os.Getenv(EnvGmailRefreshToken),
 		OAuthBaseURL: os.Getenv(EnvGoogleOAuthBaseURL),
 		APIBaseURL:   os.Getenv(EnvGmailAPIBaseURL),
 	}
@@ -164,6 +171,7 @@ type Gmail struct {
 	ClientSecret string
 	RedirectURL  string
 	PollEvery    time.Duration
+	RefreshToken string // the mailbox grant from cmd/gmail-auth; empty: whatever the database holds
 	OAuthBaseURL string // empty: Google's
 	APIBaseURL   string // empty: Google's
 }

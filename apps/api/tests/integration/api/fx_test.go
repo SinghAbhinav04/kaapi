@@ -6,10 +6,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"kaapi/api/internal/api"
 	"kaapi/api/internal/domain"
 	"kaapi/api/internal/payment"
 	"kaapi/api/internal/platform/apperr"
+	api "kaapi/api/internal/transport/httpapi"
 	"kaapi/api/tests/apitest"
 )
 
@@ -60,7 +60,7 @@ func TestFXRatesAreCrossedThroughEURExactly(t *testing.T) {
 	if got := fxRates(t, s); len(got) != 0 {
 		t.Fatalf("no rates fetched yet, so none shown: %v", got)
 	}
-	if n, err := s.API.FX().Refresh(s.Ctx); err != nil || n != 7 {
+	if n, err := s.App.FX.Refresh(s.Ctx); err != nil || n != 7 {
 		t.Fatalf("refresh: %d %v", n, err)
 	}
 	want := map[domain.Currency]int64{
@@ -93,7 +93,7 @@ func TestFXRatesAreCrossedThroughEURExactly(t *testing.T) {
 
 func TestBookingKeepsTheCurrencyTheGuestSaw(t *testing.T) {
 	s := withFX(t)
-	if _, err := s.API.FX().Refresh(s.Ctx); err != nil {
+	if _, err := s.App.FX.Refresh(s.Ctx); err != nil {
 		t.Fatal(err)
 	}
 	h := holdVilla(t, s)

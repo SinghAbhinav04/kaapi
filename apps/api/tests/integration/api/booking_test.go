@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"kaapi/api/internal/api"
 	"kaapi/api/internal/domain"
 	"kaapi/api/internal/payment"
 	"kaapi/api/internal/platform/apperr"
+	api "kaapi/api/internal/transport/httpapi"
 	"kaapi/api/tests/apitest"
 )
 

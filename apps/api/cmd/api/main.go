@@ -5,17 +5,17 @@ import (
 	"context"
 	"errors"
 	"log"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
-	"kaapi/api/internal/api"
+	"kaapi/api/internal/app"
 	"kaapi/api/internal/platform/config"
 	"kaapi/api/internal/platform/db"
+	"kaapi/api/internal/platform/logging"
+	"kaapi/api/internal/transport/httpapi"
 )
 
 // Server timeouts: generous enough for slow hill-station networks, short enough that
@@ -27,20 +27,6 @@ const (
 	idleTimeout       = 120 * time.Second
 	shutdownGrace     = 20 * time.Second
 	startupTimeout    = 60 * time.Second
-
-	// Unpaid bookings are expired this long after their hold ends; late payments inside
-	// the grace period still go through if the room is free.
-	sweepEvery = time.Minute
-	sweepGrace = 30 * time.Minute
-
-	// The enquiry worker wakes on every new message; this tick is only a safety net.
-	enquiryTick = 15 * time.Second
-
-	// Retention windows are months long, so a few runs a day is plenty.
-	retentionEvery = 6 * time.Hour
-
-	// The ECB publishes once a working day; a few fetches a day catch it without hammering.
-	fxEvery = 6 * time.Hour
 )
 
 func main() {
@@ -48,7 +34,7 @@ func main() {
 		log.Fatal(err)
 	}
 	cfg, err := config.Load()
-	log := newLogger(cfg.LogLevel)
+	log := logging.New(cfg.LogLevel)
 	if err != nil {
 		log.Error("invalid configuration", "err", err)
 		os.Exit(1)
@@ -72,16 +58,14 @@ func main() {
 	}
 	defer pool.Close()
 
-	app := api.New(cfg, log, pool, time.Now)
-	go app.SweepBookings(ctx, sweepEvery, sweepGrace)
-	go app.RunEnquiryWorker(ctx, enquiryTick)
-	go app.SweepRetention(ctx, retentionEvery)
-	go app.RunGmail(ctx)
-	go app.RefreshFX(ctx, fxEvery)
+	a := app.New(cfg, log, pool, time.Now)
+	if cfg.WorkerInProcess { // local development: one process does everything
+		go a.RunWorkers(ctx)
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           app.Router(),
+		Handler:           httpapi.New(a).Router(),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
@@ -102,19 +86,4 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error("graceful shutdown failed", "err", err)
 	}
-}
-
-func newLogger(level string) *slog.Logger {
-	var lvl slog.Level
-	switch strings.ToLower(level) {
-	case "debug":
-		lvl = slog.LevelDebug
-	case "warn":
-		lvl = slog.LevelWarn
-	case "error":
-		lvl = slog.LevelError
-	default:
-		lvl = slog.LevelInfo
-	}
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl}))
 }

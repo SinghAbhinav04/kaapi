@@ -32,3 +32,5 @@ export { HEADER } from './const';
 export { ApiError, isApiError, isRetryable } from './errors';
 export type { HttpClient } from './interface';
 export type { Query, RequestOptions } from './types';
+
+export { BROWSER_BASE_URL } from './const';

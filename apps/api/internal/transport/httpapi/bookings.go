@@ -1,4 +1,4 @@
-package api
+package httpapi
 
 import (
 	"bytes"
@@ -60,7 +60,7 @@ func (a *API) getBooking(w http.ResponseWriter, r *http.Request) error {
 
 func (a *API) canSeeBooking(r *http.Request, b booking.Booking) bool {
 	p := principal(r.Context())
-	if p.IsAuthenticated() && auth.Can(p.Role, auth.PermBookingsRead) {
+	if a.can(r, auth.PermBookingsRead) {
 		return true
 	}
 	if p.IsAuthenticated() && p.Role == domain.RoleGuest {

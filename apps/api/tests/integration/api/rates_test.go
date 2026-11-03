@@ -6,9 +6,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"kaapi/api/internal/api"
 	"kaapi/api/internal/inventory"
 	"kaapi/api/internal/platform/apperr"
+	api "kaapi/api/internal/transport/httpapi"
 	"kaapi/api/tests/apitest"
 )
 

@@ -23,9 +23,13 @@ import (
 	"kaapi/api/internal/platform/config"
 )
 
-// Deliver hands one inbound email to the inbox. Returning an error stops the poll so the
-// message is tried again next time; return nil to skip a message for good.
-type Deliver func(ctx context.Context, in Inbound) error
+// Inbox is where imported mail goes. Has lets the importer skip a message it already
+// delivered without downloading it again; Deliver returning an error stops the poll so the
+// message is tried again next time (return nil to skip a message for good).
+type Inbox interface {
+	Has(ctx context.Context, messageID string) (bool, error)
+	Deliver(ctx context.Context, in Inbound) error
+}
 
 type Service struct {
 	pool     *pgxpool.Pool
@@ -35,7 +39,7 @@ type Service struct {
 	log      *slog.Logger
 	stateKey []byte
 	tokenKey []byte
-	deliver  Deliver
+	inbox    Inbox
 
 	mu        sync.Mutex // guards the cached access token and serialises polls
 	access    string
@@ -59,8 +63,8 @@ func NewService(pool *pgxpool.Pool, cfg config.Gmail, secret []byte, now func() 
 	}
 }
 
-// SetDeliver wires the inbox in; the API does it once at start-up.
-func (s *Service) SetDeliver(d Deliver) { s.deliver = d }
+// SetInbox wires the inbox in; the app does it once at start-up.
+func (s *Service) SetInbox(i Inbox) { s.inbox = i }
 
 func (s *Service) Configured() bool { return s.cfg.Configured() }
 
@@ -92,21 +96,76 @@ func (s *Service) Callback(ctx context.Context, code, state string) (string, err
 	if err != nil {
 		return "", apperr.Wrap(err, apperr.CodeUnavailable, "Connected, but Gmail couldn't be read. Try again.")
 	}
-	sealed, err := seal(s.tokenKey, []byte(tok.RefreshToken))
-	if err != nil {
-		return "", err
-	}
-	if _, err := s.pool.Exec(ctx, `INSERT INTO integrations (provider, account_email, refresh_token_enc, history_id, connected_by, connected_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (provider) DO UPDATE SET account_email = $2, refresh_token_enc = $3, history_id = $4, connected_by = $5,
-			connected_at = $6, last_sync_at = NULL, last_error = NULL`,
-		provider, p.EmailAddress, sealed, p.HistoryID, user, s.now()); err != nil {
+	if err := s.store(ctx, p.EmailAddress, tok.RefreshToken, p.HistoryID, &user); err != nil {
 		return "", err
 	}
 	s.mu.Lock()
 	s.access, s.accessExp = tok.AccessToken, s.now().Add(time.Duration(tok.ExpiresIn)*time.Second-tokenSkew)
 	s.mu.Unlock()
 	return p.EmailAddress, nil
+}
+
+// Bootstrap connects the mailbox from GMAIL_REFRESH_TOKEN at start-up, so the server is
+// connected after every restart, re-seed or fresh deploy without anyone pressing a button.
+// A database row that already holds the same grant is left alone (it knows where the last
+// poll stopped).
+func (s *Service) Bootstrap(ctx context.Context) error {
+	refresh := s.cfg.RefreshToken
+	if refresh == "" || !s.Configured() {
+		return nil
+	}
+	row, err := s.load(ctx)
+	switch {
+	case err == nil:
+		if cur, err := open(s.tokenKey, row.sealed); err == nil && string(cur) == refresh {
+			return nil
+		}
+	case !errors.Is(err, ErrNotConnected):
+		return err
+	}
+	tok, err := s.g.refresh(ctx, refresh)
+	if err != nil {
+		return fmt.Errorf("gmail: GMAIL_REFRESH_TOKEN was refused (run cmd/gmail-auth again): %w", err)
+	}
+	p, err := s.g.profile(ctx, tok.AccessToken)
+	if err != nil {
+		return err
+	}
+	history := p.HistoryID
+	if row.email == p.EmailAddress && row.historyID != "" {
+		history = row.historyID // same mailbox: carry on from the last poll
+	}
+	if err := s.store(ctx, p.EmailAddress, refresh, history, nil); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.access, s.accessExp = tok.AccessToken, s.now().Add(time.Duration(tok.ExpiresIn)*time.Second-tokenSkew)
+	s.mu.Unlock()
+	s.log.Info("gmail connected from environment", "account", p.EmailAddress)
+	return nil
+}
+
+// RefreshToken returns the stored grant and its mailbox, for cmd/gmail-auth to save into .env.
+func (s *Service) RefreshToken(ctx context.Context) (token, email string, err error) {
+	row, err := s.load(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	plain, err := open(s.tokenKey, row.sealed)
+	return string(plain), row.email, err
+}
+
+func (s *Service) store(ctx context.Context, email, refresh, historyID string, user *uuid.UUID) error {
+	sealed, err := seal(s.tokenKey, []byte(refresh))
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `INSERT INTO integrations (provider, account_email, refresh_token_enc, history_id, connected_by, connected_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (provider) DO UPDATE SET account_email = $2, refresh_token_enc = $3, history_id = $4, connected_by = $5,
+			connected_at = $6, last_sync_at = NULL, last_error = NULL`,
+		provider, email, sealed, historyID, user, s.now())
+	return err
 }
 
 // Disconnect forgets the mailbox and asks Google to revoke the grant (best effort: the
@@ -172,8 +231,20 @@ func (s *Service) Send(ctx context.Context, m domain.Mail) (domain.SentMail, err
 
 // ---- reading
 
-// Run polls the mailbox until ctx ends. A poll with nothing connected costs one query.
+// Run connects from the environment, polls once straight away, then on every tick until
+// ctx ends. A poll with nothing connected costs one query.
 func (s *Service) Run(ctx context.Context) {
+	if err := s.Bootstrap(ctx); err != nil {
+		s.log.Error("gmail bootstrap failed", "err", err)
+	}
+	poll := func() {
+		if n, err := s.Poll(ctx); err != nil && !errors.Is(err, ErrNotConnected) {
+			s.log.Error("gmail poll failed", "err", err)
+		} else if n > 0 {
+			s.log.Info("gmail imported", "count", n)
+		}
+	}
+	poll()
 	t := time.NewTicker(s.cfg.PollEvery)
 	defer t.Stop()
 	for {
@@ -181,11 +252,7 @@ func (s *Service) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if n, err := s.Poll(ctx); err != nil && !errors.Is(err, ErrNotConnected) {
-				s.log.Error("gmail poll failed", "err", err)
-			} else if n > 0 {
-				s.log.Info("gmail imported", "count", n)
-			}
+			poll()
 		}
 	}
 }
@@ -194,7 +261,7 @@ func (s *Service) Run(ctx context.Context) {
 // The mailbox position only moves forward once every message up to it has been handed over,
 // and the inbox ignores a message it has already seen, so a poll can safely repeat.
 func (s *Service) Poll(ctx context.Context) (int, error) {
-	if !s.Configured() || s.deliver == nil {
+	if !s.Configured() || s.inbox == nil {
 		return 0, nil
 	}
 	s.mu.Lock() // one poll at a time: the ticker and a "sync now" press can overlap
@@ -216,8 +283,8 @@ func (s *Service) poll(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	ids, latest, err := s.g.history(ctx, access, row.historyID)
-	if isStatus(err, http.StatusNotFound) { // position too old to replay: take the last day instead
-		if ids, err = s.g.recent(ctx, access); err == nil {
+	if isStatus(err, http.StatusNotFound) { // position too old to replay: list everything since the last sync
+		if ids, err = s.g.since(ctx, access, row.resumeFrom()); err == nil {
 			var p profile
 			if p, err = s.g.profile(ctx, access); err == nil {
 				latest = p.HistoryID
@@ -232,8 +299,59 @@ func (s *Service) poll(ctx context.Context) (int, error) {
 	if len(ids) > maxPerPoll { // the rest come next poll; don't move past them
 		ids, advance = ids[:maxPerPoll], false
 	}
+	imported, err := s.importIDs(ctx, access, account, ids)
+	if err != nil {
+		return imported, err
+	}
+	q := `UPDATE integrations SET last_sync_at = $2, last_error = NULL WHERE provider = $1`
+	args := []any{provider, s.now()}
+	if advance {
+		q = `UPDATE integrations SET last_sync_at = $2, last_error = NULL, history_id = $3 WHERE provider = $1`
+		args = append(args, latest)
+	}
+	_, err = s.pool.Exec(ctx, q, args...)
+	return imported, err
+}
+
+// CatchUp imports everything that reached the inbox since the last successful sync, however
+// long the server was down: the history replay first, then a search for anything it missed.
+// Messages already in the inbox are skipped without being downloaded, so it never duplicates.
+func (s *Service) CatchUp(ctx context.Context) (int, error) {
+	if !s.Configured() || s.inbox == nil {
+		return 0, ErrNotConnected
+	}
+	row, err := s.load(ctx)
+	if err != nil {
+		return 0, err
+	}
+	from := row.resumeFrom() // read before the poll moves last_sync_at
+	n, err := s.Poll(ctx)
+	if err != nil {
+		return n, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	access, account, err := s.tokenLocked(ctx, row)
+	if err != nil {
+		return n, err
+	}
+	ids, err := s.g.since(ctx, access, from)
+	if err != nil {
+		return n, err
+	}
+	more, err := s.importIDs(ctx, access, account, ids)
+	return n + more, err
+}
+
+// importIDs downloads and delivers the messages the inbox doesn't have yet.
+func (s *Service) importIDs(ctx context.Context, access, account string, ids []string) (int, error) {
 	imported := 0
 	for _, id := range ids {
+		if seen, err := s.inbox.Has(ctx, id); err != nil {
+			return imported, err
+		} else if seen {
+			continue
+		}
 		m, err := s.g.message(ctx, access, id)
 		if isStatus(err, http.StatusNotFound) {
 			continue // deleted before we got to it
@@ -248,19 +366,12 @@ func (s *Service) poll(ctx context.Context) (int, error) {
 		if in.FromEmail == "" || in.FromEmail == account || in.Text == "" {
 			continue // our own sent copies, bounces with no sender, empty mail
 		}
-		if err := s.deliver(ctx, in); err != nil {
+		if err := s.inbox.Deliver(ctx, in); err != nil {
 			return imported, fmt.Errorf("gmail: deliver %s: %w", id, err)
 		}
 		imported++
 	}
-	q := `UPDATE integrations SET last_sync_at = $2, last_error = NULL WHERE provider = $1`
-	args := []any{provider, s.now()}
-	if advance {
-		q = `UPDATE integrations SET last_sync_at = $2, last_error = NULL, history_id = $3 WHERE provider = $1`
-		args = append(args, latest)
-	}
-	_, err = s.pool.Exec(ctx, q, args...)
-	return imported, err
+	return imported, nil
 }
 
 func skipLabels(labels []string) bool {
@@ -288,6 +399,16 @@ type stored struct {
 	connectedAt time.Time
 	lastSync    *time.Time
 	lastError   *string
+}
+
+// resumeFrom is where a catch-up starts: just before the last sync, or the connection if
+// there hasn't been one.
+func (r stored) resumeFrom() time.Time {
+	t := r.connectedAt
+	if r.lastSync != nil {
+		t = *r.lastSync
+	}
+	return t.Add(-catchUpMargin)
 }
 
 func (s *Service) load(ctx context.Context) (stored, error) {
