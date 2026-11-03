@@ -1,14 +1,11 @@
-package api
+package httpapi
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/url"
 	"time"
 
-	"kaapi/api/internal/domain"
-	"kaapi/api/internal/enquiry"
 	"kaapi/api/internal/gmail"
 	"kaapi/api/internal/outbox"
 	"kaapi/api/internal/platform/apperr"
@@ -17,23 +14,6 @@ import (
 
 // Where the browser lands after Google's consent screen.
 const gmailReturnPath = "/staff/inbox"
-
-// deliverEmail turns an imported email into an enquiry. A message the inbox refuses for
-// a reason that won't change on retry (no text, bad channel) is skipped, not retried forever.
-func (a *API) deliverEmail(ctx context.Context, in gmail.Inbound) error {
-	_, err := a.enquiries.Intake(ctx, enquiry.IntakeInput{Channel: domain.ChannelEmail, SenderName: in.FromName,
-		SenderEmail: in.FromEmail, Subject: in.Subject, Text: in.Text,
-		External: &enquiry.External{ID: in.MessageID, ThreadID: in.ThreadID, RFCMessageID: in.RFCMessageID}})
-	var ae *apperr.Error
-	if errors.As(err, &ae) && ae.Status() < http.StatusInternalServerError {
-		a.log.Warn("gmail message skipped", "id", in.MessageID, "reason", ae.Message)
-		return nil
-	}
-	return err
-}
-
-// RunGmail polls the connected mailbox until ctx ends.
-func (a *API) RunGmail(ctx context.Context) { a.gmail.Run(ctx) }
 
 // gmailStatus: GET /v1/staff/integrations/gmail
 func (a *API) gmailStatus(w http.ResponseWriter, r *http.Request) error {

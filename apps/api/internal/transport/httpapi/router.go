@@ -1,21 +1,20 @@
-// Package api is the HTTP layer: routes, request/response shapes and the gateway
-// middleware. Domain packages stay free of net/http; handlers translate between JSON
-// and domain calls and return errors for httpx.WriteError to render.
-package api
+// Package httpapi is the HTTP transport: routes, request/response shapes (DTOs) and the
+// gateway middleware. Domain packages stay free of net/http; handlers translate between
+// JSON and domain calls and return errors for httpx.WriteError to render. Services come
+// ready-built from internal/app.
+package httpapi
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"kaapi/api/internal/admin"
-	"kaapi/api/internal/ai"
 	"kaapi/api/internal/analytics"
+	"kaapi/api/internal/app"
 	"kaapi/api/internal/auth"
 	"kaapi/api/internal/booking"
 	"kaapi/api/internal/catalog"
@@ -45,45 +44,11 @@ type API struct {
 	retention *retention.Service
 }
 
-func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() time.Time) *API {
-	inv := inventory.NewService(pool, now)
-	var provider ai.Provider // nil: keyword rules and template drafts only
-	opts := AIOptions(cfg.AI)
-	if chain := ai.Start(opts); chain != nil {
-		provider = chain
-		log.Info("ai chain ready", "models", chain.Models())
-		if ai.NeedsDiscovery(opts) { // fill in every model the keys allow, without delaying start-up
-			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), aiDiscoveryTimeout)
-				defer cancel()
-				for _, w := range chain.Refresh(ctx, opts) {
-					log.Warn("ai", "warning", w)
-				}
-				log.Info("ai models discovered", "models", chain.Models())
-			}()
-		}
-	}
-	a := &API{
-		cfg:       cfg,
-		log:       log,
-		pool:      pool,
-		admin:     admin.NewService(pool),
-		analytics: analytics.NewService(pool, now),
-		auth:      auth.NewService(pool, cfg.JWESecret, now),
-		bookings:  booking.NewService(pool, now),
-		catalog:   catalog.NewService(pool),
-		inventory: inv,
-		enquiries: enquiry.NewService(pool, provider, inv, now),
-		outbox:    outbox.NewService(pool),
-		retention: retention.NewService(pool, now),
-		gmail:     gmail.NewService(pool, cfg.Gmail, cfg.JWESecret, now, log),
-	}
-	// One mailbox serves both directions: imported mail becomes enquiries, and replies and
-	// staff-written messages go out through it. Unconnected, everything stays simulated.
-	a.gmail.SetDeliver(a.deliverEmail)
-	a.enquiries.SetMailer(a.gmail)
-	a.outbox.SetMailer(a.gmail)
-	return a
+// New exposes the app's services over HTTP.
+func New(a *app.App) *API {
+	return &API{cfg: a.Config, log: a.Log, pool: a.Pool, admin: a.Admin, analytics: a.Analytics, auth: a.Auth,
+		bookings: a.Bookings, catalog: a.Catalog, enquiries: a.Enquiries, gmail: a.Gmail, inventory: a.Inventory,
+		outbox: a.Outbox, retention: a.Retention}
 }
 
 // Router builds the handler tree. Middleware order matters: the request ID comes first so
@@ -174,55 +139,4 @@ func (a *API) Router() http.Handler {
 		})
 	})
 	return r
-}
-
-// SweepBookings expires unpaid bookings in the background. Holds stop counting the moment
-// they expire regardless; this only tidies statuses for staff screens.
-func (a *API) SweepBookings(ctx context.Context, every, grace time.Duration) {
-	t := time.NewTicker(every)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			if n, err := a.bookings.Sweep(ctx, grace); err != nil {
-				a.log.Error("booking sweep failed", "err", err)
-			} else if n > 0 {
-				a.log.Info("expired unpaid bookings", "count", n)
-			}
-		}
-	}
-}
-
-// SweepRetention archives finished bookings and deletes expired personal data: once at
-// start-up, then on every tick. Each run is idempotent, so a missed or doubled tick is harmless.
-func (a *API) SweepRetention(ctx context.Context, every time.Duration) {
-	run := func() {
-		if r, err := a.retention.Sweep(ctx); err != nil {
-			a.log.Error("retention sweep failed", "err", err)
-		} else if r.Total() > 0 {
-			a.log.Info("retention sweep", "result", r)
-		}
-	}
-	run()
-	t := time.NewTicker(every)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			run()
-		}
-	}
-}
-
-// aiDiscoveryTimeout bounds the background call that lists the models each key can use.
-const aiDiscoveryTimeout = time.Minute
-
-// AIOptions maps config onto the chain's options.
-func AIOptions(c config.AI) ai.Options {
-	return ai.Options{GeminiKey: c.GeminiKey, GeminiBaseURL: c.GeminiBaseURL, GeminiModels: c.GeminiModels, GeminiRPM: c.GeminiRPM,
-		GroqKey: c.GroqKey, GroqBaseURL: c.GroqBaseURL, GroqModels: c.GroqModels, GroqRPM: c.GroqRPM}
 }

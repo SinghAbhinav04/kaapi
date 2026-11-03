@@ -33,6 +33,7 @@ const (
 	EnvNativeAppOrigins  = "NATIVE_APP_ORIGINS"
 	EnvRequestTimeoutSec = "REQUEST_TIMEOUT_SECONDS"
 	EnvDemoMode          = "DEMO_MODE"
+	EnvWorkerInProcess   = "WORKER_IN_PROCESS" // run background jobs inside cmd/api (default: on in development)
 
 	// Gmail: the inbox reads and replies from a real mailbox once an admin connects it.
 	EnvGoogleClientID     = "GOOGLE_CLIENT_ID"
@@ -70,6 +71,9 @@ type Config struct {
 	RequestTimeout   time.Duration
 	// DemoMode shows guest sign-in codes on screen, because the demo has no real email.
 	DemoMode bool
+	// WorkerInProcess runs the background jobs inside the API process. Production runs
+	// cmd/worker separately so the API can scale to zero.
+	WorkerInProcess bool
 }
 
 func (c Config) IsProduction() bool { return c.Environment == EnvProduction }
@@ -88,6 +92,7 @@ func Load() (Config, error) {
 		DemoMode:       get(EnvDemoMode, "false") == "true",
 	}
 	c.CookieSecure = get(EnvCookieSecure, strconv.FormatBool(c.IsProduction())) == "true"
+	c.WorkerInProcess = get(EnvWorkerInProcess, strconv.FormatBool(!c.IsProduction())) == "true"
 	for _, o := range strings.Split(os.Getenv(EnvNativeAppOrigins), ",") {
 		if o = strings.TrimSpace(o); o != "" {
 			c.NativeAppOrigins = append(c.NativeAppOrigins, o)

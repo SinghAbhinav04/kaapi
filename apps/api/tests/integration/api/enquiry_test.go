@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"kaapi/api/internal/api"
 	"kaapi/api/internal/domain"
 	"kaapi/api/internal/platform/config"
+	api "kaapi/api/internal/transport/httpapi"
 	"kaapi/api/tests/apitest"
 )
 
@@ -101,7 +101,7 @@ func withGemini(t *testing.T) (*apitest.Server, *fakeGemini) {
 
 func process(t *testing.T, s *apitest.Server) int {
 	t.Helper()
-	n, err := s.API.ProcessEnquiries(s.Ctx)
+	n, err := s.App.ProcessEnquiries(s.Ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

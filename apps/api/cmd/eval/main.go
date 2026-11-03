@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"kaapi/api/internal/ai"
-	"kaapi/api/internal/api"
+	"kaapi/api/internal/app"
 	"kaapi/api/internal/domain"
 	"kaapi/api/internal/enquiry"
 	"kaapi/api/internal/platform/config"
@@ -70,7 +70,7 @@ func main() {
 		log.Fatal(strings.Join(problems, "; "))
 	}
 	if settings.Enabled() {
-		chain, warnings := ai.Build(ctx, api.AIOptions(settings))
+		chain, warnings := ai.Build(ctx, app.AIOptions(settings))
 		for _, w := range warnings {
 			log.Print(w)
 		}

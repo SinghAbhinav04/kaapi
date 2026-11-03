@@ -1,12 +1,10 @@
-package api
+package httpapi
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	"kaapi/api/internal/auth"
 	"kaapi/api/internal/domain"
@@ -283,14 +281,4 @@ func (a *API) writeEnquiry(w http.ResponseWriter, r *http.Request) error {
 	}
 	httpx.WriteJSON(w, http.StatusOK, EnquiryResponse{Enquiry: enquiryDTO(e)})
 	return nil
-}
-
-// ProcessEnquiries runs the AI queue now; tests use it instead of waiting for the worker.
-func (a *API) ProcessEnquiries(ctx context.Context) (int, error) {
-	return a.enquiries.ProcessPending(ctx, enquiry.MaxListLimit)
-}
-
-// RunEnquiryWorker processes the AI queue until ctx ends.
-func (a *API) RunEnquiryWorker(ctx context.Context, tick time.Duration) {
-	a.enquiries.Run(ctx, tick, func(err error) { a.log.Error("enquiry worker", "err", err) })
 }

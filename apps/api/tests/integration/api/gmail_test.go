@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"kaapi/api/internal/api"
 	"kaapi/api/internal/gmail"
 	"kaapi/api/internal/platform/config"
+	api "kaapi/api/internal/transport/httpapi"
 	"kaapi/api/tests/apitest"
 	"kaapi/api/tests/testdb"
 )

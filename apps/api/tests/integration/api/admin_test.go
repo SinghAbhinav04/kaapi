@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	"kaapi/api/internal/api"
 	"kaapi/api/internal/seed"
+	api "kaapi/api/internal/transport/httpapi"
 	"kaapi/api/tests/apitest"
 )
 
