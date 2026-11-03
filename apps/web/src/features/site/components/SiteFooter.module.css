@@ -22,7 +22,18 @@
 
 .links {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 0 20px;
+}
+
+.links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.links a:hover {
+  color: var(--ink);
 }
 
 .credit {

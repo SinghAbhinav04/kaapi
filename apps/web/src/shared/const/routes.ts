@@ -2,6 +2,8 @@
 export const ROUTES = {
   home: '/',
   stays: '/#stays',
+  /** The stays section with the guest's dates kept, so going back doesn't lose the search. */
+  staysWith: (query?: string) => (query ? `/?${query}#stays` : '/#stays'),
   events: '/#events',
   room: (slug: string, query?: string) => `/rooms/${encodeURIComponent(slug)}${query ? `?${query}` : ''}`,
   checkout: (holdId: string) => `/book/${encodeURIComponent(holdId)}`,
@@ -18,5 +20,6 @@ export const ROUTES = {
     bookings: '/staff/bookings',
     outbox: '/staff/outbox',
     dashboard: '/staff/dashboard',
+    analytics: '/staff/analytics',
   },
 } as const;

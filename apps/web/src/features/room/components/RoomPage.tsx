@@ -4,7 +4,8 @@ import Link from 'next/link';
 
 import { useRoom, type Room } from '@/apis/catalog';
 import { roomFacts } from '@/features/home';
-import { useStaySearch } from '@/features/stay-search';
+import { SiteFooter } from '@/features/site';
+import { searchToQuery, useStaySearch } from '@/features/stay-search';
 import { ROUTES, SITE } from '@/shared/const';
 import { formatStayShort, nightsBetween } from '@/shared/lib/dates';
 import { formatINR } from '@/shared/lib/money';
@@ -38,14 +39,16 @@ function RoomBody({ room }: { room: Room }) {
   const nights = nightsBetween(search.checkIn, search.checkOut);
   const [first, ...rest] = room.name.split(' ');
   const total = booking.option?.status === 'AVAILABLE' ? booking.plan?.quote.total_paise : undefined;
+  const staysHref = ROUTES.staysWith(searchToQuery(search));
 
   return (
     <>
       <RoomHeader />
       <main className={styles.page}>
-        <p className={styles.crumbs}>
-          <Link href={ROUTES.stays}>STAYS</Link> / {room.kind === 'VILLA' ? 'VILLAS' : 'ROOMS'} / {room.name.toUpperCase()}
-        </p>
+        <nav aria-label="Breadcrumb" className={styles.crumbs}>
+          <Link href={ROUTES.home}>HOME</Link> / <Link href={staysHref}>STAYS</Link> / <Link href={staysHref}>{room.kind === 'VILLA' ? 'VILLAS' : 'ROOMS'}</Link> /{' '}
+          <span aria-current="page">{room.name.toUpperCase()}</span>
+        </nav>
         <Gallery photos={room.photos} name={room.name} />
 
         <div className={styles.layout}>
@@ -104,6 +107,7 @@ function RoomBody({ room }: { room: Room }) {
           />
         </div>
       </main>
+      <SiteFooter />
 
       <div className={styles.mobileBar}>
         <div>

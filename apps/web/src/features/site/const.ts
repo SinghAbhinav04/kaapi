@@ -7,7 +7,10 @@ export const NAV_LINKS = [
   { href: '/#getting-here', label: 'Getting here' },
 ] as const;
 
+/** Every guest destination, so any page with the footer can reach any other. */
 export const FOOTER_LINKS = [
+  ...NAV_LINKS,
+  { href: ROUTES.myBookings, label: 'My booking' },
   { href: ROUTES.privacy, label: 'Privacy' },
   { href: ROUTES.enquire, label: 'Contact' },
   { href: ROUTES.staff.login, label: 'Staff sign-in' },

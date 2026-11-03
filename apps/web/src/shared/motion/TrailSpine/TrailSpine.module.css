@@ -1,11 +1,21 @@
 /* Sits above section backgrounds (z 1) but below section content (z 2), so the line
    passes behind cards and images instead of drawing over them. */
-.svg {
+.reveal {
   position: absolute;
   top: 0;
   left: 0;
   z-index: 1;
+  overflow: hidden;
   pointer-events: none;
+  will-change: transform;
+}
+
+.inner {
+  will-change: transform;
+}
+
+.svg {
+  display: block;
   overflow: visible;
 }
 
@@ -17,8 +27,18 @@
   opacity: 0.4;
 }
 
+/* A soft glow made with a gradient, not an SVG filter, so moving it never repaints. */
 .dot {
-  fill: rgba(44, 74, 53, 0.55);
+  position: absolute;
+  top: -12px;
+  left: -12px;
+  z-index: 1;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(44, 74, 53, 0.55) 0%, rgba(44, 74, 53, 0.3) 35%, rgba(44, 74, 53, 0) 70%);
+  pointer-events: none;
   opacity: 0;
+  will-change: transform;
   transition: opacity var(--dur-med) var(--ease-out);
 }

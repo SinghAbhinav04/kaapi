@@ -1,6 +1,39 @@
 /* header */
 .header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   border-bottom: 1px solid var(--hairline);
+  background: var(--paper);
+}
+
+.headerStart {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.back:hover {
+  color: var(--estate);
+}
+
+/* On phones the header wraps tall, so it scrolls away; the bottom bar and footer carry navigation. */
+@media (max-width: 700px) {
+  .header {
+    position: static;
+  }
 }
 
 .headerInner {
@@ -77,7 +110,19 @@
 }
 
 .crumbs a {
+  display: inline-block;
+  padding: 12px 0;
   color: var(--grey);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.crumbs a:hover {
+  color: var(--ink);
+}
+
+.crumbs [aria-current] {
+  color: var(--ink);
 }
 
 .layout {

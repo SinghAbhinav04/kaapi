@@ -1,8 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useRef, useState } from 'react';
 
-import { StaySearchForm, useStaySearch, type StaySearch } from '@/features/stay-search';
+import { searchToQuery, StaySearchForm, useStaySearch, type StaySearch } from '@/features/stay-search';
+import { ROUTES } from '@/shared/const';
 import { useDismiss } from '@/shared/hooks';
 import { formatDay } from '@/shared/lib/dates';
 import { formatParty } from '@/shared/lib/text';
@@ -10,7 +12,7 @@ import { Logo } from '@/shared/ui';
 
 import styles from './RoomPage.module.css';
 
-/** Logo, the searched stay, and a "Change" panel that edits it in place. */
+/** Logo, a way back to every stay, the searched stay with a "Change" panel, and My booking. Sticky, so the way out is never scrolled away. */
 export function RoomHeader() {
   const { search, setSearch } = useStaySearch();
   const [open, setOpen] = useState(false);
@@ -25,7 +27,12 @@ export function RoomHeader() {
   return (
     <header className={styles.header}>
       <nav aria-label="Main" className={styles.headerInner}>
-        <Logo />
+        <div className={styles.headerStart}>
+          <Logo />
+          <Link href={ROUTES.staysWith(searchToQuery(search))} className={styles.back}>
+            <span aria-hidden="true">←</span> All stays
+          </Link>
+        </div>
         <div ref={ref} className={styles.stayPill}>
           <span className={styles.stayPart}>
             {formatDay(search.checkIn)} → {formatDay(search.checkOut)}
@@ -41,6 +48,9 @@ export function RoomHeader() {
             </div>
           )}
         </div>
+        <Link href={ROUTES.myBookings} className={styles.back}>
+          My booking
+        </Link>
       </nav>
     </header>
   );

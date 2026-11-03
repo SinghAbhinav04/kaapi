@@ -9,20 +9,21 @@ import { catmullRomPath, lowerIndex } from './geometry';
 import type { TrailGeometry, TrailSide } from './types';
 
 /**
- * Measures the [data-trail] sections inside the svg's parent and returns the path. Scroll
- * then draws the line and moves the dot by writing to the DOM directly: no state updates
- * while scrolling, so no React renders. Only a resize re-measures.
+ * Measures the [data-trail] sections inside the trail's parent and returns the path. Scroll
+ * then reveals the line and moves the dot by writing transforms directly: no state updates
+ * and no repaints while scrolling. Only a resize re-measures.
  */
 export function useTrailSpine() {
-  const svgRef = useRef<SVGSVGElement>(null);
+  const revealRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
   const pathRef = useRef<SVGPathElement>(null);
-  const dotRef = useRef<SVGCircleElement>(null);
+  const dotRef = useRef<HTMLDivElement>(null);
   const [geometry, setGeometry] = useState<TrailGeometry | null>(null);
   const reduced = useReducedMotion();
 
   // Measure on mount and on resize.
   useEffect(() => {
-    const root = svgRef.current?.parentElement;
+    const root = revealRef.current?.parentElement;
     if (!root || reduced) return;
     const measure = () => {
       const width = root.clientWidth;
@@ -53,12 +54,14 @@ export function useTrailSpine() {
     };
   }, [reduced]);
 
-  // Draw on scroll.
+  // Reveal on scroll.
   useEffect(() => {
+    const reveal = revealRef.current;
+    const inner = innerRef.current;
     const path = pathRef.current;
     const dot = dotRef.current;
-    const root = svgRef.current?.parentElement;
-    if (!geometry || !path || !root) return;
+    const root = reveal?.parentElement;
+    if (!geometry || !reveal || !inner || !path || !root) return;
     const length = path.getTotalLength();
     const xs = new Float32Array(TRAIL_SAMPLES + 1);
     const ys = new Float32Array(TRAIL_SAMPLES + 1);
@@ -67,20 +70,22 @@ export function useTrailSpine() {
       xs[i] = pt.x;
       ys[i] = pt.y;
     }
-    path.style.strokeDasharray = String(length);
+    const height = geometry.height;
 
     let frame = 0;
     const draw = () => {
-      const y = window.innerHeight / 2 - root.getBoundingClientRect().top;
-      const lo = lowerIndex(ys, y);
-      const hi = Math.min(TRAIL_SAMPLES, lo + 1);
-      const span = ys[hi]! - ys[lo]!;
-      const f = Math.min(1, Math.max(0, span > 0 ? (y - ys[lo]!) / span : 0));
-      const u = Math.min(1, Math.max(0, (lo + f) / TRAIL_SAMPLES));
-      path.style.strokeDashoffset = String(length * (1 - u));
+      const y = Math.min(height, Math.max(0, window.innerHeight / 2 - root.getBoundingClientRect().top));
+      // A window whose bottom edge sits at y: the outer layer moves up, the inner one back
+      // down by the same amount, so the line stays put and only the part above y shows.
+      reveal.style.transform = `translate3d(0, ${y - height}px, 0)`;
+      inner.style.transform = `translate3d(0, ${height - y}px, 0)`;
       if (dot) {
-        dot.setAttribute('cx', String(xs[lo]! + (xs[hi]! - xs[lo]!) * f));
-        dot.setAttribute('cy', String(ys[lo]! + (ys[hi]! - ys[lo]!) * f));
+        const lo = lowerIndex(ys, y);
+        const hi = Math.min(TRAIL_SAMPLES, lo + 1);
+        const span = ys[hi]! - ys[lo]!;
+        const f = Math.min(1, Math.max(0, span > 0 ? (y - ys[lo]!) / span : 0));
+        const u = (lo + f) / TRAIL_SAMPLES;
+        dot.style.transform = `translate3d(${xs[lo]! + (xs[hi]! - xs[lo]!) * f}px, ${ys[lo]! + (ys[hi]! - ys[lo]!) * f}px, 0)`;
         dot.style.opacity = u > 0.01 && u < 0.99 ? '1' : '0';
       }
     };
@@ -96,5 +101,5 @@ export function useTrailSpine() {
     };
   }, [geometry]);
 
-  return { svgRef, pathRef, dotRef, geometry };
+  return { revealRef, innerRef, pathRef, dotRef, geometry };
 }

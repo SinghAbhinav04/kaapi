@@ -13,13 +13,13 @@ export function SiteFooter() {
         <span>
           Check-in {SITE.checkIn} · Check-out {SITE.checkOut} · We never ask for passport details online
         </span>
-        <div className={styles.links}>
+        <nav aria-label="Footer" className={styles.links}>
           {FOOTER_LINKS.map((link) => (
             <Link key={link.href} href={link.href}>
               {link.label}
             </Link>
           ))}
-        </div>
+        </nav>
       </div>
       <p className={styles.credit}>{IMAGE_CREDIT}</p>
     </footer>

@@ -31,31 +31,23 @@ export function Hero() {
           </div>
         </div>
 
-        <svg className={styles.mist} viewBox="0 0 1440 900" preserveAspectRatio="none" aria-hidden="true">
-          <defs>
-            <filter id="hero-mist" x="-10%" y="-80%" width="120%" height="260%">
-              <feGaussianBlur stdDeviation="22" />
-            </filter>
-          </defs>
-          <g className={styles.drift}>
-            <ellipse cx="720" cy="470" rx="980" ry="60" fill="#f4f1ea" filter="url(#hero-mist)" />
-          </g>
-          <g className={styles.driftReverse}>
-            <ellipse cx="560" cy="600" rx="900" ry="70" fill="#f4f1ea" opacity="0.85" filter="url(#hero-mist)" />
-          </g>
-          <g className={styles.drift}>
-            <ellipse cx="900" cy="720" rx="860" ry="60" fill="#f4f1ea" opacity="0.7" filter="url(#hero-mist)" />
-          </g>
-        </svg>
+        {/* Soft gradient bands, not an SVG blur filter: a filter re-rasterises every frame
+            while the bands drift, which is what made the hero stutter. */}
+        <div className={styles.mist} aria-hidden="true">
+          <div className={cx(styles.band, styles.band1, styles.drift)} />
+          <div className={cx(styles.band, styles.band2, styles.driftReverse)} />
+          <div className={cx(styles.band, styles.band3, styles.drift)} />
+        </div>
 
         <div className={styles.rows}>
           <div className={styles.cam2}>
-            <Image src={HERO_IMAGES.rows} alt="" fill sizes="100vw" quality={60} className={styles.photo} style={{ objectPosition: '50% 55%' }} />
+            {/* Eager: it fades in mid-scroll, and a first decode at that moment drops frames. */}
+            <Image src={HERO_IMAGES.rows} alt="" fill sizes="100vw" quality={60} loading="eager" className={styles.photo} style={{ objectPosition: '50% 55%' }} />
           </div>
         </div>
 
         <div className={styles.flora} aria-hidden="true">
-          <Image src={HERO_IMAGES.flora} alt="" fill sizes="110vw" quality={75} className={styles.floraImg} />
+          <Image src={HERO_IMAGES.flora} alt="" fill sizes="110vw" quality={75} loading="eager" className={styles.floraImg} />
         </div>
         <div className={styles.vignette} aria-hidden="true" />
         <div className={styles.glow} aria-hidden="true" />
