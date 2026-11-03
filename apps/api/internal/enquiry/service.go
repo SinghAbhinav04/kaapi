@@ -31,6 +31,7 @@ type Service struct {
 	provider   ai.Provider // nil when no API key: drafts come from templates
 	inventory  *inventory.Service
 	now        func() time.Time
+	mailer     Mailer // nil: replies are simulated
 	wake       chan struct{}
 	mu         sync.Mutex // serialises queue processing within this process
 }
@@ -42,6 +43,9 @@ func NewService(pool *pgxpool.Pool, provider ai.Provider, inv *inventory.Service
 	return &Service{pool: pool, classifier: ai.NewClassifier(provider), provider: provider, inventory: inv, now: now,
 		wake: make(chan struct{}, 1)}
 }
+
+// SetMailer connects real delivery; the API does it once at start-up.
+func (s *Service) SetMailer(m Mailer) { s.mailer = m }
 
 // AIEnabled reports whether a model is configured (otherwise rules and templates only).
 func (s *Service) AIEnabled() bool { return s.provider != nil }
@@ -65,7 +69,17 @@ func (s *Service) Intake(ctx context.Context, in IntakeInput) (string, error) {
 	}
 	hash := DedupeHash(in.Text)
 	var ref string
+	var ext External
+	if in.External != nil {
+		ext = *in.External
+	}
 	err := db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		if ext.ID != "" { // the same email polled twice is the same enquiry
+			err := tx.QueryRow(ctx, `SELECT ref FROM enquiries WHERE external_id = $1`, ext.ID).Scan(&ref)
+			if err == nil || !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+		}
 		sender := coalesceStr(in.SenderEmail, in.SenderPhone)
 		err := tx.QueryRow(ctx, `SELECT ref FROM enquiries WHERE dedupe_hash = $1 AND coalesce(sender_email, sender_phone) = $2
 			AND received_at > now() - make_interval(secs => $3) LIMIT 1`, hash, sender, dedupeWindow.Seconds()).Scan(&ref)
@@ -80,16 +94,19 @@ func (s *Service) Intake(ctx context.Context, in IntakeInput) (string, error) {
 			AND received_at > now() - interval '1 hour'`, sender).Scan(&recent); err != nil {
 			return err
 		}
-		if recent >= intakePerHour {
+		// Imported mail already passed the mailbox's spam filter, and refusing it would lose it.
+		if recent >= intakePerHour && ext.ID == "" {
 			return ErrTooMany
 		}
 		for attempt := 0; attempt < refAttempts; attempt++ {
 			var id uuid.UUID
-			err := tx.QueryRow(ctx, `INSERT INTO enquiries (id, ref, channel, sender_name, sender_email, sender_phone, subject, raw_text, dedupe_hash)
-				SELECT $1, 'ENQ-' || (coalesce(max(substring(ref from 5)::int), $9 - 1) + 1), $2, $3, $4, $5, $6, $7, $8 FROM enquiries
+			err := tx.QueryRow(ctx, `INSERT INTO enquiries (id, ref, channel, sender_name, sender_email, sender_phone, subject, raw_text, dedupe_hash,
+					external_id, thread_id, rfc_message_id)
+				SELECT $1, 'ENQ-' || (coalesce(max(substring(ref from 5)::int), $9 - 1) + 1), $2, $3, $4, $5, $6, $7, $8, $10, $11, $12 FROM enquiries
 				ON CONFLICT (ref) DO NOTHING RETURNING id, ref`,
 				idgen.New(), in.Channel, nilIfEmpty(in.SenderName), nilIfEmpty(in.SenderEmail), nilIfEmpty(in.SenderPhone),
-				nilIfEmpty(in.Subject), in.Text, hash, firstRefNumber).Scan(&id, &ref)
+				nilIfEmpty(in.Subject), in.Text, hash, firstRefNumber,
+				nilIfEmpty(ext.ID), nilIfEmpty(ext.ThreadID), nilIfEmpty(ext.RFCMessageID)).Scan(&id, &ref)
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue // another message took that number; try the next
 			}

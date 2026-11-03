@@ -1,6 +1,7 @@
 package enquiry
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +18,21 @@ type IntakeInput struct {
 	SenderPhone string
 	Subject     string
 	Text        string
+	External    *External // set for mail imported from the connected mailbox
+}
+
+// External identifies an imported email: it's stored once, and replies thread under it.
+type External struct {
+	ID           string // the provider's message id
+	ThreadID     string
+	RFCMessageID string
+}
+
+// Mailer delivers replies for real once a mailbox is connected (internal/gmail). Without
+// one, sending records the reply in the outbox as a simulation, as before.
+type Mailer interface {
+	Connected(ctx context.Context) bool
+	Send(ctx context.Context, m domain.Mail) (domain.SentMail, error)
 }
 
 // Summary is one row of the inbox.
@@ -131,4 +147,6 @@ const (
 	maxQuoteOptions   = 3
 	statsWindow       = 7 * 24 * time.Hour
 	defaultQuoteAdult = 2
+	// sendClaimTTL: a delivery that crashed mid-flight frees its draft after this long.
+	sendClaimTTL = 2 * time.Minute
 )

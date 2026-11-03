@@ -14,6 +14,7 @@ import (
 	"kaapi/api/internal/inventory"
 	"kaapi/api/internal/payment"
 	"kaapi/api/internal/pricing"
+	"kaapi/api/internal/retention"
 )
 
 // JSON shapes of the public API. Money is integer paise, dates are YYYY-MM-DD strings,
@@ -218,6 +219,7 @@ type OutboxMessageDTO struct {
 	ID        uuid.UUID            `json:"id"`
 	Channel   domain.OutboxChannel `json:"channel"`
 	Kind      domain.OutboxKind    `json:"kind"`
+	Status    domain.OutboxStatus  `json:"status"`
 	Recipient string               `json:"recipient"`
 	Subject   *string              `json:"subject"`
 	Body      string               `json:"body"`
@@ -280,6 +282,7 @@ type BookingDTO struct {
 	HoldExpiresAt   *time.Time           `json:"hold_expires_at"`
 	CreatedAt       time.Time            `json:"created_at"`
 	ConfirmedAt     *time.Time           `json:"confirmed_at"`
+	ArchivedAt      *time.Time           `json:"archived_at"`
 	Payment         *PaymentDTO          `json:"payment"`
 }
 
@@ -588,7 +591,7 @@ func bookingDTO(b booking.Booking) BookingDTO {
 		Adults: b.Adults, Children: b.Children,
 		Guest:         GuestDTO{Name: b.Guest.Name, Email: b.Guest.Email, Phone: b.Guest.Phone, Country: b.Guest.Country},
 		ArrivalWindow: b.ArrivalWindow, SpecialRequests: b.SpecialRequests, Quote: quoteDTO(b.Quote),
-		HoldExpiresAt: b.HoldExpiresAt, CreatedAt: b.CreatedAt, ConfirmedAt: b.ConfirmedAt}
+		HoldExpiresAt: b.HoldExpiresAt, CreatedAt: b.CreatedAt, ConfirmedAt: b.ConfirmedAt, ArchivedAt: b.ArchivedAt}
 	if b.Payment != nil {
 		out.Payment = &PaymentDTO{OrderID: b.Payment.OrderID, Status: b.Payment.Status, AmountPaise: b.Payment.AmountPaise,
 			FailureReason: b.Payment.FailureReason}
@@ -670,4 +673,113 @@ func dashboardDTO(s enquiry.Stats, aiEnabled bool) DashboardResponse {
 		FirstReplyTargetMinutes: firstReplyTargetMinutes, RepliedThisWeek: s.RepliedThisWeek, OpenByLane: s.OpenByLane,
 		OpenComplaints: s.OpenComplaints, AwaitingAI: s.AwaitingAI, AICorrectionRate: s.AICorrectionRate,
 		DirectBookingsThisWeek: s.DirectBookingsThisWeek, DirectRevenueThisWeek: s.DirectRevenueThisWeek, Overbookings: s.Overbookings}
+}
+
+// RetentionResponse reports one retention sweep.
+type RetentionResponse struct {
+	Result retention.Result `json:"result"`
+}
+
+// ---- analytics
+
+type AnalyticsResponse struct {
+	Range      AnalyticsRangeDTO       `json:"range"`
+	KPIs       AnalyticsKPIsDTO        `json:"kpis"`
+	Daily      []AnalyticsDayDTO       `json:"daily"`
+	ByRoom     []AnalyticsBreakdownDTO `json:"by_room"`
+	ByPlan     []AnalyticsBreakdownDTO `json:"by_plan"`
+	StatusMix  []AnalyticsCountDTO     `json:"status_mix"`
+	LeadTime   []AnalyticsCountDTO     `json:"lead_time"`
+	OnTheBooks []AnalyticsMonthDTO     `json:"on_the_books"`
+	Enquiries  AnalyticsEnquiriesDTO   `json:"enquiries"`
+}
+
+type AnalyticsRangeDTO struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+type AnalyticsKPIsDTO struct {
+	RevenuePaise         int64    `json:"revenue_paise"`
+	RoomRevenuePaise     int64    `json:"room_revenue_paise"`
+	GSTPaise             int64    `json:"gst_paise"`
+	Bookings             int      `json:"bookings"`
+	RoomNights           int      `json:"room_nights"`
+	ADRPaise             int64    `json:"adr_paise"`
+	AvgStayNights        float64  `json:"avg_stay_nights"`
+	AvgLeadDays          float64  `json:"avg_lead_days"`
+	CancellationRate     *float64 `json:"cancellation_rate"`
+	CommissionSavedPaise int64    `json:"commission_saved_paise"`
+	AvgBookingValuePaise int64    `json:"avg_booking_value_paise"`
+	PreviousRevenuePaise int64    `json:"previous_revenue_paise"`
+	PreviousBookings     int      `json:"previous_bookings"`
+}
+
+type AnalyticsDayDTO struct {
+	Date         string `json:"date"`
+	Bookings     int    `json:"bookings"`
+	RevenuePaise int64  `json:"revenue_paise"`
+}
+
+type AnalyticsBreakdownDTO struct {
+	Name         string `json:"name"`
+	Bookings     int    `json:"bookings"`
+	RoomNights   int    `json:"room_nights"`
+	RevenuePaise int64  `json:"revenue_paise"`
+}
+
+type AnalyticsCountDTO struct {
+	Key   string `json:"key"`
+	Count int    `json:"count"`
+}
+
+type AnalyticsMonthDTO struct {
+	Month            string `json:"month"`
+	RoomNights       int    `json:"room_nights"`
+	RoomRevenuePaise int64  `json:"room_revenue_paise"`
+	Allotment        int    `json:"allotment"`
+	Sold             int    `json:"sold"`
+}
+
+type AnalyticsEnquiriesDTO struct {
+	Total                   int                 `json:"total"`
+	ByChannel               []AnalyticsCountDTO `json:"by_channel"`
+	ByCategory              []AnalyticsCountDTO `json:"by_category"`
+	Converted               int                 `json:"converted"`
+	MedianFirstReplyMinutes *float64            `json:"median_first_reply_minutes"`
+	AIHandledRate           *float64            `json:"ai_handled_rate"`
+}
+
+// ---- gmail and composing
+
+type GmailStatusDTO struct {
+	Configured   bool       `json:"configured"`
+	Connected    bool       `json:"connected"`
+	AccountEmail *string    `json:"account_email"`
+	ConnectedAt  *time.Time `json:"connected_at"`
+	LastSyncAt   *time.Time `json:"last_sync_at"`
+	LastError    *string    `json:"last_error"`
+}
+
+type GmailStatusResponse struct {
+	Gmail GmailStatusDTO `json:"gmail"`
+}
+
+type GmailConnectResponse struct {
+	AuthURL string `json:"auth_url"`
+}
+
+type GmailSyncResponse struct {
+	Imported int            `json:"imported"`
+	Gmail    GmailStatusDTO `json:"gmail"`
+}
+
+type ComposeRequest struct {
+	To      string `json:"to"`
+	Subject string `json:"subject"`
+	Body    string `json:"body"`
+}
+
+type OutboxMessageResponse struct {
+	Message OutboxMessageDTO `json:"message"`
 }

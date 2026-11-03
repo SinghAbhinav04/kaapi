@@ -15,14 +15,17 @@ import (
 
 	"kaapi/api/internal/admin"
 	"kaapi/api/internal/ai"
+	"kaapi/api/internal/analytics"
 	"kaapi/api/internal/auth"
 	"kaapi/api/internal/booking"
 	"kaapi/api/internal/catalog"
 	"kaapi/api/internal/enquiry"
+	"kaapi/api/internal/gmail"
 	"kaapi/api/internal/inventory"
 	"kaapi/api/internal/outbox"
 	"kaapi/api/internal/platform/config"
 	"kaapi/api/internal/platform/httpx"
+	"kaapi/api/internal/retention"
 )
 
 // API holds every dependency the handlers need.
@@ -31,12 +34,15 @@ type API struct {
 	log       *slog.Logger
 	pool      *pgxpool.Pool
 	admin     *admin.Service
+	analytics *analytics.Service
 	auth      *auth.Service
 	bookings  *booking.Service
 	catalog   *catalog.Service
 	enquiries *enquiry.Service
+	gmail     *gmail.Service
 	inventory *inventory.Service
 	outbox    *outbox.Service
+	retention *retention.Service
 }
 
 func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() time.Time) *API {
@@ -57,18 +63,27 @@ func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() tim
 			}()
 		}
 	}
-	return &API{
+	a := &API{
 		cfg:       cfg,
 		log:       log,
 		pool:      pool,
 		admin:     admin.NewService(pool),
+		analytics: analytics.NewService(pool, now),
 		auth:      auth.NewService(pool, cfg.JWESecret, now),
 		bookings:  booking.NewService(pool, now),
 		catalog:   catalog.NewService(pool),
 		inventory: inv,
 		enquiries: enquiry.NewService(pool, provider, inv, now),
 		outbox:    outbox.NewService(pool),
+		retention: retention.NewService(pool, now),
+		gmail:     gmail.NewService(pool, cfg.Gmail, cfg.JWESecret, now, log),
 	}
+	// One mailbox serves both directions: imported mail becomes enquiries, and replies and
+	// staff-written messages go out through it. Unconnected, everything stays simulated.
+	a.gmail.SetDeliver(a.deliverEmail)
+	a.enquiries.SetMailer(a.gmail)
+	a.outbox.SetMailer(a.gmail)
+	return a
 }
 
 // Router builds the handler tree. Middleware order matters: the request ID comes first so
@@ -122,6 +137,9 @@ func (a *API) Router() http.Handler {
 		// Enquiries from the website's forms.
 		r.Post("/enquiries", h(a.createEnquiry))
 
+		// Google sends the admin's browser back here after the Gmail consent screen.
+		r.Get("/integrations/gmail/callback", h(a.gmailCallback))
+
 		// Staff console. Each route names the permission it needs.
 		r.Route("/staff", func(r chi.Router) {
 			r.With(a.requirePermission(auth.PermOutboxRead)).Get("/outbox", h(a.listOutbox))
@@ -130,6 +148,16 @@ func (a *API) Router() http.Handler {
 			r.With(a.requirePermission(auth.PermRatesRead)).Get("/rates", h(a.ratesGrid))
 			r.With(a.requirePermission(auth.PermRatesRead)).Put("/rates", h(a.updateRates)) // the handler checks write permissions per field
 			r.With(a.requirePermission(auth.PermDashboardRead)).Get("/dashboard", h(a.dashboard))
+			r.With(a.requirePermission(auth.PermRetentionRun)).Post("/retention/run", h(a.runRetention))
+			r.With(a.requirePermission(auth.PermAnalyticsRead)).Get("/analytics", h(a.analyticsReport))
+			r.With(a.requirePermission(auth.PermEnquiriesRead)).Get("/integrations/gmail", h(a.gmailStatus))
+			r.Group(func(r chi.Router) {
+				r.Use(a.requirePermission(auth.PermIntegrations))
+				r.Post("/integrations/gmail/connect", h(a.gmailConnect))
+				r.Post("/integrations/gmail/sync", h(a.gmailSync))
+				r.Delete("/integrations/gmail", h(a.gmailDisconnect))
+			})
+			r.With(a.requirePermission(auth.PermEnquirySend)).Post("/messages", h(a.composeMessage))
 
 			r.Group(func(r chi.Router) {
 				r.Use(a.requirePermission(auth.PermEnquiriesRead))
@@ -163,6 +191,29 @@ func (a *API) SweepBookings(ctx context.Context, every, grace time.Duration) {
 			} else if n > 0 {
 				a.log.Info("expired unpaid bookings", "count", n)
 			}
+		}
+	}
+}
+
+// SweepRetention archives finished bookings and deletes expired personal data: once at
+// start-up, then on every tick. Each run is idempotent, so a missed or doubled tick is harmless.
+func (a *API) SweepRetention(ctx context.Context, every time.Duration) {
+	run := func() {
+		if r, err := a.retention.Sweep(ctx); err != nil {
+			a.log.Error("retention sweep failed", "err", err)
+		} else if r.Total() > 0 {
+			a.log.Info("retention sweep", "result", r)
+		}
+	}
+	run()
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			run()
 		}
 	}
 }

@@ -25,6 +25,9 @@ const (
 	PermOutboxRead      Permission = "outbox:read"
 	PermFactsWrite      Permission = "facts:write"
 	PermDashboardRead   Permission = "dashboard:read"
+	PermRetentionRun    Permission = "retention:run"
+	PermAnalyticsRead   Permission = "analytics:read"
+	PermIntegrations    Permission = "integrations:manage"
 )
 
 var staffBase = []Permission{PermBookingsRead, PermRatesRead, PermEnquiriesRead, PermEnquiryReroute, PermEnquirySend, PermOutboxRead, PermDashboardRead}
@@ -34,9 +37,9 @@ var grants = map[domain.Role][]Permission{
 	domain.RoleReservations: append(slices.Clone(staffBase), PermRatesWrite, PermInventoryWrite, PermBookingsExport),
 	domain.RoleSales:        slices.Clone(staffBase),
 	domain.RoleGM: append(slices.Clone(staffBase), PermRatesWrite, PermInventoryWrite, PermPromosWrite, PermEnquiriesAll,
-		PermBookingsExport, PermFactsWrite),
+		PermBookingsExport, PermFactsWrite, PermAnalyticsRead, PermIntegrations),
 	domain.RoleAdmin: append(slices.Clone(staffBase), PermRatesWrite, PermInventoryWrite, PermPromosWrite, PermEnquiriesAll,
-		PermBookingsExport, PermFactsWrite),
+		PermBookingsExport, PermFactsWrite, PermRetentionRun, PermAnalyticsRead, PermIntegrations),
 }
 
 // Can reports whether a role holds a permission.

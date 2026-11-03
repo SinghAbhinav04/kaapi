@@ -90,7 +90,7 @@ func (a *API) myBookings(w http.ResponseWriter, r *http.Request) error {
 func (a *API) staffBookings(w http.ResponseWriter, r *http.Request) error {
 	p := httpx.NewParams(r)
 	f := booking.ListFilter{Status: domain.BookingStatus(strings.ToUpper(p.String("status", ""))),
-		Limit: p.Int("limit", booking.DefaultListLimit, 1, booking.MaxListLimit)}
+		Limit: p.Int("limit", booking.DefaultListLimit, 1, booking.MaxListLimit), Archived: p.String("archived", "") == "true"}
 	if r.URL.Query().Has("from") {
 		f.From = p.Date("from")
 	}
@@ -199,4 +199,14 @@ func istLocation() *time.Location {
 		return loc
 	}
 	return time.FixedZone("IST", 5*3600+1800)
+}
+
+// runRetention: POST /v1/staff/retention/run → run the retention sweep now and report what it changed.
+func (a *API) runRetention(w http.ResponseWriter, r *http.Request) error {
+	res, err := a.retention.Sweep(r.Context())
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, RetentionResponse{Result: res})
+	return nil
 }

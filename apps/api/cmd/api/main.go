@@ -35,6 +35,9 @@ const (
 
 	// The enquiry worker wakes on every new message; this tick is only a safety net.
 	enquiryTick = 15 * time.Second
+
+	// Retention windows are months long, so a few runs a day is plenty.
+	retentionEvery = 6 * time.Hour
 )
 
 func main() {
@@ -69,6 +72,8 @@ func main() {
 	app := api.New(cfg, log, pool, time.Now)
 	go app.SweepBookings(ctx, sweepEvery, sweepGrace)
 	go app.RunEnquiryWorker(ctx, enquiryTick)
+	go app.SweepRetention(ctx, retentionEvery)
+	go app.RunGmail(ctx)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

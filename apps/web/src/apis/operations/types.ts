@@ -1,1 +1,11 @@
-export type { DashboardResponse, OutboxMessage, OutboxResponse } from '@/apis/generated/schema';
+export type {
+  ComposeRequest,
+  DashboardResponse,
+  GmailConnectResponse,
+  GmailStatus,
+  GmailStatusResponse,
+  GmailSyncResponse,
+  OutboxMessage,
+  OutboxMessageResponse,
+  OutboxResponse,
+} from '@/apis/generated/schema';

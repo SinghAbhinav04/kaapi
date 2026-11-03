@@ -33,6 +33,14 @@ const (
 	EnvNativeAppOrigins  = "NATIVE_APP_ORIGINS"
 	EnvRequestTimeoutSec = "REQUEST_TIMEOUT_SECONDS"
 	EnvDemoMode          = "DEMO_MODE"
+
+	// Gmail: the inbox reads and replies from a real mailbox once an admin connects it.
+	EnvGoogleClientID     = "GOOGLE_CLIENT_ID"
+	EnvGoogleClientSecret = "GOOGLE_CLIENT_SECRET"
+	EnvGmailRedirectURL   = "GMAIL_REDIRECT_URL" // optional; default APP_ORIGIN + /api/v1/integrations/gmail/callback
+	EnvGmailPollSeconds   = "GMAIL_POLL_SECONDS"
+	EnvGoogleOAuthBaseURL = "GOOGLE_OAUTH_BASE_URL" // tests point these at a fake
+	EnvGmailAPIBaseURL    = "GMAIL_API_BASE_URL"
 )
 
 type Environment string
@@ -53,6 +61,7 @@ type Config struct {
 	JWESecret        []byte
 	PaymentSecret    []byte
 	AI               AI
+	Gmail            Gmail
 	MigrateOnStart   bool
 	Environment      Environment
 	CookieSecure     bool
@@ -88,6 +97,18 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("%s must be a positive number of seconds", EnvRequestTimeoutSec)
 	}
 	c.RequestTimeout = time.Duration(secs) * time.Second
+	poll, err := strconv.Atoi(get(EnvGmailPollSeconds, "30"))
+	if err != nil || poll < 5 {
+		return c, fmt.Errorf("%s must be 5 seconds or more", EnvGmailPollSeconds)
+	}
+	c.Gmail = Gmail{
+		ClientID:     os.Getenv(EnvGoogleClientID),
+		ClientSecret: os.Getenv(EnvGoogleClientSecret),
+		RedirectURL:  get(EnvGmailRedirectURL, c.AppOrigin+"/api/v1/integrations/gmail/callback"),
+		PollEvery:    time.Duration(poll) * time.Second,
+		OAuthBaseURL: os.Getenv(EnvGoogleOAuthBaseURL),
+		APIBaseURL:   os.Getenv(EnvGmailAPIBaseURL),
+	}
 
 	var problems []string
 	var aiProblems []string
@@ -117,6 +138,19 @@ func get(key, fallback string) string {
 	}
 	return fallback
 }
+
+// Gmail is the OAuth client the admin connects a mailbox with. Without a client ID the
+// inbox works as before: replies are simulated in the outbox.
+type Gmail struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+	PollEvery    time.Duration
+	OAuthBaseURL string // empty: Google's
+	APIBaseURL   string // empty: Google's
+}
+
+func (g Gmail) Configured() bool { return g.ClientID != "" && g.ClientSecret != "" }
 
 // AI configures the model chain. With no keys, enquiries use the keyword rules and templates.
 type AI struct {

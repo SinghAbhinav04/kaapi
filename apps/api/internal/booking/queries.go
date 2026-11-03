@@ -24,7 +24,7 @@ import (
 const bookingSelect = `SELECT b.id, b.ref, b.status, b.room_type_id, rt.name, rt.slug, rp.name, rp.refundable,
 	b.check_in, b.check_out, b.rooms, b.adults, b.children,
 	b.guest_name, b.guest_email, b.guest_phone, b.guest_country, b.arrival_window, b.special_requests,
-	b.price_breakdown, h.expires_at, b.created_at, b.confirmed_at,
+	b.price_breakdown, h.expires_at, b.created_at, b.confirmed_at, b.archived_at,
 	p.provider_order_id, p.status, p.amount_paise, p.failure_reason
 	FROM bookings b
 	JOIN room_types rt ON rt.id = b.room_type_id
@@ -42,7 +42,7 @@ func scanBooking(r pgx.CollectableRow) (Booking, error) {
 	err := r.Scan(&b.ID, &b.Ref, &b.Status, &b.RoomTypeID, &b.RoomTypeName, &b.RoomTypeSlug, &b.RatePlanName, &b.Refundable,
 		&b.CheckIn, &b.CheckOut, &b.Rooms, &b.Adults, &b.Children,
 		&b.Guest.Name, &b.Guest.Email, &b.Guest.Phone, &b.Guest.Country, &b.ArrivalWindow, &b.SpecialRequests,
-		&quote, &b.HoldExpiresAt, &b.CreatedAt, &b.ConfirmedAt, &orderID, &payStatus, &amount, &failure)
+		&quote, &b.HoldExpiresAt, &b.CreatedAt, &b.ConfirmedAt, &b.ArchivedAt, &orderID, &payStatus, &amount, &failure)
 	if err != nil {
 		return b, err
 	}
@@ -125,6 +125,11 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]Booking, error) {
 	if f.Status != "" {
 		add("b.status = $%d", f.Status)
 	}
+	if f.Archived {
+		where = append(where, "b.archived_at IS NOT NULL")
+	} else {
+		where = append(where, "b.archived_at IS NULL")
+	}
 	if !f.From.IsZero() {
 		add("b.check_in >= $%d", f.From)
 	}
@@ -136,7 +141,11 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]Booking, error) {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
 	args = append(args, f.Limit)
-	q += fmt.Sprintf(" ORDER BY b.check_in, b.created_at LIMIT $%d", len(args))
+	order := "b.check_in, b.created_at"
+	if f.Archived { // the archive reads newest stay first
+		order = "b.check_in DESC, b.created_at DESC"
+	}
+	q += fmt.Sprintf(" ORDER BY %s LIMIT $%d", order, len(args))
 	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err

@@ -21,6 +21,7 @@ const PATHS: Record<Name, React.ReactNode> = {
     </>
   ),
   dashboard: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
+  analytics: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
 };
 
 export function NavIcon({ name, active }: { name: Name; active?: boolean }) {

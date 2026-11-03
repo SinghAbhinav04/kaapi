@@ -16,4 +16,11 @@ export const operationsQueries = {
       queryFn: ({ signal }) => operationsApi.dashboard(signal),
       refetchInterval: OPERATIONS_REFRESH_MS,
     }),
+  /** Refreshes on the inbox's rhythm so "last synced" stays honest. */
+  gmail: () =>
+    queryOptions({
+      queryKey: operationsKeys.gmail(),
+      queryFn: ({ signal }) => operationsApi.gmailStatus(signal),
+      refetchInterval: OPERATIONS_REFRESH_MS,
+    }),
 };

@@ -299,6 +299,7 @@ paths:
         - { name: status, in: query, schema: { type: string } }
         - { name: from, in: query, description: Check-in on or after., schema: { type: string, format: date } }
         - { name: to, in: query, description: Check-in before., schema: { type: string, format: date } }
+        - { name: archived, in: query, description: true lists the archive (finished stays) instead of live bookings., schema: { type: boolean, default: false } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
       responses:
         "200":
@@ -475,7 +476,7 @@ paths:
     parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
     post:
       tags: [enquiries]
-      summary: Send the latest draft. The only way a reply reaches a guest; nothing is sent automatically.
+      summary: Send the latest draft. The only way a reply reaches a guest; nothing is sent automatically. Email goes out through Gmail when connected (in the guest's thread), otherwise it is simulated.
       security: [{ cookieAuth: [] }, { bearerAuth: [] }]
       responses:
         "200":
@@ -485,6 +486,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /v1/staff/enquiries/{ref}/status:
     parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
     post:
@@ -524,6 +526,112 @@ paths:
         "200":
           description: OK
           content: { application/json: { schema: { $ref: "#/components/schemas/DashboardResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/staff/integrations/gmail:
+    get:
+      tags: [staff]
+      summary: Whether a Gmail mailbox is connected to the inbox.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/GmailStatusResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [staff]
+      summary: Disconnect the mailbox and revoke Google's grant. Replies go back to being simulated.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: The status after disconnecting.
+          content: { application/json: { schema: { $ref: "#/components/schemas/GmailStatusResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/staff/integrations/gmail/connect:
+    post:
+      tags: [staff]
+      summary: Start connecting a mailbox. Returns Google's consent URL to open in the browser.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/GmailConnectResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/staff/integrations/gmail/sync:
+    post:
+      tags: [staff]
+      summary: Read new mail now instead of waiting for the next poll.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: How many emails became enquiries.
+          content: { application/json: { schema: { $ref: "#/components/schemas/GmailSyncResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/integrations/gmail/callback:
+    get:
+      tags: [staff]
+      summary: Google's OAuth redirect. Always answers with a redirect back to the staff inbox.
+      parameters:
+        - { name: code, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+        - { name: error, in: query, schema: { type: string } }
+      responses:
+        "302": { description: "To /staff/inbox?gmail=connected|cancelled|error." }
+  /v1/staff/messages:
+    post:
+      tags: [staff]
+      summary: Send a new email written by staff (not a reply). Goes out through Gmail when connected; otherwise simulated.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ComposeRequest" } } }
+      responses:
+        "201":
+          description: The outbox copy.
+          content: { application/json: { schema: { $ref: "#/components/schemas/OutboxMessageResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/staff/analytics:
+    get:
+      tags: [staff]
+      summary: Revenue, booking pace, mix and what's already sold for the months ahead.
+      description: >-
+        KPIs count confirmed bookings (archived included) made in the range, by booked date in IST.
+        Commission saved is an estimate at the brief's ~20% agency commission. On-the-books covers this
+        month and the next five by stay date, against the website's allotment.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: from, in: query, description: First booked date (default 89 days before to)., schema: { type: string, format: date } }
+        - { name: to, in: query, description: Last booked date (default today in IST)., schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/AnalyticsResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/staff/retention/run:
+    post:
+      tags: [staff]
+      summary: Run the retention sweep now (it also runs on a schedule) and report what changed.
+      description: >-
+        Archives bookings whose stay is over, wipes guest contact details 12 months after check-out,
+        deletes archived bookings after the tax window (8 financial years), and deletes enquiries,
+        message copies, unpaid bookings, old holds, OTP codes and sessions past their windows. Idempotent.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: What the sweep changed.
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetentionResponse" } } }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
 
@@ -830,11 +938,12 @@ components:
 
     OutboxMessage:
       type: object
-      required: [id, channel, kind, recipient, subject, body, created_at]
+      required: [id, channel, kind, status, recipient, subject, body, created_at]
       properties:
         id: { type: string, format: uuid }
         channel: { type: string, enum: [EMAIL, WHATSAPP, SMS] }
-        kind: { type: string, enum: [OTP, BOOKING_CONFIRMATION, ENQUIRY_REPLY, ALERT, REFUND_NOTICE] }
+        kind: { type: string, enum: [OTP, BOOKING_CONFIRMATION, ENQUIRY_REPLY, ALERT, REFUND_NOTICE, STAFF_MESSAGE] }
+        status: { type: string, enum: [SIMULATED, SENT, FAILED], description: SENT went out through the connected mailbox; SIMULATED was only recorded. }
         recipient: { type: string }
         subject: { type: string, nullable: true }
         body: { type: string }
@@ -882,7 +991,7 @@ components:
     Booking:
       type: object
       required: [ref, status, room, plan, stay, rooms, adults, children, guest, arrival_window, special_requests, quote,
-        hold_expires_at, created_at, confirmed_at, payment]
+        hold_expires_at, created_at, confirmed_at, archived_at, payment]
       properties:
         ref: { type: string }
         status: { $ref: "#/components/schemas/BookingStatus" }
@@ -905,6 +1014,7 @@ components:
         hold_expires_at: { type: string, format: date-time, nullable: true }
         created_at: { type: string, format: date-time }
         confirmed_at: { type: string, format: date-time, nullable: true }
+        archived_at: { type: string, format: date-time, nullable: true, description: Set once the stay is over; archived bookings are kept for the tax window. }
         payment:
           allOf: [{ $ref: "#/components/schemas/Payment" }]
           nullable: true
@@ -1200,6 +1310,143 @@ components:
       required: [status]
       additionalProperties: false
       properties: { status: { $ref: "#/components/schemas/EnquiryStatus" } }
+
+    GmailStatus:
+      type: object
+      required: [configured, connected, account_email, connected_at, last_sync_at, last_error]
+      properties:
+        configured: { type: boolean, description: The server has a Google OAuth client. }
+        connected: { type: boolean }
+        account_email: { type: string, nullable: true }
+        connected_at: { type: string, format: date-time, nullable: true }
+        last_sync_at: { type: string, format: date-time, nullable: true }
+        last_error: { type: string, nullable: true }
+
+    GmailStatusResponse:
+      type: object
+      required: [gmail]
+      properties: { gmail: { $ref: "#/components/schemas/GmailStatus" } }
+
+    GmailConnectResponse:
+      type: object
+      required: [auth_url]
+      properties: { auth_url: { type: string } }
+
+    GmailSyncResponse:
+      type: object
+      required: [imported, gmail]
+      properties:
+        imported: { type: integer }
+        gmail: { $ref: "#/components/schemas/GmailStatus" }
+
+    ComposeRequest:
+      type: object
+      required: [to, subject, body]
+      additionalProperties: false
+      properties:
+        to: { type: string, format: email }
+        subject: { type: string, minLength: 1, maxLength: 200 }
+        body: { type: string, minLength: 1, maxLength: 4000 }
+
+    OutboxMessageResponse:
+      type: object
+      required: [message]
+      properties: { message: { $ref: "#/components/schemas/OutboxMessage" } }
+
+    AnalyticsCount:
+      type: object
+      required: [key, count]
+      properties: { key: { type: string }, count: { type: integer } }
+
+    AnalyticsBreakdown:
+      type: object
+      required: [name, bookings, room_nights, revenue_paise]
+      properties:
+        name: { type: string }
+        bookings: { type: integer }
+        room_nights: { type: integer }
+        revenue_paise: { $ref: "#/components/schemas/Paise" }
+
+    AnalyticsResponse:
+      type: object
+      required: [range, kpis, daily, by_room, by_plan, status_mix, lead_time, on_the_books, enquiries]
+      properties:
+        range:
+          type: object
+          required: [from, to]
+          properties: { from: { type: string, format: date }, to: { type: string, format: date } }
+        kpis:
+          type: object
+          required: [revenue_paise, room_revenue_paise, gst_paise, bookings, room_nights, adr_paise, avg_stay_nights, avg_lead_days,
+            cancellation_rate, commission_saved_paise, avg_booking_value_paise, previous_revenue_paise, previous_bookings]
+          properties:
+            revenue_paise: { $ref: "#/components/schemas/Paise" }
+            room_revenue_paise: { $ref: "#/components/schemas/Paise" }
+            gst_paise: { $ref: "#/components/schemas/Paise" }
+            bookings: { type: integer }
+            room_nights: { type: integer }
+            adr_paise: { $ref: "#/components/schemas/Paise" }
+            avg_stay_nights: { type: number }
+            avg_lead_days: { type: number }
+            cancellation_rate: { type: number, nullable: true }
+            commission_saved_paise: { $ref: "#/components/schemas/Paise" }
+            avg_booking_value_paise: { $ref: "#/components/schemas/Paise" }
+            previous_revenue_paise: { $ref: "#/components/schemas/Paise" }
+            previous_bookings: { type: integer }
+        daily:
+          type: array
+          items:
+            type: object
+            required: [date, bookings, revenue_paise]
+            properties:
+              date: { type: string, format: date }
+              bookings: { type: integer }
+              revenue_paise: { $ref: "#/components/schemas/Paise" }
+        by_room: { type: array, items: { $ref: "#/components/schemas/AnalyticsBreakdown" } }
+        by_plan: { type: array, items: { $ref: "#/components/schemas/AnalyticsBreakdown" } }
+        status_mix: { type: array, items: { $ref: "#/components/schemas/AnalyticsCount" } }
+        lead_time: { type: array, items: { $ref: "#/components/schemas/AnalyticsCount" } }
+        on_the_books:
+          type: array
+          items:
+            type: object
+            required: [month, room_nights, room_revenue_paise, allotment, sold]
+            properties:
+              month: { type: string, pattern: "^[0-9]{4}-[0-9]{2}$" }
+              room_nights: { type: integer }
+              room_revenue_paise: { $ref: "#/components/schemas/Paise" }
+              allotment: { type: integer }
+              sold: { type: integer }
+        enquiries:
+          type: object
+          required: [total, by_channel, by_category, converted, median_first_reply_minutes, ai_handled_rate]
+          properties:
+            total: { type: integer }
+            by_channel: { type: array, items: { $ref: "#/components/schemas/AnalyticsCount" } }
+            by_category: { type: array, items: { $ref: "#/components/schemas/AnalyticsCount" } }
+            converted: { type: integer }
+            median_first_reply_minutes: { type: number, nullable: true }
+            ai_handled_rate: { type: number, nullable: true }
+
+    RetentionResponse:
+      type: object
+      required: [result]
+      properties:
+        result:
+          type: object
+          required: [archived, anonymised, purged_after_tax_window, purged_unpaid, enquiries, outbox, notifications, holds, otps, sessions, housekeeping]
+          properties:
+            archived: { type: integer }
+            anonymised: { type: integer }
+            purged_after_tax_window: { type: integer }
+            purged_unpaid: { type: integer }
+            enquiries: { type: integer }
+            outbox: { type: integer }
+            notifications: { type: integer }
+            holds: { type: integer }
+            otps: { type: integer }
+            sessions: { type: integer }
+            housekeeping: { type: integer }
 
     DashboardResponse:
       type: object

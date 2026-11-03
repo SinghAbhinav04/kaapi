@@ -906,6 +906,8 @@ export interface paths {
                     from?: string;
                     /** @description Check-in before. */
                     to?: string;
+                    /** @description true lists the archive (finished stays) instead of live bookings. */
+                    archived?: boolean;
                     limit?: number;
                 };
                 header?: never;
@@ -1397,7 +1399,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Send the latest draft. The only way a reply reaches a guest; nothing is sent automatically. */
+        /** Send the latest draft. The only way a reply reaches a guest; nothing is sent automatically. Email goes out through Gmail when connected (in the guest's thread), otherwise it is simulated. */
         post: {
             parameters: {
                 query?: never;
@@ -1423,6 +1425,7 @@ export interface paths {
                 403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
                 409: components["responses"]["Error"];
+                503: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -1558,6 +1561,315 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/integrations/gmail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether a Gmail mailbox is connected to the inbox. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GmailStatusResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        /** Disconnect the mailbox and revoke Google's grant. Replies go back to being simulated. */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The status after disconnecting. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GmailStatusResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/integrations/gmail/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start connecting a mailbox. Returns Google's consent URL to open in the browser. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GmailConnectResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/integrations/gmail/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Read new mail now instead of waiting for the next poll. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description How many emails became enquiries. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GmailSyncResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/gmail/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Google's OAuth redirect. Always answers with a redirect back to the staff inbox. */
+        get: {
+            parameters: {
+                query?: {
+                    code?: string;
+                    state?: string;
+                    error?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description To /staff/inbox?gmail=connected|cancelled|error. */
+                302: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a new email written by staff (not a reply). Goes out through Gmail when connected; otherwise simulated. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ComposeRequest"];
+                };
+            };
+            responses: {
+                /** @description The outbox copy. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OutboxMessageResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Revenue, booking pace, mix and what's already sold for the months ahead.
+         * @description KPIs count confirmed bookings (archived included) made in the range, by booked date in IST. Commission saved is an estimate at the brief's ~20% agency commission. On-the-books covers this month and the next five by stay date, against the website's allotment.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description First booked date (default 89 days before to). */
+                    from?: string;
+                    /** @description Last booked date (default today in IST). */
+                    to?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AnalyticsResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/retention/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run the retention sweep now (it also runs on a schedule) and report what changed.
+         * @description Archives bookings whose stay is over, wipes guest contact details 12 months after check-out, deletes archived bookings after the tax window (8 financial years), and deletes enquiries, message copies, unpaid bookings, old holds, OTP codes and sessions past their windows. Idempotent.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description What the sweep changed. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RetentionResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -1789,7 +2101,12 @@ export interface components {
             /** @enum {string} */
             channel: "EMAIL" | "WHATSAPP" | "SMS";
             /** @enum {string} */
-            kind: "OTP" | "BOOKING_CONFIRMATION" | "ENQUIRY_REPLY" | "ALERT" | "REFUND_NOTICE";
+            kind: "OTP" | "BOOKING_CONFIRMATION" | "ENQUIRY_REPLY" | "ALERT" | "REFUND_NOTICE" | "STAFF_MESSAGE";
+            /**
+             * @description SENT went out through the connected mailbox; SIMULATED was only recorded.
+             * @enum {string}
+             */
+            status: "SIMULATED" | "SENT" | "FAILED";
             recipient: string;
             subject: string | null;
             body: string;
@@ -1852,6 +2169,11 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             confirmed_at: string | null;
+            /**
+             * Format: date-time
+             * @description Set once the stay is over; archived bookings are kept for the tax window.
+             */
+            archived_at: string | null;
             payment: components["schemas"]["Payment"] | null;
         };
         BookingResponse: {
@@ -2116,6 +2438,109 @@ export interface components {
         EnquiryStatusRequest: {
             status: components["schemas"]["EnquiryStatus"];
         };
+        GmailStatus: {
+            /** @description The server has a Google OAuth client. */
+            configured: boolean;
+            connected: boolean;
+            account_email: string | null;
+            /** Format: date-time */
+            connected_at: string | null;
+            /** Format: date-time */
+            last_sync_at: string | null;
+            last_error: string | null;
+        };
+        GmailStatusResponse: {
+            gmail: components["schemas"]["GmailStatus"];
+        };
+        GmailConnectResponse: {
+            auth_url: string;
+        };
+        GmailSyncResponse: {
+            imported: number;
+            gmail: components["schemas"]["GmailStatus"];
+        };
+        ComposeRequest: {
+            /** Format: email */
+            to: string;
+            subject: string;
+            body: string;
+        };
+        OutboxMessageResponse: {
+            message: components["schemas"]["OutboxMessage"];
+        };
+        AnalyticsCount: {
+            key: string;
+            count: number;
+        };
+        AnalyticsBreakdown: {
+            name: string;
+            bookings: number;
+            room_nights: number;
+            revenue_paise: components["schemas"]["Paise"];
+        };
+        AnalyticsResponse: {
+            range: {
+                /** Format: date */
+                from: string;
+                /** Format: date */
+                to: string;
+            };
+            kpis: {
+                revenue_paise: components["schemas"]["Paise"];
+                room_revenue_paise: components["schemas"]["Paise"];
+                gst_paise: components["schemas"]["Paise"];
+                bookings: number;
+                room_nights: number;
+                adr_paise: components["schemas"]["Paise"];
+                avg_stay_nights: number;
+                avg_lead_days: number;
+                cancellation_rate: number | null;
+                commission_saved_paise: components["schemas"]["Paise"];
+                avg_booking_value_paise: components["schemas"]["Paise"];
+                previous_revenue_paise: components["schemas"]["Paise"];
+                previous_bookings: number;
+            };
+            daily: {
+                /** Format: date */
+                date: string;
+                bookings: number;
+                revenue_paise: components["schemas"]["Paise"];
+            }[];
+            by_room: components["schemas"]["AnalyticsBreakdown"][];
+            by_plan: components["schemas"]["AnalyticsBreakdown"][];
+            status_mix: components["schemas"]["AnalyticsCount"][];
+            lead_time: components["schemas"]["AnalyticsCount"][];
+            on_the_books: {
+                month: string;
+                room_nights: number;
+                room_revenue_paise: components["schemas"]["Paise"];
+                allotment: number;
+                sold: number;
+            }[];
+            enquiries: {
+                total: number;
+                by_channel: components["schemas"]["AnalyticsCount"][];
+                by_category: components["schemas"]["AnalyticsCount"][];
+                converted: number;
+                median_first_reply_minutes: number | null;
+                ai_handled_rate: number | null;
+            };
+        };
+        RetentionResponse: {
+            result: {
+                archived: number;
+                anonymised: number;
+                purged_after_tax_window: number;
+                purged_unpaid: number;
+                enquiries: number;
+                outbox: number;
+                notifications: number;
+                holds: number;
+                otps: number;
+                sessions: number;
+                housekeeping: number;
+            };
+        };
         DashboardResponse: {
             ai_enabled: boolean;
             median_first_reply_minutes: number | null;
@@ -2235,6 +2660,16 @@ export type RouteEnquiryRequest = components['schemas']['RouteEnquiryRequest'];
 export type CorrectEnquiryRequest = components['schemas']['CorrectEnquiryRequest'];
 export type EditDraftRequest = components['schemas']['EditDraftRequest'];
 export type EnquiryStatusRequest = components['schemas']['EnquiryStatusRequest'];
+export type GmailStatus = components['schemas']['GmailStatus'];
+export type GmailStatusResponse = components['schemas']['GmailStatusResponse'];
+export type GmailConnectResponse = components['schemas']['GmailConnectResponse'];
+export type GmailSyncResponse = components['schemas']['GmailSyncResponse'];
+export type ComposeRequest = components['schemas']['ComposeRequest'];
+export type OutboxMessageResponse = components['schemas']['OutboxMessageResponse'];
+export type AnalyticsCount = components['schemas']['AnalyticsCount'];
+export type AnalyticsBreakdown = components['schemas']['AnalyticsBreakdown'];
+export type AnalyticsResponse = components['schemas']['AnalyticsResponse'];
+export type RetentionResponse = components['schemas']['RetentionResponse'];
 export type DashboardResponse = components['schemas']['DashboardResponse'];
 export type ResponseSignedIn = components['responses']['SignedIn'];
 export type ResponseError = components['responses']['Error'];

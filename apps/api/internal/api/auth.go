@@ -119,8 +119,7 @@ func (a *API) listOutbox(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := OutboxResponse{Messages: make([]OutboxMessageDTO, len(msgs))}
 	for i, m := range msgs {
-		out.Messages[i] = OutboxMessageDTO{ID: m.ID, Channel: m.Channel, Kind: m.Kind, Recipient: m.Recipient,
-			Subject: m.Subject, Body: m.Body, CreatedAt: m.CreatedAt}
+		out.Messages[i] = outboxDTO(m)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil

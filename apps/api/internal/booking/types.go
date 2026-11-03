@@ -49,6 +49,7 @@ type Booking struct {
 	HoldExpiresAt   *time.Time
 	CreatedAt       time.Time
 	ConfirmedAt     *time.Time
+	ArchivedAt      *time.Time // set by the retention sweep once the stay is over
 	Payment         *Payment
 }
 
@@ -63,6 +64,7 @@ type Payment struct {
 type ListFilter struct {
 	Status   domain.BookingStatus // empty: any
 	From, To time.Time            // check-in range; zero: any
+	Archived bool                 // false: live bookings; true: the archive
 	Limit    int
 }
 

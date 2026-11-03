@@ -1,0 +1,318 @@
+/* Chart roles. One series colour: a stronger step of the estate green, validated for chroma
+   and contrast on the card surface (the brand green itself reads grey as a data mark). */
+.page {
+  --viz-1: #2f7a4b;
+  --viz-track: #ece6db;
+  --viz-grid: #e8e2d8;
+
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.stale {
+  opacity: 0.55;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+/* KPI tiles */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.tile {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tileLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--grey);
+}
+
+.tileValue {
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.tileSub {
+  font-size: 12px;
+  color: var(--grey);
+}
+
+.delta {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* chart cards */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 16px;
+}
+
+.card {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.cardHead h2 {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.cardHead p {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--grey);
+}
+
+/* column chart */
+.plot {
+  position: relative;
+  height: 220px;
+  margin-left: 52px;
+}
+
+.gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--viz-grid);
+}
+
+.gridline span {
+  position: absolute;
+  right: calc(100% + 8px);
+  top: -7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--grey);
+  white-space: nowrap;
+}
+
+.columns {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
+/* The whole column height is the hover/focus target, not just the bar. */
+.col {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: default;
+}
+
+.col:hover,
+.col:focus-visible {
+  background: rgba(20, 18, 16, 0.04);
+  outline: none;
+}
+
+.bar {
+  width: 100%;
+  max-width: 24px;
+  border-radius: 4px 4px 0 0;
+  background: var(--viz-1);
+}
+
+.tip {
+  position: absolute;
+  z-index: 5;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--on-dark);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.col:hover .tip,
+.col:focus-visible .tip {
+  opacity: 1;
+}
+
+.tip strong {
+  display: block;
+  font-family: var(--font-mono);
+}
+
+.xAxis {
+  position: relative;
+  height: 18px;
+  margin-left: 52px;
+  border-top: 1px solid var(--hairline-strong);
+}
+
+.xAxis span {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--grey);
+  white-space: nowrap;
+}
+
+/* horizontal bar list */
+.bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.barRow {
+  display: grid;
+  /* Fixed value column, so every row's bar starts and ends at the same place. */
+  grid-template-columns: minmax(110px, 36%) 1fr 92px;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.barName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barTrack {
+  height: 12px;
+}
+
+.barFill {
+  height: 100%;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+  background: var(--viz-1);
+}
+
+.barValue {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* on the books */
+.meter {
+  height: 12px;
+  border-radius: 4px;
+  background: var(--viz-track);
+  overflow: hidden;
+}
+
+.meterFill {
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+  background: var(--viz-1);
+}
+
+/* table view */
+.tableView summary {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--grey);
+  cursor: pointer;
+}
+
+.tableScroll {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th,
+.table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--paper-2);
+  text-align: left;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-raised);
+  font-size: 12px;
+  color: var(--grey);
+}
+
+.num {
+  font-family: var(--font-mono);
+  text-align: right !important;
+}
+
+.empty {
+  font-size: 14px;
+  color: var(--grey);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.fact span {
+  display: block;
+  font-size: 12px;
+  color: var(--grey);
+}
+
+.fact strong {
+  font-family: var(--font-mono);
+  font-size: 20px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stale,
+  .tip {
+    transition: none;
+  }
+}

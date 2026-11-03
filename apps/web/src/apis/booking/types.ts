@@ -22,5 +22,7 @@ export interface StaffBookingsParams {
   from?: string;
   /** Check-in before (YYYY-MM-DD). */
   to?: string;
+  /** true: the archive of finished stays instead of live bookings. */
+  archived?: boolean;
   limit?: number;
 }

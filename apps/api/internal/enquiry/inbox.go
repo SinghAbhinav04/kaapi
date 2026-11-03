@@ -288,60 +288,127 @@ func (s *Service) EditDraft(ctx context.Context, ref string, actor uuid.UUID, bo
 	})
 }
 
-// Send delivers the latest draft through the enquiry's channel (simulated: the outbox).
-// It's the only way anything reaches a guest, and it always needs a person to press it.
+// Send delivers the latest draft. It's the only way anything reaches a guest, and it always
+// needs a person to press it. With a mailbox connected an email reply goes out for real, in
+// the guest's thread; otherwise (and for WhatsApp) it's recorded in the outbox as a simulation.
+//
+// Real delivery never holds a transaction across the network call: the draft is claimed in
+// one transaction, sent, then marked sent in another. The claim stops a double click sending
+// twice; if delivery fails the claim is released and nothing is marked sent.
 func (s *Service) Send(ctx context.Context, ref string, actor uuid.UUID) error {
-	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var id uuid.UUID
-		var channel domain.Channel
-		var email, phone, subject *string
-		err := tx.QueryRow(ctx, `SELECT id, channel, sender_email, sender_phone, subject FROM enquiries WHERE ref = $1 FOR UPDATE`,
-			strings.ToUpper(ref)).Scan(&id, &channel, &email, &phone, &subject)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNotFound
+	useMail := s.mailer != nil && s.mailer.Connected(ctx)
+	var p sendPlan
+	err := db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var err error
+		if p, err = loadSendPlan(ctx, tx, ref); err != nil {
+			return err
 		}
+		if !useMail || p.channel != domain.OutboxEmail {
+			p.simulated = true
+			return p.record(ctx, tx, actor, domain.OutboxSimulated, domain.SentMail{})
+		}
+		tag, err := tx.Exec(ctx, `UPDATE enquiry_drafts SET sending_at = now() WHERE id = $1 AND sent_at IS NULL
+			AND (sending_at IS NULL OR sending_at < now() - make_interval(secs => $2))`, p.draftID, sendClaimTTL.Seconds())
 		if err != nil {
 			return err
 		}
-		var draftID uuid.UUID
-		var body string
-		var sent *time.Time
-		var version int
-		err = tx.QueryRow(ctx, `SELECT id, body_rendered, sent_at, version FROM enquiry_drafts WHERE enquiry_id = $1 ORDER BY version DESC LIMIT 1`, id).
-			Scan(&draftID, &body, &sent, &version)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNoDraft
+		if tag.RowsAffected() == 0 {
+			return ErrSending
 		}
-		if err != nil {
-			return err
-		}
-		if sent != nil {
-			return ErrAlreadySent
-		}
-		out, recipient := domain.OutboxEmail, deref(email)
-		if channel == domain.ChannelWhatsApp || recipient == "" {
-			out, recipient = domain.OutboxWhatsApp, deref(phone)
-		}
-		if recipient == "" {
-			return ErrNoRecipient
-		}
-		subj := "Re: your enquiry to Kaapi Estate"
-		if subject != nil {
-			subj = "Re: " + *subject
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, recipient, subject, body, enquiry_id, sent_by)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, idgen.New(), out, domain.OutboxEnquiryReply, recipient, subj, body, id, actor); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE enquiry_drafts SET sent_at = now(), sent_by = $2 WHERE id = $1`, draftID, actor); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE enquiries SET status = $2, first_response_at = coalesce(first_response_at, now()), updated_at = now()
-			WHERE id = $1`, id, domain.EnquiryReplied); err != nil {
-			return err
-		}
-		return addEvent(ctx, tx, id, domain.EventSent, domain.ActorUser, &actor, nil, map[string]any{"channel": out, "version": version})
+		return nil
 	})
+	if err != nil || p.simulated {
+		return err
+	}
+
+	sent, err := s.mailer.Send(ctx, domain.Mail{To: p.recipient, Subject: p.subject, Body: p.body, InReplyTo: p.inReplyTo, ThreadID: p.threadID})
+	if err != nil {
+		// Detached context: release the claim even if the request was cancelled.
+		_, _ = s.pool.Exec(context.WithoutCancel(ctx), `UPDATE enquiry_drafts SET sending_at = NULL WHERE id = $1`, p.draftID)
+		return err
+	}
+	// The guest has the email now; record it even if the request was cancelled meanwhile.
+	detached := context.WithoutCancel(ctx)
+	return db.WithTx(detached, s.pool, func(tx pgx.Tx) error {
+		return p.record(detached, tx, actor, domain.OutboxSent, sent)
+	})
+}
+
+// sendPlan is everything Send needs, read under the enquiry's row lock.
+type sendPlan struct {
+	enquiryID, draftID       uuid.UUID
+	version                  int
+	channel                  domain.OutboxChannel
+	recipient, subject, body string
+	inReplyTo, threadID      string
+	simulated                bool
+}
+
+func loadSendPlan(ctx context.Context, tx pgx.Tx, ref string) (sendPlan, error) {
+	var p sendPlan
+	var channel domain.Channel
+	var email, phone, subject, thread, msgID *string
+	err := tx.QueryRow(ctx, `SELECT id, channel, sender_email, sender_phone, subject, thread_id, rfc_message_id
+		FROM enquiries WHERE ref = $1 FOR UPDATE`, strings.ToUpper(ref)).
+		Scan(&p.enquiryID, &channel, &email, &phone, &subject, &thread, &msgID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return p, ErrNotFound
+	}
+	if err != nil {
+		return p, err
+	}
+	var sent *time.Time
+	err = tx.QueryRow(ctx, `SELECT id, body_rendered, sent_at, version FROM enquiry_drafts WHERE enquiry_id = $1 ORDER BY version DESC LIMIT 1`,
+		p.enquiryID).Scan(&p.draftID, &p.body, &sent, &p.version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return p, ErrNoDraft
+	}
+	if err != nil {
+		return p, err
+	}
+	if sent != nil {
+		return p, ErrAlreadySent
+	}
+	p.channel, p.recipient = domain.OutboxEmail, deref(email)
+	if channel == domain.ChannelWhatsApp || p.recipient == "" {
+		p.channel, p.recipient = domain.OutboxWhatsApp, deref(phone)
+	}
+	if p.recipient == "" {
+		return p, ErrNoRecipient
+	}
+	p.subject = "Re: your enquiry to Kaapi Estate"
+	if subject != nil && *subject != "" {
+		p.subject = *subject
+		if !strings.HasPrefix(strings.ToLower(p.subject), "re:") {
+			p.subject = "Re: " + p.subject
+		}
+	}
+	p.threadID, p.inReplyTo = deref(thread), deref(msgID)
+	return p, nil
+}
+
+// record writes the outbox copy, marks the draft sent and the enquiry replied. For a real
+// delivery it only succeeds if the draft is still unsent, which the claim guarantees.
+func (p sendPlan) record(ctx context.Context, tx pgx.Tx, actor uuid.UUID, status domain.OutboxStatus, sent domain.SentMail) error {
+	tag, err := tx.Exec(ctx, `UPDATE enquiry_drafts SET sent_at = now(), sent_by = $2, sending_at = NULL WHERE id = $1 AND sent_at IS NULL`,
+		p.draftID, actor)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrAlreadySent
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, recipient, subject, body, enquiry_id, sent_by, status, external_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, idgen.New(), p.channel, domain.OutboxEnquiryReply, p.recipient, p.subject, p.body,
+		p.enquiryID, actor, status, nilIfEmpty(sent.MessageID)); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE enquiries SET status = $2, first_response_at = coalesce(first_response_at, now()),
+		thread_id = coalesce(thread_id, $3), updated_at = now() WHERE id = $1`, p.enquiryID, domain.EnquiryReplied, nilIfEmpty(sent.ThreadID)); err != nil {
+		return err
+	}
+	return addEvent(ctx, tx, p.enquiryID, domain.EventSent, domain.ActorUser, &actor, nil,
+		map[string]any{"channel": p.channel, "version": p.version, "delivery": status})
 }
 
 // SetStatus closes, reopens or marks an enquiry as spam.

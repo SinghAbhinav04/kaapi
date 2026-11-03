@@ -24,4 +24,7 @@ export type Permission =
   | 'enquiries:send'
   | 'outbox:read'
   | 'facts:write'
-  | 'dashboard:read';
+  | 'dashboard:read'
+  | 'retention:run'
+  | 'integrations:manage'
+  | 'analytics:read';

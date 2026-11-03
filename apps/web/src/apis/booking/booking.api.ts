@@ -15,7 +15,7 @@ export function createBookingApi(client: HttpClient): BookingApi {
     staffBookings: (params, signal) =>
       client.get(BOOKING_PATHS.staff, {
         signal,
-        query: { status: params.status, from: params.from, to: params.to, limit: params.limit },
+        query: { status: params.status, from: params.from, to: params.to, archived: params.archived ? 'true' : undefined, limit: params.limit },
       }),
     exportDay: (date) => client.get(BOOKING_PATHS.export, { query: { date }, responseType: 'text' }),
   };

@@ -13,16 +13,18 @@ import { formatINR } from '@/shared/lib/money';
 import { formatParty } from '@/shared/lib/text';
 import { Button, EmptyState, ErrorState, Pill, Segmented, Skeleton } from '@/shared/ui';
 
-import { BOOKINGS_LIMIT, STATUS_FILTERS } from '../const';
+import { ARCHIVE_NOTE, BOOKINGS_LIMIT, STATUS_FILTERS, VIEW_FILTERS } from '../const';
 import styles from './StaffBookings.module.css';
 
 type StatusFilter = (typeof STATUS_FILTERS)[number]['value'];
+type ViewFilter = (typeof VIEW_FILTERS)[number]['value'];
 
 export function StaffBookingsPage() {
+  const [view, setView] = useState<ViewFilter>('live');
   const [status, setStatus] = useState<StatusFilter>('');
   const [from, setFrom] = useState('');
   const [exportDate, setExportDate] = useState(todayIST());
-  const bookings = useStaffBookings({ status: status || undefined, from: from || undefined, limit: BOOKINGS_LIMIT });
+  const bookings = useStaffBookings({ status: status || undefined, from: from || undefined, archived: view === 'archived', limit: BOOKINGS_LIMIT });
   const exportDay = useExportDay();
   const { data: me } = useMe();
   const canExport = hasPermission(me ?? null, 'bookings:export');
@@ -63,12 +65,15 @@ export function StaffBookingsPage() {
 
       <Card className={styles.card}>
         <div className={styles.filters}>
+          <Segmented label="View" options={VIEW_FILTERS} value={view} onChange={setView} />
           <Segmented label="Status" options={STATUS_FILTERS} value={status} onChange={setStatus} />
           <label className={styles.from}>
             Check-in from
             <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
           </label>
         </div>
+
+        {view === 'archived' && <p className={styles.sub}>{ARCHIVE_NOTE}</p>}
 
         {bookings.isPending ? (
           <Skeleton height={320} radius={12} />

@@ -122,6 +122,15 @@ func (r Response) Error(t *testing.T) httpx.ErrorPayload {
 	return b.Error
 }
 
+// NoRedirects returns this session with redirects left unfollowed, to assert on a 302 itself.
+func (s *Server) NoRedirects() *Server {
+	c := *s
+	client := *s.client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	c.client = &client
+	return &c
+}
+
 // Do sends a request and validates the response against the contract. Routes that aren't
 // in the contract (deliberate 404/405 probes) are only checked for the error envelope.
 func (s *Server) Do(method, path string, body any, headers map[string]string) Response {

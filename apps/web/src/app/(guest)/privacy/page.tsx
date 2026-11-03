@@ -31,7 +31,15 @@ export default function Page() {
         <h2>Payments</h2>
         <p>Card details go straight to the payment provider. We never see or store them.</p>
         <h2>How long we keep it</h2>
-        <p>Booking records are kept as long as tax law requires. Enquiries that never become bookings are deleted after 12 months.</p>
+        <p>
+          When your stay is over, your booking moves to our archive. Twelve months after check-out we remove your email address, phone number and any
+          notes, and keep only what a tax invoice needs (your name, the dates and the amounts, including GST). Indian law asks us to keep those
+          accounts for eight financial years, after which the booking is deleted.
+        </p>
+        <p>
+          Messages you send us, and our replies, are deleted after 12 months. Bookings that were never paid for are deleted after 90 days. A job runs
+          several times a day to apply these rules.
+        </p>
         <h2>Your rights</h2>
         <p>
           You can ask to see, correct or delete your data, or withdraw consent, by writing to us through the contact form. We reply within 30 days.

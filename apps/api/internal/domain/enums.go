@@ -214,6 +214,15 @@ const (
 	OutboxEnquiryReply        OutboxKind = "ENQUIRY_REPLY"
 	OutboxAlert               OutboxKind = "ALERT"
 	OutboxRefundNotice        OutboxKind = "REFUND_NOTICE"
+	OutboxStaffMessage        OutboxKind = "STAFF_MESSAGE" // written from scratch by staff, not a reply
+)
+
+type OutboxStatus string
+
+const (
+	OutboxSimulated OutboxStatus = "SIMULATED" // recorded only: no mailbox connected
+	OutboxSent      OutboxStatus = "SENT"      // delivered through the connected mailbox
+	OutboxFailed    OutboxStatus = "FAILED"
 )
 
 type NotificationType string
