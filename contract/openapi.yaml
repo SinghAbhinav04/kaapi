@@ -1144,8 +1144,8 @@ components:
       properties:
         id: { type: string, format: uuid }
         channel: { type: string, enum: [EMAIL, WHATSAPP, SMS] }
-        kind: { type: string, enum: [OTP, BOOKING_CONFIRMATION, ENQUIRY_REPLY, ALERT, REFUND_NOTICE, STAFF_MESSAGE] }
-        status: { type: string, enum: [SIMULATED, SENT, FAILED], description: SENT went out through the connected mailbox; SIMULATED was only recorded. }
+        kind: { type: string, enum: [OTP, WELCOME, BOOKING_CONFIRMATION, ENQUIRY_REPLY, ALERT, REFUND_NOTICE, STAFF_MESSAGE] }
+        status: { type: string, enum: [QUEUED, SIMULATED, SENT, FAILED], description: "QUEUED is waiting for the worker (guest emails are delivered within seconds); SENT went out through the connected mailbox; SIMULATED was only recorded (no mailbox connected); FAILED gave up after 5 tries." }
         recipient: { type: string }
         subject: { type: string, nullable: true }
         body: { type: string }

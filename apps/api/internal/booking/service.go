@@ -242,8 +242,8 @@ func (s *Service) refundPath(ctx context.Context, tx pgx.Tx, paymentID, bookingI
 		fmt.Sprintf("Refund %s for %s: the payment arrived after the room was taken.", money.FormatINR(e.AmountPaise), ref)); err != nil {
 		return err
 	}
-	_, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, recipient, subject, body, booking_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		idgen.New(), domain.OutboxEmail, domain.OutboxRefundNotice, email, "We couldn't complete booking "+ref,
+	_, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body, booking_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		idgen.New(), domain.OutboxEmail, domain.OutboxRefundNotice, domain.OutboxQueued, email, "We couldn't complete booking "+ref,
 		fmt.Sprintf("We're sorry: your payment of %s reached us after your 10-minute hold ended, and the room had been booked by then. "+
 			"We've started a full refund, and it should reach you in 5 to 7 working days. Our reservations team will also call you with other dates.",
 			money.FormatINR(e.AmountPaise)), bookingID)
@@ -259,8 +259,9 @@ func (s *Service) confirmationMessages(ctx context.Context, tx pgx.Tx, bookingID
 		"Paid: %s, including %s GST\n\nCheck-in from 2 pm, check-out by 11 am. Bring a photo ID; guests from outside India show their passport and visa at check-in.",
 		firstName(b.Guest.Name), b.Ref, b.RoomTypeName, b.RatePlanName, b.CheckIn.Format("Mon 2 Jan"), b.CheckOut.Format("Mon 2 Jan 2006"),
 		b.Nights(), b.Rooms, money.FormatINR(b.Quote.TotalPaise), money.FormatINR(b.Quote.TaxPaise))
-	if _, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, recipient, subject, body, booking_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		idgen.New(), domain.OutboxEmail, domain.OutboxBookingConfirmation, b.Guest.Email, "Booking confirmed: "+b.Ref, body, bookingID); err != nil {
+	// Queued in the payment's transaction, so a confirmed booking always gets its email.
+	if _, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body, booking_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		idgen.New(), domain.OutboxEmail, domain.OutboxBookingConfirmation, domain.OutboxQueued, b.Guest.Email, "Booking confirmed: "+b.Ref, body, bookingID); err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO notifications (id, recipient_role, type, booking_id, body) VALUES ($1,$2,$3,$4,$5)`,

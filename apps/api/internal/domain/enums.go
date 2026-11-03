@@ -210,6 +210,7 @@ type OutboxKind string
 
 const (
 	OutboxOTP                 OutboxKind = "OTP"
+	OutboxWelcome             OutboxKind = "WELCOME" // a guest's first sign-in created their account
 	OutboxBookingConfirmation OutboxKind = "BOOKING_CONFIRMATION"
 	OutboxEnquiryReply        OutboxKind = "ENQUIRY_REPLY"
 	OutboxAlert               OutboxKind = "ALERT"
@@ -220,6 +221,7 @@ const (
 type OutboxStatus string
 
 const (
+	OutboxQueued    OutboxStatus = "QUEUED"    // waiting for the worker to deliver it
 	OutboxSimulated OutboxStatus = "SIMULATED" // recorded only: no mailbox connected
 	OutboxSent      OutboxStatus = "SENT"      // delivered through the connected mailbox
 	OutboxFailed    OutboxStatus = "FAILED"

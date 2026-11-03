@@ -54,6 +54,57 @@ func (s *Service) Send(ctx context.Context, actor uuid.UUID, c Compose) (Message
 	return s.store.insertStaffMessage(context.WithoutCancel(ctx), s.pool, actor, c, status, external)
 }
 
+// Deliver sends queued guest emails through the connected mailbox: claim a batch, send each
+// with no transaction open, then record the outcome. With no mailbox connected they're marked
+// SIMULATED, as before. Safe to run in several processes at once.
+func (s *Service) Deliver(ctx context.Context, limit int) (DeliverResult, error) {
+	var r DeliverResult
+	batch, err := s.store.claim(ctx, s.pool, limit)
+	if err != nil || len(batch) == 0 {
+		return r, err
+	}
+	connected := s.mailer != nil && s.mailer.Connected(ctx)
+	for _, m := range batch {
+		// Recording uses its own context: a mail that went out must be marked sent even if
+		// the worker is shutting down.
+		rec := context.WithoutCancel(ctx)
+		if !connected {
+			r.Simulated++
+			if err := s.store.markSent(rec, s.pool, m.ID, domain.OutboxSimulated, nil); err != nil {
+				return r, err
+			}
+			continue
+		}
+		sent, sendErr := s.mailer.Send(ctx, domain.Mail{To: m.Recipient, Subject: m.Subject, Body: m.Body})
+		if sendErr == nil {
+			r.Sent++
+			id := sent.MessageID
+			if err := s.store.markSent(rec, s.pool, m.ID, domain.OutboxSent, &id); err != nil {
+				return r, err
+			}
+			continue
+		}
+		final := m.Attempts >= maxAttempts
+		if final {
+			r.Failed++
+		} else {
+			r.Retrying++
+		}
+		wait := firstBackoff << (m.Attempts - 1) // 30 s, 1 min, 2 min, 4 min
+		if err := s.store.markFailed(rec, s.pool, m.ID, final, wait, truncate(sendErr.Error(), maxErrorLen)); err != nil {
+			return r, err
+		}
+	}
+	return r, nil
+}
+
+func truncate(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}
+
 func validate(c Compose) (Compose, error) {
 	c.To = strings.ToLower(strings.TrimSpace(c.To))
 	c.Subject = strings.Join(strings.Fields(c.Subject), " ")

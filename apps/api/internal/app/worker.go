@@ -10,6 +10,7 @@ import (
 	"kaapi/api/internal/domain"
 	"kaapi/api/internal/enquiry"
 	"kaapi/api/internal/gmail"
+	"kaapi/api/internal/outbox"
 	"kaapi/api/internal/platform/apperr"
 )
 
@@ -28,10 +29,14 @@ const (
 
 	// The ECB publishes once a working day; a few fetches a day catch it without hammering.
 	fxEvery = 6 * time.Hour
+
+	// Guest emails (sign-in codes above all) should land within seconds; an idle check is one
+	// indexed query.
+	outboxEvery = 2 * time.Second
 )
 
 // RunWorkers runs every background job until ctx ends: the AI queue, the Gmail poller, the
-// unpaid-booking sweep, the retention sweep and the exchange rates. Production runs it in its own process
+// unpaid-booking sweep, the retention sweep, guest email delivery and the exchange rates. Production runs it in its own process
 // (cmd/worker) so the API can scale to zero; local development runs it inside cmd/api.
 // Every job is safe to run in more than one process at once (SKIP LOCKED, idempotent sweeps).
 func (a *App) RunWorkers(ctx context.Context) {
@@ -55,6 +60,15 @@ func (a *App) RunWorkers(ctx context.Context) {
 					a.Log.Error("retention sweep failed", "err", err)
 				} else if r.Total() > 0 {
 					a.Log.Info("retention sweep", "result", r)
+				}
+			})
+		},
+		func(ctx context.Context) {
+			every(ctx, outboxEvery, true, func() {
+				if r, err := a.Outbox.Deliver(ctx, outbox.DeliverBatch); err != nil {
+					a.Log.Error("outbox delivery failed", "err", err)
+				} else if r.Total() > 0 {
+					a.Log.Info("outbox delivered", "sent", r.Sent, "simulated", r.Simulated, "retrying", r.Retrying, "failed", r.Failed)
 				}
 			})
 		},

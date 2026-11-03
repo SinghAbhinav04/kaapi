@@ -2521,12 +2521,12 @@ export interface components {
             /** @enum {string} */
             channel: "EMAIL" | "WHATSAPP" | "SMS";
             /** @enum {string} */
-            kind: "OTP" | "BOOKING_CONFIRMATION" | "ENQUIRY_REPLY" | "ALERT" | "REFUND_NOTICE" | "STAFF_MESSAGE";
+            kind: "OTP" | "WELCOME" | "BOOKING_CONFIRMATION" | "ENQUIRY_REPLY" | "ALERT" | "REFUND_NOTICE" | "STAFF_MESSAGE";
             /**
-             * @description SENT went out through the connected mailbox; SIMULATED was only recorded.
+             * @description QUEUED is waiting for the worker (guest emails are delivered within seconds); SENT went out through the connected mailbox; SIMULATED was only recorded (no mailbox connected); FAILED gave up after 5 tries.
              * @enum {string}
              */
-            status: "SIMULATED" | "SENT" | "FAILED";
+            status: "QUEUED" | "SIMULATED" | "SENT" | "FAILED";
             recipient: string;
             subject: string | null;
             body: string;

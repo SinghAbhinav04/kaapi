@@ -109,8 +109,9 @@ func (s *Service) RequestOTP(ctx context.Context, email string) (string, error) 
 			idgen.New(), email, domain.OTPGuestLogin, s.otpHash(email, code), OTPTTL.Seconds()); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, recipient, subject, body) VALUES ($1,$2,$3,$4,$5,$6)`,
-			idgen.New(), domain.OutboxEmail, domain.OutboxOTP, email, "Your Kaapi Estate sign-in code",
+		// Queued with the code itself: the worker emails it through the connected mailbox.
+		_, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+			idgen.New(), domain.OutboxEmail, domain.OutboxOTP, domain.OutboxQueued, email, "Your Kaapi Estate sign-in code",
 			fmt.Sprintf("Your sign-in code is %s. It expires in %d minutes. If you didn't ask for it, you can ignore this email.",
 				code, int(OTPTTL.Minutes())))
 		return err
@@ -177,7 +178,12 @@ func (s *Service) guestFor(ctx context.Context, tx pgx.Tx, email string) (User, 
 		return User{}, err
 	}
 	u = User{ID: idgen.New(), Email: email, Name: strings.SplitN(email, "@", 2)[0], Role: domain.RoleGuest}
-	_, err = tx.Exec(ctx, `INSERT INTO users (id, email, name, role) VALUES ($1,$2,$3,$4)`, u.ID, u.Email, u.Name, u.Role)
+	if _, err = tx.Exec(ctx, `INSERT INTO users (id, email, name, role) VALUES ($1,$2,$3,$4)`, u.ID, u.Email, u.Name, u.Role); err != nil {
+		return u, err
+	}
+	// First sign-in is registration: welcome them in the same transaction, so it's sent exactly once.
+	_, err = tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		idgen.New(), domain.OutboxEmail, domain.OutboxWelcome, domain.OutboxQueued, email, "Welcome to Kaapi Estate", welcomeBody)
 	return u, err
 }
 

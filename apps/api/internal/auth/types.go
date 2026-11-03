@@ -43,6 +43,13 @@ type Tokens struct {
 	RefreshExpiresAt time.Time
 }
 
+// welcomeBody greets a guest whose first sign-in created their account.
+const welcomeBody = "Welcome to Kaapi Estate.\n\n" +
+	"You've signed in for the first time, so we've made you a guest account with this email. " +
+	"From My bookings you can see your stays, and you'll always sign in with a code we email you: there's no password to remember.\n\n" +
+	"We only keep what we need for your bookings, and we never ask for passport details online.\n\n" +
+	"If this wasn't you, you can ignore this email; nobody can sign in without the codes we send here."
+
 // ClientInfo is recorded on a session so a user can recognise it.
 type ClientInfo struct {
 	UserAgent string
