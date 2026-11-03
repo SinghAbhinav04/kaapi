@@ -101,7 +101,7 @@ export function StaySummary(props: StaySummaryProps) {
         )
       )}
 
-      <PromoField promo={promo} onPromo={onPromo} error={option?.promo_error ?? null} applied={!!quote?.promo_code} />
+      <PromoField promo={promo} onPromo={onPromo} error={option?.promo_error ?? null} appliedCode={quote?.promo_code ?? null} />
 
       {error && (
         <p className={styles.reserveError} role="alert">
@@ -116,7 +116,8 @@ export function StaySummary(props: StaySummaryProps) {
   );
 }
 
-function PromoField({ promo, onPromo, error, applied }: { promo?: string; onPromo: (c?: string) => void; error: string | null; applied: boolean }) {
+function PromoField(props: { promo?: string; onPromo: (c?: string) => void; error: string | null; appliedCode: string | null }) {
+  const { promo, onPromo, error, appliedCode } = props;
   const [open, setOpen] = useState(!!promo);
   const [value, setValue] = useState(promo ?? '');
   const submit = (e: FormEvent) => {
@@ -154,9 +155,16 @@ function PromoField({ promo, onPromo, error, applied }: { promo?: string; onProm
       )}
       {promo && (
         <p className={error ? styles.promoError : styles.promoOk} role="status">
-          {error ?? (applied ? `${promo} applied.` : 'Checking…')}
+          {error ?? promoMessage(promo, appliedCode)}
         </p>
       )}
     </form>
   );
+}
+
+/** The guest always gets their best offer, so a typed code can lose to an automatic one: say which applied. */
+function promoMessage(typed: string, applied: string | null): string {
+  if (!applied) return 'Checking…';
+  if (applied === typed) return `${typed} applied.`;
+  return `A better offer, ${applied}, is already applied.`;
 }

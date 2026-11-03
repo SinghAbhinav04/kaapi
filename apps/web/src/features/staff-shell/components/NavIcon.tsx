@@ -22,6 +22,12 @@ const PATHS: Record<Name, React.ReactNode> = {
   ),
   dashboard: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
   analytics: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
+  offers: (
+    <>
+      <path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0L3 13V3h10l7.6 7.6a2 2 0 010 2.8z" />
+      <circle cx="7.5" cy="7.5" r="1.5" />
+    </>
+  ),
   team: (
     <>
       <circle cx="9" cy="8" r="3.5" />

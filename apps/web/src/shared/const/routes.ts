@@ -22,5 +22,6 @@ export const ROUTES = {
     dashboard: '/staff/dashboard',
     analytics: '/staff/analytics',
     team: '/staff/team',
+    offers: '/staff/offers',
   },
 } as const;
