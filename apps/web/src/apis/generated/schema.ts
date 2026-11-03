@@ -103,6 +103,7 @@ export interface paths {
                         "application/json": components["schemas"]["PropertyResponse"];
                     };
                 };
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -142,6 +143,7 @@ export interface paths {
                         "application/json": components["schemas"]["FxRatesResponse"];
                     };
                 };
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -178,6 +180,7 @@ export interface paths {
                         "application/json": components["schemas"]["RoomsResponse"];
                     };
                 };
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -216,6 +219,7 @@ export interface paths {
                     };
                 };
                 404: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -261,6 +265,7 @@ export interface paths {
                 };
                 404: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -305,6 +310,7 @@ export interface paths {
                     };
                 };
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -354,6 +360,7 @@ export interface paths {
                 };
                 409: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -396,6 +403,7 @@ export interface paths {
                 404: components["responses"]["Error"];
                 410: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         options?: never;
@@ -432,6 +440,7 @@ export interface paths {
                 200: components["responses"]["SignedIn"];
                 401: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -514,6 +523,7 @@ export interface paths {
                 200: components["responses"]["SignedIn"];
                 401: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -554,6 +564,7 @@ export interface paths {
             responses: {
                 200: components["responses"]["SignedIn"];
                 401: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -588,6 +599,7 @@ export interface paths {
                     content?: never;
                 };
                 403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -622,6 +634,7 @@ export interface paths {
                     };
                 };
                 401: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -662,6 +675,7 @@ export interface paths {
                 };
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -712,6 +726,7 @@ export interface paths {
                 404: components["responses"]["Error"];
                 410: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -751,6 +766,7 @@ export interface paths {
                     };
                 };
                 404: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -789,6 +805,7 @@ export interface paths {
                 };
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -828,6 +845,7 @@ export interface paths {
                     };
                 };
                 404: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -874,6 +892,7 @@ export interface paths {
                 };
                 404: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -922,6 +941,7 @@ export interface paths {
                 401: components["responses"]["Error"];
                 404: components["responses"]["Error"];
                 409: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -967,6 +987,7 @@ export interface paths {
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -1008,6 +1029,7 @@ export interface paths {
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -1053,6 +1075,7 @@ export interface paths {
                 403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         /**
@@ -1087,6 +1110,7 @@ export interface paths {
                 404: components["responses"]["Error"];
                 409: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         post?: never;
@@ -1221,6 +1245,7 @@ export interface paths {
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -1259,6 +1284,7 @@ export interface paths {
                 };
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -1304,6 +1330,7 @@ export interface paths {
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -1356,6 +1383,7 @@ export interface paths {
                 403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -1410,6 +1438,7 @@ export interface paths {
                 403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         trace?: never;
@@ -1455,6 +1484,7 @@ export interface paths {
                 403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         post?: never;
@@ -1502,6 +1532,7 @@ export interface paths {
                 403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
                 409: components["responses"]["Error"];
+                429: components["responses"]["Error"];
                 503: components["responses"]["Error"];
             };
         };
@@ -1553,6 +1584,7 @@ export interface paths {
                 403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -1598,6 +1630,7 @@ export interface paths {
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -1634,6 +1667,7 @@ export interface paths {
                 };
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -1672,6 +1706,7 @@ export interface paths {
                 };
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -1697,6 +1732,7 @@ export interface paths {
                 };
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         options?: never;
@@ -1735,6 +1771,7 @@ export interface paths {
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
                 409: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -1774,6 +1811,7 @@ export interface paths {
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
                 409: components["responses"]["Error"];
+                429: components["responses"]["Error"];
                 503: components["responses"]["Error"];
             };
         };
@@ -1811,6 +1849,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -1856,6 +1895,7 @@ export interface paths {
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
                 503: components["responses"]["Error"];
             };
         };
@@ -1893,6 +1933,7 @@ export interface paths {
                 };
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -1939,6 +1980,7 @@ export interface paths {
                 403: components["responses"]["Error"];
                 409: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -1987,6 +2029,7 @@ export interface paths {
                 404: components["responses"]["Error"];
                 409: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         post?: never;
@@ -2013,6 +2056,7 @@ export interface paths {
                 403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
                 409: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         options?: never;
@@ -2048,6 +2092,7 @@ export interface paths {
                 };
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -2079,6 +2124,7 @@ export interface paths {
                 404: components["responses"]["Error"];
                 409: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -2132,6 +2178,7 @@ export interface paths {
                 404: components["responses"]["Error"];
                 409: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         trace?: never;
@@ -2173,6 +2220,7 @@ export interface paths {
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -2216,6 +2264,7 @@ export interface paths {
                 };
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -3021,6 +3070,8 @@ export interface components {
         Error: {
             headers: {
                 "X-Request-Id"?: string;
+                /** @description On 429: seconds until the limit resets. */
+                "Retry-After"?: number;
                 [name: string]: unknown;
             };
             content: {

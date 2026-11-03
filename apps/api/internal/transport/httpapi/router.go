@@ -7,9 +7,9 @@ package httpapi
 import (
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"kaapi/api/internal/access"
@@ -26,6 +26,7 @@ import (
 	"kaapi/api/internal/outbox"
 	"kaapi/api/internal/platform/config"
 	"kaapi/api/internal/platform/httpx"
+	"kaapi/api/internal/platform/ratelimit"
 	"kaapi/api/internal/retention"
 )
 
@@ -47,13 +48,15 @@ type API struct {
 	outbox    *outbox.Service
 	retention *retention.Service
 	hub       *hub
+	limits    *ratelimit.Limiter
 }
 
 // New exposes the app's services over HTTP.
 func New(a *app.App) *API {
 	return &API{cfg: a.Config, log: a.Log, pool: a.Pool, access: a.Access, admin: a.Admin, analytics: a.Analytics, auth: a.Auth,
 		bookings: a.Bookings, catalog: a.Catalog, enquiries: a.Enquiries, fx: a.FX, gmail: a.Gmail, inventory: a.Inventory,
-		outbox: a.Outbox, retention: a.Retention, hub: newHub(a.Pool, a.Log)}
+		outbox: a.Outbox, retention: a.Retention, hub: newHub(a.Pool, a.Log),
+		limits: ratelimit.New(a.Pool, a.Config.JWESecret, time.Now)}
 }
 
 // Router builds the handler tree. Middleware order matters: the request ID comes first so
@@ -61,11 +64,10 @@ func New(a *app.App) *API {
 func (a *API) Router() http.Handler {
 	r := chi.NewRouter()
 	r.Use(httpx.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(httpx.ClientIP(a.cfg.TrustedProxyHops)) // before the access log, so it records the real caller
 	r.Use(httpx.AccessLog(a.log))
 	r.Use(httpx.Recover(a.log))
 	r.Use(httpx.SecurityHeaders)
-	r.Use(httpx.CORS(append([]string{a.cfg.AppOrigin}, a.cfg.NativeAppOrigins...)))
 	r.Use(timeoutExceptStreams(a.cfg.RequestTimeout))
 	r.NotFound(httpx.NotFound(a.log))
 	r.MethodNotAllowed(httpx.MethodNotAllowed(a.log))
@@ -76,8 +78,11 @@ func (a *API) Router() http.Handler {
 	r.Get("/readyz", h(a.readyz))
 
 	r.Route("/v1", func(r chi.Router) {
-		// The gateway: identify the caller on every request, and refuse cross-site writes.
+		// The gateway, for every route below: CORS by group, identify the caller, rate-limit by
+		// group, refuse cross-site writes. Groups and their policies are in policies.go.
+		r.Use(httpx.CORS(a.originsFor))
 		r.Use(a.authenticate)
+		r.Use(a.rateLimit)
 		r.Use(a.checkOrigin)
 
 		r.Post("/auth/staff/login", h(a.staffLogin))

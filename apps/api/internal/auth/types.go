@@ -61,4 +61,14 @@ const (
 	OTPWindow         = 10 * time.Minute
 	refreshTokenBytes = 32
 	userAgentMaxLen   = 300
+
+	// SessionCheckTTL is how long a "this session is live" answer is reused. Revoking in this
+	// process (logout, refresh reuse) takes effect at once; in other processes within this.
+	SessionCheckTTL = 30 * time.Second
+	// MaxTokenBytes: anything longer isn't one of ours, so it's refused before decrypting.
+	MaxTokenBytes = 4096
+	// clockSkew tolerates a token issued by a server whose clock runs slightly ahead.
+	clockSkew = time.Minute
+	// maxCachedSessions bounds the live-session cache's memory.
+	maxCachedSessions = 50_000
 )

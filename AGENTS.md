@@ -200,6 +200,14 @@ Each run writes one `audit_logs` row with the counts.
 - **Tabs refresh one at a time** (`navigator.locks` in `apis/http/index.ts`): two tabs sending the same refresh token look like theft to the API, which then revokes every session.
 - **Native clients** send `X-Client: native` and get tokens in the response body, then use Bearer.
 - **Guests** sign in with an email OTP: HMAC-bound, single use, rate-limited. In `DEMO_MODE` the API returns the code, because demo email is simulated.
+- **A token is only as good as its session:** `authenticate` decrypts it, rejects anything over 4 KB, issued in the future or living longer than 15 min, then asks `auth.SessionLive` (session not revoked or expired, user active; cached 30 s, cleared at once in-process on logout and rotation). Logging out or refreshing kills the old access token immediately.
+
+### The gateway (`transport/httpapi/gateway.go` + `policies.go`)
+The gateway is a layer in the API process, not a separate service (decision: one Go service plus a worker doesn't earn a second hop, a second deploy, or trusting identity headers between processes; split it out when a second independently deployed service exists). In production, edge protection is managed: Cloud Armor in front of Cloud Run, Cloud Run ingress restricted to the load balancer.
+- **Order, for every `/v1` route:** trusted client IP (router, before the access log) → CORS by group → `authenticate` → `rateLimit` by group → `checkOrigin` (CSRF) → the route's `requirePermission`. Routes declare only their permission; CORS and limits live in the `groups` table in `policies.go`, first match wins.
+- **Client IP:** `httpx.ClientIP(TRUSTED_PROXY_HOPS)` takes the address that many entries from the right of `X-Forwarded-For` + the connection, so a forged leftmost entry is ignored (chi's `RealIP` trusted it). Default 1 (the web proxy); Vercel + Cloud Run is 2. Correct only while the API is reachable solely through those proxies.
+- **CORS by group:** none for the payment webhook and the Gmail return; the web app only for `/v1/staff`; web app + `NATIVE_APP_ORIGINS` elsewhere. Preflights are judged as the method they ask about. `/healthz` and `/readyz` have no CORS.
+- **Rate limits (assumptions, sized for one resort):** staff login 10 / 15 min, OTP request 10 / 10 min, OTP verify 20 / 10 min, holds 20 / 10 min (a hold locks a room), bookings 20 / 10 min, enquiries 20 / h: all per IP and counted in `rate_limit_buckets` (shared by every instance). Refresh 60 / min, payment simulator 30 / 10 min, webhook 600 / min per IP; staff 600 / min and everything else 300 / min per account when signed in, else per IP: counted in memory per process. Keys are HMACs (no raw IP or email stored); the retention sweep deletes windows after 24 h. Over the limit: `429 RATE_LIMITED`, `Retry-After`, `details.retry_after_seconds`. A counter outage fails open. `RATE_LIMITS=off` disables them; tests leave them off except `gateway_test.go`.
 
 ---
 
@@ -307,7 +315,7 @@ Segmented, Stepper, Skeleton, EmptyState/ErrorState and Logo.
 - **No IPv6?** The Supabase direct host is unreachable; use the session pooler URL instead.
 - **Env names** (values never in git; see `.env.example`):
   - API (new): `WORKER_IN_PROCESS`, `GMAIL_REFRESH_TOKEN`; `GMAIL_POLL_SECONDS` defaults to 5.
-  - API: `DATABASE_URL`, `BROWSER_API_PREFIX` (optional, default `/api`), `FX_API_BASE_URL` (optional), `JWE_SECRET` (32+ bytes), `MOCK_PAYMENT_WEBHOOK_SECRET` (32+ bytes), `APP_ORIGIN`, `APP_ENV`, `DEMO_MODE`, `SEED_DEMO_PASSWORD`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`, `GEMINI_API_KEY`, `GEMINI_MODELS`, `GEMINI_RPM`, `GROQ_API_KEY`, `GROQ_MODELS`, `GROQ_RPM`, `SENTRY_DSN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_REDIRECT_URL` (optional), `GMAIL_POLL_SECONDS` (optional), `PORT` (default 8080)
+  - API: `DATABASE_URL`, `BROWSER_API_PREFIX` (optional, default `/api`), `FX_API_BASE_URL` (optional), `JWE_SECRET` (32+ bytes), `MOCK_PAYMENT_WEBHOOK_SECRET` (32+ bytes), `APP_ORIGIN`, `APP_ENV`, `DEMO_MODE`, `SEED_DEMO_PASSWORD`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`, `GEMINI_API_KEY`, `GEMINI_MODELS`, `GEMINI_RPM`, `GROQ_API_KEY`, `GROQ_MODELS`, `GROQ_RPM`, `SENTRY_DSN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_REDIRECT_URL` (optional), `GMAIL_POLL_SECONDS` (optional), `RATE_LIMITS` (optional, default on), `TRUSTED_PROXY_HOPS` (optional, default 1), `PORT` (default 8080)
   - Web: `API_ORIGIN` (where `/api/*` is proxied; default `http://localhost:8080`), `NEXT_PUBLIC_APP_URL`
 - **Demo accounts:**
   - staff: `gm@`, `reservations@`, `reservations2@`, `sales@`, `admin@kaapiestate.test`
@@ -369,10 +377,10 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 2. Small API gaps:
    - `GET /v1/staff/notifications`: GM alerts are stored but nothing reads them.
    - Promo admin.
-   - A rate limit on staff login.
    - Delete-my-data requests from guests (OTP-verified, staff queue, export), see `docs/notes/data-retention.md`.
    - Inbound replies on an existing Gmail thread become a new enquiry; linking them to the original is a next step.
   - Sessions slide forever: each refresh grants 30 more days, with no absolute cap. Consider one (e.g. 12 h for ADMIN).
+  - Login is limited per IP only; a per-account limit (credential stuffing from many IPs) needs the email, which the gateway doesn't read.
    - Finish the store.go split for auth, booking, inventory, enquiry and gmail.
 3. Capacitor Android shell (`server.url` → production site; Bearer tokens in Preferences).
 4. Deploy:

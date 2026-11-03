@@ -30,6 +30,9 @@ type Service struct {
 	sealer *Sealer
 	key    []byte // HMAC key for OTP codes and IP hashes, derived from the token secret
 	now    func() time.Time
+
+	mu       sync.Mutex
+	sessions map[uuid.UUID]time.Time // session id → live until (a cached check)
 }
 
 func NewService(pool *pgxpool.Pool, secret []byte, now func() time.Time) *Service {
@@ -38,7 +41,7 @@ func NewService(pool *pgxpool.Pool, secret []byte, now func() time.Time) *Servic
 	}
 	mac := hmac.New(sha256.New, secret)
 	mac.Write([]byte("kaapi/otp-and-ip"))
-	return &Service{pool: pool, sealer: NewSealer(secret, now), key: mac.Sum(nil), now: now}
+	return &Service{pool: pool, sealer: NewSealer(secret, now), key: mac.Sum(nil), now: now, sessions: map[uuid.UUID]time.Time{}}
 }
 
 // Sealer exposes the token sealer to the gateway middleware.
@@ -218,18 +221,70 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string, client Clien
 			return err
 		}
 		_, err = tx.Exec(ctx, `UPDATE sessions SET revoked_at = now(), replaced_by = $2 WHERE id = $1`, sid, newSID)
+		s.forget(sid) // the old access token dies with its session (harmless if the transaction retries)
 		return err
 	})
 	if reused {
+		s.mu.Lock()
+		clear(s.sessions) // every session of that user was revoked; don't keep vouching for any
+		s.mu.Unlock()
 		return User{}, Tokens{}, ErrTokenInvalid
 	}
 	return u, t, err
 }
 
-// Logout ends a session. Its access token stays valid until it expires (at most AccessTTL).
+// Logout ends a session. Its access token stops working at once in this process and within
+// SessionCheckTTL in any other (SessionLive).
 func (s *Service) Logout(ctx context.Context, sessionID uuid.UUID) error {
 	_, err := s.pool.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`, sessionID)
+	s.forget(sessionID)
 	return err
+}
+
+// SessionLive reports whether an access token's session still stands: not revoked (logout,
+// rotation, a detected token reuse), not expired, and its user still active. The token alone
+// can't say this, since it is valid until it expires; the answer is cached briefly so the
+// database sees one check per session every SessionCheckTTL, not one per request.
+func (s *Service) SessionLive(ctx context.Context, sessionID uuid.UUID) (bool, error) {
+	now := s.now()
+	s.mu.Lock()
+	until, ok := s.sessions[sessionID]
+	s.mu.Unlock()
+	if ok && now.Before(until) {
+		return true, nil
+	}
+	var live bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM sessions se JOIN users u ON u.id = se.user_id
+		WHERE se.id = $1 AND se.revoked_at IS NULL AND se.expires_at > now() AND u.is_active)`, sessionID).Scan(&live)
+	if err != nil {
+		return false, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !live {
+		delete(s.sessions, sessionID)
+		return false, nil
+	}
+	if len(s.sessions) > maxCachedSessions { // bounded: drop finished entries, or all if still full
+		for id, t := range s.sessions {
+			if !now.Before(t) {
+				delete(s.sessions, id)
+			}
+		}
+		if len(s.sessions) > maxCachedSessions {
+			clear(s.sessions)
+		}
+	}
+	s.sessions[sessionID] = now.Add(SessionCheckTTL)
+	return true, nil
+}
+
+func (s *Service) forget(ids ...uuid.UUID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, id := range ids {
+		delete(s.sessions, id)
+	}
 }
 
 // Me returns the signed-in user.

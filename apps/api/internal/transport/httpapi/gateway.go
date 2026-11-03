@@ -2,12 +2,16 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"kaapi/api/internal/auth"
+	"kaapi/api/internal/platform/apperr"
 	"kaapi/api/internal/platform/httpx"
 )
 
@@ -23,6 +27,7 @@ const (
 	bearerPrefix        = "Bearer "
 	headerClient        = "X-Client"
 	clientNative        = "native"
+	headerRetryAfter    = "Retry-After"
 )
 
 type principalKey struct{}
@@ -46,9 +51,13 @@ func (a *API) refreshCookie() string {
 	return cookieRefreshDev
 }
 
-// authenticate is the gateway: it reads a token from the Bearer header (native app) or the
-// access cookie (web), decrypts it and puts the Principal on the context. Requests without
-// a valid token continue as anonymous; routes that need more say so with requirePermission.
+// The gateway, in order (router.go): CORS for the request's group → authenticate →
+// rateLimit → checkOrigin. Routes add only their permission (requirePermission).
+
+// authenticate reads a token from the Bearer header (native app) or the access cookie (web),
+// decrypts it, checks its session is still live (not logged out, rotated or revoked, and the
+// user still active) and puts the Principal on the context. Requests without a valid token
+// continue as anonymous; routes that need more say so with requirePermission.
 func (a *API) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := ""
@@ -59,7 +68,14 @@ func (a *API) authenticate(next http.Handler) http.Handler {
 		}
 		ctx := r.Context()
 		if token != "" {
-			if claims, err := a.auth.Sealer().Open(token); err == nil {
+			claims, err := a.auth.Sealer().Open(token)
+			live := false
+			if err == nil {
+				if live, err = a.auth.SessionLive(ctx, claims.SessionID); err != nil {
+					a.log.ErrorContext(ctx, "session check failed", "err", err) // fail closed: treated as signed out
+				}
+			}
+			if live {
 				ctx = context.WithValue(ctx, principalKey{}, auth.Principal{UserID: claims.UserID, Role: claims.Role, SessionID: claims.SessionID})
 			} else {
 				ctx = context.WithValue(ctx, tokenRejectedKey{}, true)
@@ -116,6 +132,43 @@ func (a *API) requirePermission(p auth.Permission) func(http.Handler) http.Handl
 			next.ServeHTTP(w, r)
 		}))
 	}
+}
+
+// rateLimit counts the request against its group's rule (policies.go): by account for signed-in
+// callers where the group says so, otherwise by IP (already the trusted client address, see
+// httpx.ClientIP). Over the limit: 429 RATE_LIMITED with Retry-After. A counter outage lets
+// requests through rather than locking everyone out.
+func (a *API) rateLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g := groupFor(r)
+		if !a.cfg.RateLimits || g == nil || r.Method == http.MethodOptions {
+			next.ServeHTTP(w, r)
+			return
+		}
+		subject := a.limits.Subject("ip", r.RemoteAddr)
+		if who := principal(r.Context()); g.key == byUserElseIP && who.IsAuthenticated() {
+			subject = a.limits.Subject("user", who.UserID.String())
+		}
+		d, err := a.limits.Allow(r.Context(), g.rule, subject)
+		if err != nil {
+			a.log.ErrorContext(r.Context(), "rate limit check failed", "group", g.name, "err", err)
+		}
+		if !d.Allowed {
+			secs := int(math.Ceil(d.RetryAfter.Seconds()))
+			w.Header().Set(headerRetryAfter, strconv.Itoa(secs))
+			httpx.WriteError(a.log, w, r, apperr.New(apperr.CodeRateLimited,
+				fmt.Sprintf("Too many requests. Please try again in %s.", waitText(secs))).With(apperr.Details{"retry_after_seconds": secs}))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func waitText(secs int) string {
+	if secs < 60 {
+		return strconv.Itoa(secs) + " seconds"
+	}
+	return strconv.Itoa((secs+59)/60) + " minutes"
 }
 
 // checkOrigin blocks cross-site writes that ride on our cookies (CSRF). Browsers always

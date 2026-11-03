@@ -36,6 +36,8 @@ const (
 	EnvBrowserAPIPrefix  = "BROWSER_API_PREFIX" // where browsers reach the API; default /api (the web app's proxy)
 	EnvFXBaseURL         = "FX_API_BASE_URL"    // exchange rates; empty = Frankfurter (ECB). Tests point it at a fake
 	EnvWorkerInProcess   = "WORKER_IN_PROCESS"  // run background jobs inside cmd/api (default: on in development)
+	EnvRateLimits        = "RATE_LIMITS"        // "off" disables the gateway's limits (load tests); on by default
+	EnvTrustedProxyHops  = "TRUSTED_PROXY_HOPS" // proxies in front of the API that append X-Forwarded-For; default 1 (the web proxy)
 
 	// Gmail: the inbox reads and replies from a real mailbox once an admin connects it.
 	EnvGoogleClientID     = "GOOGLE_CLIENT_ID"
@@ -60,6 +62,9 @@ const minSecretBytes = 32
 // defaultBrowserAPIPrefix matches the rewrite in apps/web/next.config.ts.
 const defaultBrowserAPIPrefix = "/api"
 
+// maxProxyHops is a sanity bound; real deployments have one or two.
+const maxProxyHops = 5
+
 type Config struct {
 	Port             string
 	DatabaseURL      string
@@ -83,6 +88,11 @@ type Config struct {
 	// WorkerInProcess runs the background jobs inside the API process. Production runs
 	// cmd/worker separately so the API can scale to zero.
 	WorkerInProcess bool
+	// RateLimits turns the gateway's limits on. Tests leave it off unless they test it.
+	RateLimits bool
+	// TrustedProxyHops is how many proxies we run in front of the API; the caller's IP is that
+	// many entries from the right of X-Forwarded-For, so a client can't forge its address.
+	TrustedProxyHops int
 }
 
 func (c Config) IsProduction() bool { return c.Environment == EnvProduction }
@@ -108,6 +118,12 @@ func Load() (Config, error) {
 	}
 	c.CookieSecure = get(EnvCookieSecure, strconv.FormatBool(c.IsProduction())) == "true"
 	c.WorkerInProcess = get(EnvWorkerInProcess, strconv.FormatBool(!c.IsProduction())) == "true"
+	c.RateLimits = get(EnvRateLimits, "on") != "off"
+	hops, err := strconv.Atoi(get(EnvTrustedProxyHops, "1"))
+	if err != nil || hops < 0 || hops > maxProxyHops {
+		return c, fmt.Errorf("%s must be a whole number from 0 to %d", EnvTrustedProxyHops, maxProxyHops)
+	}
+	c.TrustedProxyHops = hops
 	for _, o := range strings.Split(os.Getenv(EnvNativeAppOrigins), ",") {
 		if o = strings.TrimSpace(o); o != "" {
 			c.NativeAppOrigins = append(c.NativeAppOrigins, o)

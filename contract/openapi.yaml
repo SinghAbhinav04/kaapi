@@ -9,6 +9,13 @@ info:
     - Money is integer paise (₹1 = 100 paise). Dates are `YYYY-MM-DD`; timestamps are RFC 3339.
     - Every error has the same envelope (`ErrorBody`), with a stable `code` to switch on.
     - Every response carries `X-Request-Id`; quote it when reporting a problem.
+    - The gateway applies one policy per route group (`internal/transport/httpapi/policies.go`):
+      cross-origin access (none for the payment webhook and the Gmail return; the web app only
+      for `/v1/staff`; the web app and native shells elsewhere) and a rate limit, counted per
+      signed-in account or per client IP. Over the limit: `429 RATE_LIMITED` with `Retry-After`
+      (seconds) and `details.retry_after_seconds`.
+    - A token is accepted only while its session is live: logging out, a refresh rotating it,
+      or the account being deactivated ends it at once.
 
     This file is the contract. The API's contract test checks real responses against it,
     and the web app's TypeScript types are generated from it.
@@ -47,6 +54,7 @@ paths:
           description: OK
           content: { application/json: { schema: { $ref: "#/components/schemas/PropertyResponse" } } }
 
+        "429": { $ref: "#/components/responses/Error" }
   /v1/fx-rates:
     get:
       tags: [catalog]
@@ -60,6 +68,7 @@ paths:
           description: OK
           content: { application/json: { schema: { $ref: "#/components/schemas/FxRatesResponse" } } }
 
+        "429": { $ref: "#/components/responses/Error" }
   /v1/rooms:
     get:
       tags: [catalog]
@@ -69,6 +78,7 @@ paths:
           description: OK
           content: { application/json: { schema: { $ref: "#/components/schemas/RoomsResponse" } } }
 
+        "429": { $ref: "#/components/responses/Error" }
   /v1/rooms/{slug}:
     get:
       tags: [catalog]
@@ -79,6 +89,7 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/RoomResponse" } } }
         "404": { $ref: "#/components/responses/Error" }
 
+        "429": { $ref: "#/components/responses/Error" }
   /v1/rooms/{slug}/calendar:
     get:
       tags: [catalog]
@@ -95,6 +106,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
+        "429": { $ref: "#/components/responses/Error" }
   /v1/availability:
     get:
       tags: [booking]
@@ -112,6 +124,7 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/AvailabilityResponse" } } }
         "422": { $ref: "#/components/responses/Error" }
 
+        "429": { $ref: "#/components/responses/Error" }
   /v1/holds:
     post:
       tags: [booking]
@@ -130,6 +143,7 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
+        "429": { $ref: "#/components/responses/Error" }
   /v1/holds/{id}:
     delete:
       tags: [booking]
@@ -143,6 +157,7 @@ paths:
         "410": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
+        "429": { $ref: "#/components/responses/Error" }
   /v1/auth/staff/login:
     post:
       tags: [auth]
@@ -155,6 +170,7 @@ paths:
         "200": { $ref: "#/components/responses/SignedIn" }
         "401": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/auth/otp/request:
     post:
       tags: [auth]
@@ -181,6 +197,7 @@ paths:
         "200": { $ref: "#/components/responses/SignedIn" }
         "401": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/auth/refresh:
     post:
       tags: [auth]
@@ -194,12 +211,14 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/SignedIn" }
         "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/auth/logout:
     post:
       tags: [auth]
       responses:
         "204": { description: Signed out }
         "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/me:
     get:
       tags: [auth]
@@ -209,6 +228,7 @@ paths:
           description: OK
           content: { application/json: { schema: { $ref: "#/components/schemas/MeResponse" } } }
         "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/outbox:
     get:
       tags: [staff]
@@ -223,6 +243,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
 
+        "429": { $ref: "#/components/responses/Error" }
   /v1/bookings:
     post:
       tags: [booking]
@@ -240,6 +261,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "410": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/bookings/{ref}:
     get:
       tags: [booking]
@@ -252,6 +274,7 @@ paths:
           description: OK
           content: { application/json: { schema: { $ref: "#/components/schemas/BookingResponse" } } }
         "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/me/bookings:
     get:
       tags: [booking]
@@ -263,6 +286,7 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/BookingsResponse" } } }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/payments/{orderId}:
     get:
       tags: [payments]
@@ -273,6 +297,7 @@ paths:
           description: OK
           content: { application/json: { schema: { $ref: "#/components/schemas/PaymentPage" } } }
         "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/payments/{orderId}/simulate:
     post:
       tags: [payments]
@@ -287,6 +312,7 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/PaymentPage" } } }
         "404": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/payments/webhook:
     post:
       tags: [payments]
@@ -304,6 +330,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/bookings:
     get:
       tags: [staff]
@@ -321,6 +348,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/bookings/export:
     get:
       tags: [staff]
@@ -336,6 +364,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/rates:
     get:
       tags: [staff]
@@ -353,6 +382,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
     put:
       tags: [staff]
       summary: Bulk-edit a room type's nights. Fields left out stay as they are.
@@ -373,6 +403,7 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
+        "429": { $ref: "#/components/responses/Error" }
   /v1/enquiries:
     post:
       tags: [enquiries]
@@ -421,6 +452,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/inbox/stream:
     get:
       tags: [enquiries]
@@ -432,6 +464,7 @@ paths:
           content: { text/event-stream: { schema: { type: string } } }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/enquiries/{ref}:
     parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
     get:
@@ -445,6 +478,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/enquiries/{ref}/route:
     parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
     post:
@@ -462,6 +496,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/enquiries/{ref}/fields:
     parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
     patch:
@@ -479,6 +514,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/enquiries/{ref}/draft:
     parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
     put:
@@ -496,6 +532,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/enquiries/{ref}/send:
     parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
     post:
@@ -511,6 +548,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/enquiries/{ref}/status:
     parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
     post:
@@ -528,6 +566,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/enquiries/{ref}/retry-ai:
     parameters: [{ $ref: "#/components/parameters/EnquiryRef" }]
     post:
@@ -541,6 +580,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/dashboard:
     get:
       tags: [staff]
@@ -552,6 +592,7 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/DashboardResponse" } } }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/integrations/gmail:
     get:
       tags: [staff]
@@ -563,6 +604,7 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/GmailStatusResponse" } } }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
     delete:
       tags: [staff]
       summary: Disconnect the mailbox and revoke Google's grant. Replies go back to being simulated.
@@ -573,6 +615,7 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/GmailStatusResponse" } } }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/integrations/gmail/connect:
     post:
       tags: [staff]
@@ -585,6 +628,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/integrations/gmail/sync:
     post:
       tags: [staff]
@@ -598,6 +642,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/integrations/gmail/callback:
     get:
       tags: [staff]
@@ -608,6 +653,7 @@ paths:
         - { name: error, in: query, schema: { type: string } }
       responses:
         "302": { description: "To /staff/inbox?gmail=connected|cancelled|error." }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/messages:
     post:
       tags: [staff]
@@ -624,6 +670,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/access:
     get:
       tags: [access]
@@ -635,6 +682,7 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/AccessResponse" } } }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/roles:
     post:
       tags: [access]
@@ -651,6 +699,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/roles/{id}:
     parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
     put:
@@ -669,6 +718,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
     delete:
       tags: [access]
       summary: Delete a role nobody has.
@@ -679,6 +729,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/users:
     get:
       tags: [access]
@@ -690,6 +741,7 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/MembersResponse" } } }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
     post:
       tags: [access]
       summary: Create a staff account with a role and a starting password.
@@ -706,6 +758,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/users/{id}:
     parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
     patch:
@@ -724,6 +777,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/analytics:
     get:
       tags: [staff]
@@ -743,6 +797,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/retention/run:
     post:
       tags: [staff]
@@ -759,6 +814,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
 
+        "429": { $ref: "#/components/responses/Error" }
 components:
   securitySchemes:
     cookieAuth: { type: apiKey, in: cookie, name: kaapi_at, description: "Web. In production the cookie is __Host-kaapi_at." }
@@ -795,6 +851,7 @@ components:
       description: Something went wrong. `code` says what.
       headers:
         X-Request-Id: { schema: { type: string } }
+        Retry-After: { description: "On 429: seconds until the limit resets.", schema: { type: integer } }
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorBody" } } }
 
   schemas:

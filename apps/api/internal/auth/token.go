@@ -46,6 +46,9 @@ func (s *Sealer) Seal(c Claims) (string, error) {
 // Open decrypts a token and checks it hasn't expired. Every failure is ErrTokenInvalid:
 // callers don't need to know whether it was tampered with or merely old.
 func (s *Sealer) Open(token string) (Claims, error) {
+	if len(token) > MaxTokenBytes {
+		return Claims{}, ErrTokenInvalid
+	}
 	obj, err := jose.ParseEncrypted(token, []jose.KeyAlgorithm{jose.DIRECT}, []jose.ContentEncryption{jose.A256GCM})
 	if err != nil {
 		return Claims{}, ErrTokenInvalid
@@ -58,7 +61,10 @@ func (s *Sealer) Open(token string) (Claims, error) {
 	if err := json.Unmarshal(payload, &c); err != nil {
 		return Claims{}, ErrTokenInvalid
 	}
-	if s.now().Unix() >= c.ExpiresAt || !c.Role.Valid() {
+	now := s.now()
+	// Expired, issued in the future, living longer than any token we mint, or for no role we know.
+	if now.Unix() >= c.ExpiresAt || c.IssuedAt > now.Add(clockSkew).Unix() ||
+		c.ExpiresAt-c.IssuedAt > int64(AccessTTL.Seconds()) || !c.Role.Valid() {
 		return Claims{}, ErrTokenInvalid
 	}
 	return c, nil

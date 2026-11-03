@@ -21,7 +21,7 @@ const (
 	headerAllowCreds     = "Access-Control-Allow-Credentials"
 	headerMaxAge         = "Access-Control-Max-Age"
 	corsAllowedMethods   = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-	corsAllowedHeaders   = "Authorization, Content-Type, Idempotency-Key, X-Hold-Token, X-Request-Id"
+	corsAllowedHeaders   = "Authorization, Content-Type, Idempotency-Key, X-Client, X-Hold-Token, X-Request-Id"
 	corsPreflightSeconds = "600"
 )
 
@@ -38,13 +38,15 @@ func SecurityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// CORS allows the listed origins only. The web app calls the API through its own origin
-// (a rewrite), so this exists for the Capacitor shell and local development.
-func CORS(origins []string) func(http.Handler) http.Handler {
+// CORS answers cross-origin calls only from the origins policy returns for that request, so
+// each API group can allow its own callers (none at all for server-to-server routes). The web
+// app calls the API through its own origin (a rewrite); this is for the native shell and
+// local development.
+func CORS(policy func(*http.Request) []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
-			if origin != "" && slices.Contains(origins, origin) {
+			if origin != "" && slices.Contains(policy(r), origin) {
 				h := w.Header()
 				h.Set(headerAllowOrigin, origin)
 				h.Set(headerAllowCreds, "true")
