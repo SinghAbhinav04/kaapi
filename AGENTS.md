@@ -30,6 +30,10 @@ labelled in the TDD, and only facts from the problem statement may be used.
 | Gmail | Admin connects a mailbox once (OAuth). New inbox mail is polled into enquiries; replies and new messages go out from it, threaded. Unconnected, everything stays simulated in the outbox |
 | Retention | Job archives finished bookings, wipes guest contact details at 12 months, deletes bookings after 8 financial years and messages at 12 months |
 | Analytics | Revenue, ADR, commission saved, cancellations, booking pace, lead time, on-the-books occupancy, enquiry mix, currency guests read prices in |
+| Offers | Festive and seasonal discounts that apply by themselves, plus promo codes; guests always get their best offer. Staff manage them on the console's Offers page |
+| Guest email | Sign-in codes, a welcome on first sign-in, booking confirmations and refund notices go out for real through the connected Gmail (queued, retried, never lost) |
+| Privacy | Guests', senders' and users' personal data encrypted at rest (AES-256-GCM) with blind indexes for lookups |
+| Gateway | CORS and rate limits per API group, live-session token checks, client IPs that can't be forged |
 | Currency | Guests see "≈ $497" beside INR prices in their own currency (country from Vercel's header, else a time-zone guess, else INR; a switcher overrides). Always charged in INR; the currency shown and that day's rate are kept on the booking |
 
 ### Rules from the brief that must never break
@@ -39,7 +43,7 @@ labelled in the TDD, and only facts from the problem statement may be used.
 4. **Low-confidence enquiries go to the Unsorted lane** (the GM sees it). **Re-routing is one click.**
 5. **Complaints always alert the GM.** If either the model or the keyword rules sees a complaint, the GM is alerted.
 6. **GST shown at the tariff's rate:** per night, 5% up to ₹7,500, 18% above, on the price after discount. This is a labelled assumption.
-7. **DPDP:** consent at checkout, minimal fields, no passport details online, personal data redacted before any AI call, and the retention rules in `internal/retention` (the privacy page states the same).
+7. **DPDP:** consent at checkout, minimal fields, no passport details online, personal data redacted before any AI call, personal data **encrypted at rest** (`platform/pii`: never store a guest's name, email or phone except through `pii.Text`), and the retention rules in `internal/retention` (the privacy page states the same).
 8. **The booking flow is 3 steps or fewer.** It must be fast on slow mobile networks.
 
 ---
@@ -98,6 +102,8 @@ internal/
   retention/  archive / anonymise / purge sweep (batched, SKIP LOCKED, audit-logged)
   analytics/  read-only revenue, pace, mix and on-the-books report
   fx/         ECB rates via Frankfurter, stored as INR-per-unit micros; shown only while fresh (48 h)
+  platform/pii/        the personal-data interceptor (pii.Text: encrypt on write, decrypt on read) + blind indexes
+  platform/ratelimit/  fixed-window counters: memory per process, or rate_limit_buckets shared by every instance
   app/        composition root: builds every service once (cmd/api, cmd/worker and tests all use it) + RunWorkers
   transport/httpapi/  HTTP layer: router (gateway), handlers, DTOs (types.go), mappers, SSE inbox stream
   access/     RBAC: roles, grants, staff accounts, cached per-request permission lookup
@@ -106,7 +112,8 @@ migrations/   0001_init.sql (24 tables), 0002_lock_down_data_api.sql (RLS on eve
               0003_retention.sql (bookings.archived_at / anonymised_at), 0004_gmail.sql (integrations table,
               enquiry external ids, draft send claim, outbox status + STAFF_MESSAGE), 0005_query_indexes.sql,
               0006_inbox_notify.sql, 0007_rbac.sql, 0008_analytics_covering_index.sql, 0009_fx.sql (fx_rates,
-              bookings.display_currency + rate snapshot). New tables must ENABLE RLS. Two branches must never
+              bookings.display_currency + rate snapshot), 0010_outbox_delivery.sql (queued guest emails),
+              0011_offers.sql (automatic offers), 0012_pii.sql (blind-index columns for encrypted data). New tables must ENABLE RLS. Two branches must never
               add the same migration number: goose records versions, so the second 0005 is silently skipped.
 seed/data/    JSON fixtures: property, room_types, rate_plans, rates_rules, promos,
               users, enquiries (60, labelled), bookings (40)
@@ -211,6 +218,27 @@ The gateway is a layer in the API process, not a separate service (decision: one
 
 ---
 
+### Guest emails (`outbox/`, migration 0010)
+- Sign-in codes, the welcome on a guest's first sign-in (registration), booking confirmations and refund notices are inserted as **QUEUED in the same transaction** as what caused them, so none is lost or sent for something that rolled back.
+- The worker's `Outbox.Deliver` runs every 2 s: claim a batch (`SKIP LOCKED`), send through the connected Gmail with no transaction open, then record `SENT` with Gmail's id. Failures retry at 30 s, 1, 2, 4 min and become `FAILED` after 5 tries, with `last_error` kept. A claim older than 2 min is freed (the worker died mid-send). No mailbox connected: `SIMULATED`, as before.
+- Staff-written messages and enquiry replies still send straight from the request (a person is waiting); both record what happened in the outbox.
+
+### Offers (`admin/offers.go`, `inventory/quote.go`, migration 0011)
+- An offer is a row in `promo_codes`: percent (basis points, capped at 50%) or flat (paise), stay window, booking window, minimum nights, optional use cap, optional room types. `auto_apply` makes it a festive or seasonal offer that needs no code.
+- `quoteStay` prices the stay with the typed code (an invalid one is still reported) and every automatic offer that fits, and keeps the **cheapest total** for the guest; on a tie the typed code wins. The price still comes from the rate table, only reduced.
+- Staff with `promos:write` (GM, administrator) use `/v1/staff/offers` and the console's **Offers** page. Every change is audit-logged; nothing is deleted (bookings reference offers), pausing is `active: false`; a use cap can't drop below uses already made.
+
+### Personal data encryption (`platform/pii`, migration 0012)
+- **What's encrypted:** bookings `guest_name/email/phone/country`; enquiries `sender_name/email/phone`; users `email/name/phone`; outbox `recipient/body`. Enquiry `raw_text` stays plain on purpose (the AI needs it, it's redacted before any model call, and inbox search uses it): label it in the TDD.
+- **The interceptor:** pass `pii.Text(x)` (or `pii.Null(ptr)`) as a query argument and it is encrypted; scan into `pii.Into(&field)` / `pii.IntoNull(&ptr)` and it is decrypted. Domain code and handlers only see plain strings. A new column with personal data must go through these, and the integration test `TestPersonalDataIsCiphertextAtRest` should list it.
+- **Scheme:** AES-256-GCM, random nonce (same value encrypts differently each time; tampering fails), stored as `pii:v1:<base64>`; the `v1` leaves room to rotate keys. Encryption and index keys are derived separately from `PII_KEY`.
+- **Lookups:** ciphertext can't be compared, so equality goes through keyed **blind indexes** (`pii.EmailIndex`, `pii.Index`; HMAC-SHA256 of the trimmed, lower-cased value): `bookings.guest_email_hash` (My bookings), `users.email_hash` (sign-in, and unique: one account per email), `enquiries.sender_hash` (dedupe and per-sender cap), `otp_codes.email_hash` (codes keep no email at all). Exact match only: no `ILIKE` on encrypted columns; inbox search covers the reference and message, and the team list sorts names in Go.
+- **Keys:** `PII_KEY` (32+ bytes) is required in production and lives in `.env.production` / Secret Manager. **Lose it and the data is gone; change it and everything must be re-encrypted.** Development derives one from `JWE_SECRET` (`config.PIIKey`); the seeder and `testdb` derive it the same way, so they always agree.
+- **Existing rows:** `seed.EncryptExisting` runs on every API and seed start: it encrypts plaintext rows and fills the indexes in batches, once (a no-op afterwards). Reads pass old plaintext through, so nothing breaks before it runs.
+
+### Caches and hot state
+There is no Redis. Per-process caches with short TTLs: permissions (`access`, 30 s), live sessions (`auth.SessionLive`, 30 s, cleared at once in-process on logout and rotation), in-memory rate-limit counters. Shared state lives in Postgres: `rate_limit_buckets`, and `pg_notify` for the live inbox. The 30 s TTL is the bound on staleness across instances. A plan for event-driven caching (change data capture, analytics cache) is being discussed with the owner; nothing is built yet.
+
 ## 4. Frontend: `apps/web` (Next.js 16.4, React 19.3, TypeScript 5.9)
 
 **Stack:**
@@ -299,8 +327,9 @@ Segmented, Stepper, Skeleton, EmptyState/ErrorState and Logo.
 
 ## 5. Data and environments
 
-- **Shared database: Supabase Postgres (Mumbai, project `mpfjyrmtlkeqryfhmdfy`).**
-  - Locally: set `DATABASE_URL` in `apps/api/.env` (git-ignored), using the direct host `db.<ref>.supabase.co:5432`, which is IPv6.
+- **Two databases.** The local devdb is for `dev` (`apps/api/.env`); Supabase is production, for `main` (`apps/api/.env.production`). See § 6 Branches.
+- **Production database: Supabase Postgres (Mumbai, project `mpfjyrmtlkeqryfhmdfy`).**
+  - `DATABASE_URL` in `apps/api/.env.production` (git-ignored), using the direct host `db.<ref>.supabase.co:5432`, which is IPv6.
   - Cloud Run has no IPv6, so production must use the **session pooler** URL from Supabase → Connect.
   - If the password contains reserved characters (`@ : / # ? %`), percent-encode them in the URL. An unencoded `@` makes the host parse as `@db.…`.
   - Migrations run on API start and in `cmd/seed`.
@@ -314,7 +343,7 @@ Segmented, Stepper, Skeleton, EmptyState/ErrorState and Logo.
 - **Local Postgres without devdb** (e.g. a network that blocks devdb's binary download): `brew install postgresql@17 && brew services start postgresql@17`, create role `kaapi`/`kaapi` and databases `kaapi` + `kaapi_test`, then use `postgres://kaapi:kaapi@127.0.0.1:5432/...`. Override `DATABASE_URL` on the command line (real env beats `.env`). On corporate Macs `psql` can hang on Kerberos: add `gssencmode=disable` (pgx is unaffected).
 - **No IPv6?** The Supabase direct host is unreachable; use the session pooler URL instead.
 - **Env names** (values never in git; see `.env.example`):
-  - API (new): `WORKER_IN_PROCESS`, `GMAIL_REFRESH_TOKEN`; `GMAIL_POLL_SECONDS` defaults to 5.
+  - API (new): `WORKER_IN_PROCESS`, `GMAIL_REFRESH_TOKEN`; `GMAIL_POLL_SECONDS` defaults to 5; `PII_KEY` (32+ bytes, required in production); `DOTENV_FILE` (which settings file the commands load; default `.env`).
   - API: `DATABASE_URL`, `BROWSER_API_PREFIX` (optional, default `/api`), `FX_API_BASE_URL` (optional), `JWE_SECRET` (32+ bytes), `MOCK_PAYMENT_WEBHOOK_SECRET` (32+ bytes), `APP_ORIGIN`, `APP_ENV`, `DEMO_MODE`, `SEED_DEMO_PASSWORD`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`, `GEMINI_API_KEY`, `GEMINI_MODELS`, `GEMINI_RPM`, `GROQ_API_KEY`, `GROQ_MODELS`, `GROQ_RPM`, `SENTRY_DSN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_REDIRECT_URL` (optional), `GMAIL_POLL_SECONDS` (optional), `RATE_LIMITS` (optional, default on), `TRUSTED_PROXY_HOPS` (optional, default 1), `PORT` (default 8080)
   - Web: `API_ORIGIN` (where `/api/*` is proxied; default `http://localhost:8080`), `NEXT_PUBLIC_APP_URL`
 - **Demo accounts:**
@@ -325,10 +354,14 @@ Segmented, Stepper, Skeleton, EmptyState/ErrorState and Logo.
 
 ### Commands
 ```bash
-# API
+# API (dev: the local database)
 cd apps/api
-go run ./cmd/seed -reset          # migrate + seed the DB in .env
+go run ./cmd/devdb                # local Postgres 17 on :54329 (kaapi + kaapi_test); leave it running
+go run ./cmd/seed -reset          # flush the local DB: migrate + reseed (reads .env)
 go run ./cmd/api                  # :8080 (reads .env)
+# Production (Supabase): name the file explicitly, every time
+DOTENV_FILE=.env.production go run ./cmd/api          # applies migrations + encrypts existing rows
+DOTENV_FILE=.env.production go run ./cmd/seed -reset  # WIPES production: only when the owner asks
 go run ./cmd/eval                 # AI evaluation report (needs GEMINI/GROQ keys)
 go vet ./... && gofmt -l internal cmd tests
 # Web
@@ -341,6 +374,12 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 ---
 
 ## 6. Working rules
+
+- **Branches (from 3 Nov 2026):**
+  - `dev`: every change lands here first. It runs against the **local database** (`apps/api/.env` → devdb on `:54329`). Flush dev data into it with `go run ./cmd/seed -reset`, then test: the Go suite, the web checks, and the app by hand on `localhost:3000`. Push `dev`.
+  - `main`: **production** (Supabase, `apps/api/.env.production`; later Cloud Run + Vercel). Only tested work moves here, and only when the owner says so: `git switch main && git merge dev && git push`, then bring production's schema up with `DOTENV_FILE=.env.production go run ./cmd/api` (migrations and the PII backfill run on start).
+  - Never point a `-reset` at production unless the owner asks for production to be wiped.
+  - Migration numbers are global: check `main` and `dev` before adding one. Goose records versions, so two branches each adding `0005` means one is silently skipped (it happened; fx became 0009).
 
 - **Commits:**
   - conventional subjects (`feat(api):`, `feat(web):`, `fix`, `test`, `docs`, `chore`, `refactor`)
@@ -357,11 +396,10 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 
 ---
 
-## 7. Status and what's next (as of 3 Nov 2026)
+## 7. Status and what's next (as of 3 Nov 2026, late)
 
 **Done:**
 - Backend core slice, AI chain with an evaluation, full guest flow and staff console, RLS lock-down.
-- Supabase seeded and verified (public key reads nothing).
 - Navigation pass (every page reachable) and home scroll performance fix.
 - Staff-written replies and follow-ups; "New message" compose.
 - Data retention and deletion (`internal/retention`, privacy page updated). Policy from Abhinav: archive, anonymise, keep for the tax window.
@@ -369,23 +407,32 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 - Gmail integration: always connected (resorts.kaapi@gmail.com locally), 5 s check, catch-up sync, threaded send, drafts that know rooms and offers.
 - Production layout: composition root, separate worker, transport layer, repositories for six packages.
 - Query audit at production scale with indexes (0005, 0008); live inbox (0006); database-backed RBAC with an admin console (0007).
-- Currency estimates for foreign guests, kept per booking for analytics (3 Nov).
+- Currency estimates for foreign guests, kept per booking for analytics.
 - Fixed: web token refresh never worked through the `/api` proxy (refresh cookie path), and parallel tabs could revoke each other's sessions.
+- On `dev` (not yet on `main`): gateway policies (CORS and rate limits per group, live-session tokens, trusted client IP); real guest emails through the outbox; automatic offers with the console's Offers page; personal data encrypted at rest; `DOTENV_FILE` for dev/production settings.
+
+**State of the two databases:**
+- Local devdb: on `dev`, migrations 1–12, seeded and encrypted. It has a test `DIWALI26` offer (15%, automatic) created while checking the Offers flow.
+- Supabase (production): migrations 1–9 from `main`. 10–12 and the encryption backfill run when `dev` is promoted and the API starts with `.env.production` (whose `PII_KEY` must be kept safe from then on).
 
 **To do, in order:**
-1. A visual pass in a browser at 1440 px and 390 px against the approved canvas (Claude Design artifact "Kaapi Estate — Direct Booking").
-2. Small API gaps:
+1. Promote `dev` to `main` once the owner has tested it (§ 6 Branches), then bring Supabase up to migration 12.
+2. Decide the caching / change-data-capture plan with the owner (proposed, not built).
+3. A visual pass in a browser at 1440 px and 390 px against the approved canvas (Claude Design artifact "Kaapi Estate — Direct Booking"), including the currency switcher in the header and the Offers page.
+4. Small API gaps:
    - `GET /v1/staff/notifications`: GM alerts are stored but nothing reads them.
-   - Promo admin.
    - Delete-my-data requests from guests (OTP-verified, staff queue, export), see `docs/notes/data-retention.md`.
    - Inbound replies on an existing Gmail thread become a new enquiry; linking them to the original is a next step.
-  - Sessions slide forever: each refresh grants 30 more days, with no absolute cap. Consider one (e.g. 12 h for ADMIN).
-  - Login is limited per IP only; a per-account limit (credential stuffing from many IPs) needs the email, which the gateway doesn't read.
+   - Sessions slide forever: each refresh grants 30 more days, with no absolute cap. Consider one (e.g. 12 h for ADMIN).
+   - Login is limited per IP only; a per-account limit (credential stuffing from many IPs) needs the email, which the gateway doesn't read.
+   - `DEMO_MODE` is not refused in production; it returns sign-in codes in responses.
+   - Drafts (`enquiry_drafts`) can contain the guest's name and aren't encrypted yet.
    - Finish the store.go split for auth, booking, inventory, enquiry and gmail.
-3. Capacitor Android shell (`server.url` → production site; Bearer tokens in Preferences).
-4. Deploy:
-   - API: Dockerfile, Cloud Run `asia-south1`, Supabase session pooler. The retention sweep and Gmail poller are in-process tickers, so either keep `min-instances=1` or have Cloud Scheduler call `POST /v1/staff/retention/run` and `/integrations/gmail/sync`.
+5. Capacitor Android shell (`server.url` → production site; Bearer tokens in Preferences).
+6. Deploy:
+   - API: Dockerfile, Cloud Run `asia-south1`, Supabase session pooler. Workers (retention, Gmail, outbox, exchange rates) run in `cmd/worker` or in-process; keep one instance warm or schedule them. Cloud Armor in front; ingress through the load balancer only (`TRUSTED_PROXY_HOPS` must match).
+   - Secrets in Secret Manager, `PII_KEY` above all.
    - Production Gmail: add the production redirect URI and publish the consent screen (restricted scope → Google verification).
    - Web: Vercel `bom1`.
    - CI: GitHub Actions running vet, tests against a Postgres service, web lint, typecheck and build.
-5. Docs: the TDD as a PDF with the GitHub and live links at the top and every assumption labelled (retention windows, 8 FY, 20% commission estimate), plus `docs/deployment.md` (local run, env names only, demo logins).
+7. Docs: the TDD as a PDF with the GitHub and live links at the top and every assumption labelled (retention windows, 8 FY, 20% commission estimate, rate-limit sizes, plaintext enquiry text, the gateway-in-process decision), plus `docs/deployment.md` (local run, env names only, demo logins).
