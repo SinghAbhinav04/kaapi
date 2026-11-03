@@ -13,6 +13,10 @@ const securityHeaders = [
 
 const config: NextConfig = {
   reactCompiler: true,
+  // Keep visited and prefetched pages in the browser for 5 minutes, so moving between staff
+  // pages reuses them instead of fetching the page again. The data inside is TanStack Query's
+  // job (fresh until the change stream says otherwise), so the pages themselves rarely change.
+  experimental: { staleTimes: { dynamic: 300, static: 300 } },
   poweredByHeader: false,
   agentRules: false,
   images: {
