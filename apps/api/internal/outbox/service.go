@@ -74,7 +74,9 @@ func (s *Service) Deliver(ctx context.Context, limit int) (DeliverResult, error)
 		// Recording uses its own context: a mail that went out must be marked sent even if
 		// the worker is shutting down.
 		rec := context.WithoutCancel(ctx)
-		if !connected {
+		// Demo and test addresses can never receive mail; sending them would only bounce back
+		// into the inbox (and be polled in as enquiries).
+		if !connected || Reserved(m.Recipient) {
 			r.Simulated++
 			if err := s.store.markSent(rec, s.pool, m.ID, domain.OutboxSimulated, nil); err != nil {
 				return r, err

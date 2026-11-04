@@ -64,7 +64,8 @@ func outboxStatus(t *testing.T, s *apitest.Server, kind domain.OutboxKind, to st
 
 func TestGuestEmailsGoOutThroughTheMailbox(t *testing.T) {
 	s, fake := withMailbox(t)
-	const newGuest = "first.timer@example.test"
+	// A deliverable-looking address: mail to reserved test domains is never sent (outbox.Reserved).
+	const newGuest = "first.timer@kaapi-guest.in"
 
 	// Sign-in code: queued with the request, delivered by the worker.
 	var sent api.OTPRequestResponse
@@ -102,12 +103,14 @@ func TestGuestEmailsGoOutThroughTheMailbox(t *testing.T) {
 	b := book(t, s, holdVilla(t, s))
 	pay(t, s, b.Payment.OrderID, payment.OutcomeSuccess)
 	deliver(t, s)
-	confirmed := false
-	for _, m := range sentTo(fake, guest.Email) {
-		confirmed = confirmed || strings.Contains(m, "Booking confirmed: "+b.Ref)
+	// The seeded guest's address is a reserved test domain: the confirmation is recorded,
+	// once, but never handed to Gmail (it could only bounce).
+	conf := outboxTo(t, s, domain.OutboxBookingConfirmation, guest.Email)
+	if len(conf) != 1 || conf[0].Status != domain.OutboxSimulated || !strings.Contains(conf[0].Body, b.Ref) {
+		t.Fatalf("booking confirmation: %+v", conf)
 	}
-	if !confirmed {
-		t.Fatal("no booking confirmation email")
+	if got := sentTo(fake, guest.Email); len(got) != 0 {
+		t.Fatalf("mail to a reserved test address reached Gmail: %d", len(got))
 	}
 	if r := deliver(t, s); r.Total() != 0 {
 		t.Fatalf("nothing may be sent twice: %+v", r)
@@ -130,7 +133,7 @@ func TestFailedSendsRetryThenGiveUp(t *testing.T) {
 	fake.mu.Lock()
 	fake.failSend = true
 	fake.mu.Unlock()
-	const to = "unlucky@example.test"
+	const to = "unlucky@kaapi-guest.in"
 	s.Do(http.MethodPost, "/v1/auth/otp/request", api.OTPRequest{Email: to}, nil)
 
 	if r := deliver(t, s); r.Retrying != 1 {
