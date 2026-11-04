@@ -24,6 +24,9 @@ const (
 	// The enquiry worker wakes on every new message; this tick is only a safety net.
 	enquiryTick = 15 * time.Second
 
+	// Reminders are due by the day (and the morning of check-out); a quarter-hour is plenty.
+	reminderEvery = 15 * time.Minute
+
 	// Retention windows are months long, so a few runs a day is plenty.
 	retentionEvery = 6 * time.Hour
 
@@ -51,6 +54,15 @@ func (a *App) RunWorkers(ctx context.Context) {
 					a.Log.Error("booking sweep failed", "err", err)
 				} else if n > 0 {
 					a.Log.Info("expired unpaid bookings", "count", n)
+				}
+			})
+		},
+		func(ctx context.Context) {
+			every(ctx, reminderEvery, true, func() {
+				if n, err := a.Bookings.QueueReminders(ctx); err != nil {
+					a.Log.Error("reminders failed", "err", err)
+				} else if n > 0 {
+					a.Log.Info("reminders queued", "count", n)
 				}
 			})
 		},

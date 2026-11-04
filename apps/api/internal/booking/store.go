@@ -285,3 +285,28 @@ func (store) expireHolds(ctx context.Context, q db.Querier, grace time.Duration)
 		domain.HoldExpired, domain.HoldActive, grace.Seconds())
 	return err
 }
+
+// ---- reminders
+
+// dueReminders locks confirmed, live bookings whose reminder of this kind hasn't gone and
+// whose date falls in [from, to]: check-in date for CHECKIN, check-out date for CHECKOUT.
+func (store) dueReminders(ctx context.Context, q db.Querier, kind string, from, to time.Time, limit int) ([]uuid.UUID, error) {
+	column := "check_in"
+	if kind == reminderCheckOut {
+		column = "check_out"
+	}
+	rows, err := q.Query(ctx, `SELECT b.id FROM bookings b
+		WHERE b.status = $1 AND b.archived_at IS NULL AND b.`+column+` BETWEEN $2 AND $3
+		  AND NOT EXISTS (SELECT 1 FROM booking_reminders r WHERE r.booking_id = b.id AND r.kind = $4)
+		ORDER BY b.id LIMIT $5 FOR UPDATE OF b SKIP LOCKED`, domain.BookingConfirmed, from, to, kind, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+}
+
+// markReminded records a reminder; false if another run got there first.
+func (store) markReminded(ctx context.Context, q db.Querier, bookingID uuid.UUID, kind string) (bool, error) {
+	tag, err := q.Exec(ctx, `INSERT INTO booking_reminders (booking_id, kind) VALUES ($1, $2) ON CONFLICT DO NOTHING`, bookingID, kind)
+	return err == nil && tag.RowsAffected() == 1, err
+}
