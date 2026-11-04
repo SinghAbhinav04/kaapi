@@ -1,5 +1,6 @@
 -- +goose Up
--- Guests get a reminder before they arrive and on the morning they leave; staff sign in with
+-- Guests get two reminders about arriving (a few days before, and that morning) and two about
+-- leaving (two days before, and that morning before 11 am); staff sign in with
 -- a password and then a code emailed to them.
 
 ALTER TABLE outbox_messages DROP CONSTRAINT outbox_messages_kind_check;
@@ -14,7 +15,7 @@ ALTER TABLE otp_codes ADD CONSTRAINT otp_codes_purpose_check CHECK (purpose IN (
 -- however often (or in however many workers) the job runs.
 CREATE TABLE booking_reminders (
     booking_id uuid        NOT NULL REFERENCES bookings (id) ON DELETE CASCADE,
-    kind       text        NOT NULL CHECK (kind IN ('CHECKIN', 'CHECKOUT')),
+    kind       text        NOT NULL CHECK (kind IN ('CHECKIN_SOON', 'CHECKIN_TODAY', 'CHECKOUT_SOON', 'CHECKOUT_TODAY')),
     queued_at  timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (booking_id, kind)
 );

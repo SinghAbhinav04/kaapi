@@ -288,17 +288,27 @@ func (store) expireHolds(ctx context.Context, q db.Querier, grace time.Duration)
 
 // ---- reminders
 
-// dueReminders locks confirmed, live bookings whose reminder of this kind hasn't gone and
-// whose date falls in [from, to]: check-in date for CHECKIN, check-out date for CHECKOUT.
-func (store) dueReminders(ctx context.Context, q db.Querier, kind string, from, to time.Time, limit int) ([]uuid.UUID, error) {
-	column := "check_in"
-	if kind == reminderCheckOut {
-		column = "check_out"
+// dueReminders locks confirmed, live bookings for which this reminder is due today and
+// hasn't gone. today is the resort's calendar date.
+func (store) dueReminders(ctx context.Context, q db.Querier, kind string, today time.Time, limit int) ([]uuid.UUID, error) {
+	args := []any{domain.BookingConfirmed, today, kind, limit}
+	var when string
+	switch kind {
+	case reminderCheckInSoon: // arriving in the next few days
+		when, args = `b.check_in > $2 AND b.check_in <= $2::date + $5::int`, append(args, checkInSoonDays)
+	case reminderCheckInToday:
+		when = `b.check_in = $2`
+	case reminderCheckOutSoon: // already staying, leaving in two days
+		when, args = `b.check_out = $2::date + $5::int AND b.check_in < $2`, append(args, checkOutSoonDays)
+	case reminderCheckOutToday:
+		when = `b.check_out = $2`
+	default:
+		return nil, fmt.Errorf("booking: unknown reminder %q", kind)
 	}
 	rows, err := q.Query(ctx, `SELECT b.id FROM bookings b
-		WHERE b.status = $1 AND b.archived_at IS NULL AND b.`+column+` BETWEEN $2 AND $3
-		  AND NOT EXISTS (SELECT 1 FROM booking_reminders r WHERE r.booking_id = b.id AND r.kind = $4)
-		ORDER BY b.id LIMIT $5 FOR UPDATE OF b SKIP LOCKED`, domain.BookingConfirmed, from, to, kind, limit)
+		WHERE b.status = $1 AND b.archived_at IS NULL AND `+when+`
+		  AND NOT EXISTS (SELECT 1 FROM booking_reminders r WHERE r.booking_id = b.id AND r.kind = $3)
+		ORDER BY b.id LIMIT $4 FOR UPDATE OF b SKIP LOCKED`, args...)
 	if err != nil {
 		return nil, err
 	}
