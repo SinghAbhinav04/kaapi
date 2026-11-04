@@ -31,7 +31,7 @@ labelled in the TDD, and only facts from the problem statement may be used.
 | Retention | Job archives finished bookings, wipes guest contact details at 12 months, deletes bookings after 8 financial years and messages at 12 months |
 | Analytics | Revenue, ADR, commission saved, cancellations, booking pace, lead time, on-the-books occupancy, enquiry mix, currency guests read prices in |
 | Offers | Festive and seasonal discounts that apply by themselves, plus promo codes; guests always get their best offer. Staff manage them on the console's Offers page |
-| Guest email | Sign-in codes, a welcome on first sign-in, booking confirmations and refund notices go out for real through the connected Gmail (queued, retried, never lost) |
+| Guest email | Sign-in codes, a welcome on first sign-in, booking confirmations, refund notices and stay reminders go out for real through the connected Gmail as branded HTML (queued, retried, never lost). Offer emails only to guests who opted in, with one-click unsubscribe |
 | Privacy | Guests', senders' and users' personal data encrypted at rest (AES-256-GCM) with blind indexes for lookups |
 | Gateway | CORS and rate limits per API group, live-session token checks, client IPs that can't be forged |
 | Currency | Guests see "≈ $497" beside INR prices in their own currency (country from Vercel's header, else a time-zone guess, else INR; a switcher overrides). Always charged in INR; the currency shown and that day's rate are kept on the booking |
@@ -97,7 +97,8 @@ internal/
   admin/      rates/allotment grid + bulk edits (audit-logged)
   enquiry/    intake, worker, routing rules, drafts, inbox ops, stats
   ai/         redaction, keyword classifier, Gemini + Groq clients, model chain, prompts
-  outbox/     every sent message (simulated or delivered) + staff-composed messages
+  outbox/     every sent message (simulated or delivered) + staff-composed messages; never sends to reserved test domains
+  campaign/   offer and festive emails to opted-in guests: watches published offers, fans out, unsubscribes
   gmail/      OAuth connect, encrypted token store, inbox polling, threaded sending (plain net/http)
   retention/  archive / anonymise / purge sweep (batched, SKIP LOCKED, audit-logged)
   analytics/  read-only revenue, pace, mix and on-the-books report
@@ -117,7 +118,9 @@ migrations/   0001_init.sql (24 tables), 0002_lock_down_data_api.sql (RLS on eve
               bookings.display_currency + rate snapshot), 0010_outbox_delivery.sql (queued guest emails),
               0011_offers.sql (automatic offers), 0012_pii.sql (blind-index columns for encrypted data),
               0013_data_changes.sql (change-capture triggers),
-              0014_data_changes_rows.sql (notify only when rows changed). New tables must ENABLE RLS. Two branches must never
+              0014_data_changes_rows.sql (notify only when rows changed), 0015_reminders_and_staff_codes.sql
+              (booking_reminders, STAFF_2FA codes), 0016_marketing.sql (opt-in on users, campaigns,
+              campaign_recipients). New tables must ENABLE RLS. Two branches must never
               add the same migration number: goose records versions, so the second 0005 is silently skipped.
 seed/data/    JSON fixtures: property, room_types, rate_plans, rates_rules, promos,
               users, enquiries (60, labelled), bookings (40)
@@ -128,7 +131,7 @@ tests/
 ```
 
 ### Backend conventions (follow these)
-- **Files per package:** `service.go` (rules and transaction boundaries, no SQL), `store.go` (every query, as methods taking a `db.Querier` so the service decides pool vs transaction), `types.go`, `errors.go`, plus one file per concern. No barrel files. Interfaces are defined where they are consumed. Done for outbox, retention, analytics, catalog, admin, access; auth, booking, inventory, enquiry and gmail still mix SQL into services and are next.
+- **Files per package:** `service.go` (rules and transaction boundaries, no SQL), `store.go` (every query, as methods taking a `db.Querier` so the service decides pool vs transaction), `types.go`, `errors.go`, plus one file per concern. No barrel files. Interfaces are defined where they are consumed. Done everywhere except enquiry, which still mixes SQL into its service.
 - **Queries:** aggregate in Postgres and return totals, never rows to sum in Go. Select only the columns needed (the inbox reads `left(raw_text, 400)`). Any new hot query gets an `EXPLAIN ANALYZE` on production-scale data first; indexes go in migrations as `CREATE INDEX CONCURRENTLY` (`-- +goose NO TRANSACTION`). Avoid `ORDER BY <expression>` on large sets (split into index-ordered halves, as the inbox list does).
 - **Shared types live in `internal/domain`** (`Stay`, `Party`, every enum). Never pass raw state strings; use the typed enums, which have `Valid()`.
 - **Imports** are short module paths: `kaapi/api/internal/...`.
@@ -210,7 +213,8 @@ Each run writes one `audit_logs` row with the counts.
 - **The refresh cookie's path is the one the browser sees:** `BROWSER_API_PREFIX` (default `/api`, the web proxy) + `/v1/auth`. With the bare `/v1/auth` the browser never sent it and every staff session ended after 15 minutes. `TestRefreshCookiePathMatchesTheBrowserProxy` guards it.
 - **Tabs refresh one at a time** (`navigator.locks` in `apis/http/index.ts`): two tabs sending the same refresh token look like theft to the API, which then revokes every session.
 - **Native clients** send `X-Client: native` and get tokens in the response body, then use Bearer.
-- **Guests** sign in with an email OTP: HMAC-bound, single use, rate-limited. In `DEMO_MODE` the API returns the code, because demo email is simulated.
+- **Guests** sign in with an email OTP: HMAC-bound, single use, rate-limited. In `DEMO_MODE` the API returns the code, because demo email is simulated. **Booking requires a signed-in guest** (the email is verified by code at checkout, so a typo can't lose the confirmation).
+- **Staff** sign in with two steps: `POST /v1/auth/staff/login` checks the password and emails a 6-digit code (202, masked address; demo mode returns the code), `POST /v1/auth/staff/verify` signs in. Codes: 5 min, 5 attempts, own purpose (`STAFF_2FA`), so a guest code can't stand in.
 - **A token is only as good as its session:** `authenticate` decrypts it, rejects anything over 4 KB, issued in the future or living longer than 15 min, then asks `auth.SessionLive` (session not revoked or expired, user active; cached 30 s, cleared at once in-process on logout and rotation). Logging out or refreshing kills the old access token immediately.
 
 ### The gateway (`transport/httpapi/gateway.go` + `policies.go`)
@@ -226,6 +230,19 @@ The gateway is a layer in the API process, not a separate service (decision: one
 - Sign-in codes, the welcome on a guest's first sign-in (registration), booking confirmations and refund notices are inserted as **QUEUED in the same transaction** as what caused them, so none is lost or sent for something that rolled back.
 - The worker's `Outbox.Deliver` runs every 2 s: claim a batch (`SKIP LOCKED`), send through the connected Gmail with no transaction open, then record `SENT` with Gmail's id. Failures retry at 30 s, 1, 2, 4 min and become `FAILED` after 5 tries, with `last_error` kept. A claim older than 2 min is freed (the worker died mid-send). No mailbox connected: `SIMULATED`, as before.
 - Staff-written messages and enquiry replies still send straight from the request (a person is waiting); both record what happened in the outbox.
+
+### Reminders (`booking/reminders.go`, migration 0015)
+- Four per booking, each **exactly once** (`booking_reminders` primary key): `CHECKIN_SOON` (check-in 1–3 days away), `CHECKIN_TODAY` (from 8 am IST that day), `CHECKOUT_SOON` (two days before check-out, once arrived), `CHECKOUT_TODAY` (7–11 am IST on check-out day). The worker only *checks* every 15 min. Timings are labelled assumptions.
+
+### Offer emails (`campaign/`, migration 0016)
+- The checkout's "send me offers" box records `users.marketing_opt_in` and an unsubscribe token (through `booking.Consents`).
+- **Observer:** `admin.Service` announces published offers to its `OfferObserver`s inside the offer's transaction; `campaign.Service` is one (wired in `app`). Saving an active offer with `announce: true` creates its campaign, once per offer (unique index), however often it's edited later. Staff also write FESTIVE / ANNOUNCEMENT campaigns (`/v1/staff/campaigns`, `promos:write`).
+- `campaign.Dispatch` (worker, every minute) fans each due campaign out into QUEUED outbox rows (`PROMOTION`) in batches of 200; `campaign_recipients` means each guest gets each campaign at most once. Every email ends with a one-click unsubscribe link (`/unsubscribe?token=`, which asks for the click, since mail scanners open links; `POST /v1/marketing/unsubscribe`).
+- **Reserved domains:** the outbox records mail to `.test`, `.example`, `.invalid`, `.localhost` and example.com/net/org as SIMULATED, never Gmail (the seed uses `@example.test`; bounces would land in the inbox). Use a real-looking domain in tests that expect delivery through the fake Gmail.
+- **The Gmail poller skips bounces and auto-replies** (multipart/report, mailer-daemon/postmaster, `Auto-Submitted`, `X-Autoreply`).
+
+### Payment page (`features/payment`)
+- UPI (a real `upi://` QR for a placeholder merchant, or a UPI ID), card, net banking, wallet. With no gateway, each completes the same signed test payment; a shown QR "scans" after 8 s. Nothing typed leaves the browser. `qrcode` 1.5.4 draws the QR.
 
 ### Offers (`admin/offers.go`, `inventory/quote.go`, migration 0011)
 - An offer is a row in `promo_codes`: percent (basis points, capped at 50%) or flat (paise), stay window, booking window, minimum nights, optional use cap, optional room types. `auto_apply` makes it a festive or seasonal offer that needs no code.
@@ -406,7 +423,7 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 
 ---
 
-## 7. Status and what's next (as of 3 Nov 2026, late)
+## 7. Status and what's next (as of 4 Nov 2026)
 
 **Done:**
 - Backend core slice, AI chain with an evaluation, full guest flow and staff console, RLS lock-down.
@@ -419,11 +436,11 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 - Query audit at production scale with indexes (0005, 0008); live inbox (0006); database-backed RBAC with an admin console (0007).
 - Currency estimates for foreign guests, kept per booking for analytics.
 - Fixed: web token refresh never worked through the `/api` proxy (refresh cookie path), and parallel tabs could revoke each other's sessions.
-- On `dev` (not yet on `main`): gateway policies (CORS and rate limits per group, live-session tokens, trusted client IP); real guest emails through the outbox; automatic offers with the console's Offers page; personal data encrypted at rest; `DOTENV_FILE` for dev/production settings; batched guest search; change capture with the analytics cache and live staff consoles; Server-Timing.
+- On `dev` (not yet on `main`), 4 Nov: verified-email booking, staff two-step sign-in, branded HTML emails, the four stay reminders, payment options with a UPI QR, offer and festive emails with opt-in and unsubscribe, reserved-domain and bounce guards; the store.go split for gmail, auth, booking and inventory. Earlier on `dev`: gateway policies (CORS and rate limits per group, live-session tokens, trusted client IP); real guest emails through the outbox; automatic offers with the console's Offers page; personal data encrypted at rest; `DOTENV_FILE` for dev/production settings; batched guest search; change capture with the analytics cache and live staff consoles; Server-Timing.
 
 **State of the two databases:**
-- Local devdb: on `dev`, migrations 1–14, seeded and encrypted. It has a test `DIWALI26` offer (15%, automatic) created while checking the Offers flow.
-- Supabase (production): migrations 1–9 from `main`. 10–14 and the encryption backfill run when `dev` is promoted and the API starts with `.env.production` (whose `PII_KEY` must be kept safe from then on).
+- Local Postgres (127.0.0.1:5432/kaapi): on `dev`, migrations 1–16, freshly reseeded on 4 Nov, plus one test booking KS-7VT6VT (smoke.guest@example.test, opted in to offers).
+- Supabase (production): migrations 1–9 from `main`. 10–16 and the encryption backfill run when `dev` is promoted and the API starts with `.env.production` (whose `PII_KEY` must be kept safe from then on).
 
 **To do, in order:**
 1. Promote `dev` to `main` once the owner has tested it (§ 6 Branches), then bring Supabase up to migration 14.
@@ -437,7 +454,7 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
    - Login is limited per IP only; a per-account limit (credential stuffing from many IPs) needs the email, which the gateway doesn't read.
    - `DEMO_MODE` is not refused in production; it returns sign-in codes in responses.
    - Drafts (`enquiry_drafts`) can contain the guest's name and aren't encrypted yet.
-   - Finish the store.go split for auth, booking, inventory, enquiry and gmail.
+   - Finish the store.go split for enquiry (gmail, auth, booking and inventory are done).
 5. Capacitor Android shell (`server.url` → production site; Bearer tokens in Preferences).
 6. Deploy:
    - API: Dockerfile, Cloud Run `asia-south1`, Supabase session pooler. Workers (retention, Gmail, outbox, exchange rates) run in `cmd/worker` or in-process; keep one instance warm or schedule them. Cloud Armor in front; ingress through the load balancer only (`TRUSTED_PROXY_HOPS` must match).
