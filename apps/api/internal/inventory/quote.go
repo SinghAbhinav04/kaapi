@@ -2,9 +2,7 @@ package inventory
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -17,21 +15,6 @@ import (
 
 // istFallback is used if the container has no time zone database.
 var istFallback = time.FixedZone("IST", 5*3600+1800)
-
-func loadSettings(ctx context.Context, q Querier) (settings, error) {
-	var st settings
-	var tz string
-	var slabs []byte
-	err := q.QueryRow(ctx, `SELECT timezone, hold_minutes, max_nights, max_rooms_per_booking, gst_slabs FROM property_settings`).
-		Scan(&tz, &st.holdMinutes, &st.maxNights, &st.maxRooms, &slabs)
-	if err != nil {
-		return st, fmt.Errorf("load property settings: %w", err)
-	}
-	if st.location, err = time.LoadLocation(tz); err != nil {
-		st.location = istFallback
-	}
-	return st, json.Unmarshal(slabs, &st.slabs)
-}
 
 // planInfo is what pricing one plan needs besides its nightly rates.
 type planInfo struct {
@@ -49,26 +32,14 @@ type typedCode struct {
 // quoteStay prices one plan for a stay (the hold path): it loads what that needs, then
 // priceStay does the rest.
 func quoteStay(ctx context.Context, q Querier, req HoldRequest, st settings, today time.Time) (pricing.Quote, *uuid.UUID, error) {
-	var plan planInfo
-	err := q.QueryRow(ctx, `SELECT rt.base_occupancy, rt.max_adults, rt.max_children, rt.extra_adult_paise, rp.min_nights
-		FROM rate_plans rp JOIN room_types rt ON rt.id = rp.room_type_id
-		WHERE rp.id = $1 AND rt.id = $2 AND rp.is_active AND rt.is_active`, req.RatePlanID, req.RoomTypeID).
-		Scan(&plan.room.BaseOccupancy, &plan.room.MaxAdults, &plan.room.MaxChildren, &plan.room.ExtraAdultPaise, &plan.minNights)
+	plan, err := store{}.planFor(ctx, q, req.RoomTypeID, req.RatePlanID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return pricing.Quote{}, nil, ErrPlanMismatch
 	}
 	if err != nil {
 		return pricing.Quote{}, nil, err
 	}
-	rows, err := q.Query(ctx, `SELECT date, price_paise FROM night_rates
-		WHERE rate_plan_id = $1 AND date >= $2 AND date < $3 ORDER BY date`, req.RatePlanID, req.CheckIn, req.CheckOut)
-	if err != nil {
-		return pricing.Quote{}, nil, err
-	}
-	nights, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (pricing.Night, error) {
-		var n pricing.Night
-		return n, r.Scan(&n.Date, &n.PricePaise)
-	})
+	nights, err := store{}.nightRates(ctx, q, req.RatePlanID, req.CheckIn, req.CheckOut)
 	if err != nil {
 		return pricing.Quote{}, nil, err
 	}
@@ -161,35 +132,4 @@ type candidate struct {
 type autoOffer struct {
 	rule pricing.PromoRule
 	id   uuid.UUID
-}
-
-// loadAutoOffers returns the automatic offers bookable today; Eligible then checks the stay.
-func loadAutoOffers(ctx context.Context, q Querier, today time.Time) ([]autoOffer, error) {
-	rows, err := q.Query(ctx, `SELECT id, code, type, value, stay_from, stay_to, book_from, book_to, min_nights, max_uses, used_count,
-		coalesce(room_type_ids, '{}'), is_active FROM promo_codes
-		WHERE auto_apply AND is_active AND book_from <= $1 AND book_to >= $1
-		  AND (max_uses IS NULL OR used_count < max_uses)
-		ORDER BY code`, today)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (autoOffer, error) {
-		var a autoOffer
-		err := r.Scan(&a.id, &a.rule.Code, &a.rule.Type, &a.rule.Value, &a.rule.StayFrom, &a.rule.StayTo, &a.rule.BookFrom, &a.rule.BookTo,
-			&a.rule.MinNights, &a.rule.MaxUses, &a.rule.UsedCount, &a.rule.RoomTypeIDs, &a.rule.Active)
-		return a, err
-	})
-}
-
-func loadPromo(ctx context.Context, q Querier, code string) (pricing.PromoRule, uuid.UUID, error) {
-	var r pricing.PromoRule
-	var id uuid.UUID
-	err := q.QueryRow(ctx, `SELECT id, code, type, value, stay_from, stay_to, book_from, book_to, min_nights, max_uses, used_count,
-		coalesce(room_type_ids, '{}'), is_active FROM promo_codes WHERE code = $1`, code).
-		Scan(&id, &r.Code, &r.Type, &r.Value, &r.StayFrom, &r.StayTo, &r.BookFrom, &r.BookTo, &r.MinNights, &r.MaxUses, &r.UsedCount,
-			&r.RoomTypeIDs, &r.Active)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return r, id, &PromoError{Err: errPromoUnknown}
-	}
-	return r, id, err
 }

@@ -23,24 +23,12 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) ([]Option, erro
 		return nil, err
 	}
 
-	type roomRow struct {
-		id                              uuid.UUID
-		slug, name                      string
-		baseOcc, maxAdults, maxChildren int
-	}
-	rows, err := s.pool.Query(ctx, `SELECT id, slug, name, base_occupancy, max_adults, max_children FROM room_types WHERE is_active ORDER BY sort`)
-	if err != nil {
-		return nil, err
-	}
-	rooms, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (roomRow, error) {
-		var x roomRow
-		return x, r.Scan(&x.id, &x.slug, &x.name, &x.baseOcc, &x.maxAdults, &x.maxChildren)
-	})
+	rooms, err := store{}.searchRooms(ctx, s.pool)
 	if err != nil {
 		return nil, err
 	}
 
-	avail, err := s.nightsByRoom(ctx, req.CheckIn, req.CheckOut)
+	avail, err := store{}.nightsByRoom(ctx, s.pool, req.CheckIn, req.CheckOut)
 	if err != nil {
 		return nil, err
 	}
@@ -110,45 +98,13 @@ type searchPlan struct {
 // loadSearchPricing reads every active plan, its nightly rates for the stay, the typed code
 // and the live automatic offers: four queries, whatever the number of rooms and plans.
 func (s *Service) loadSearchPricing(ctx context.Context, req SearchRequest, today time.Time) (searchPricing, error) {
-	sp := searchPricing{plans: map[uuid.UUID][]searchPlan{}, rates: map[uuid.UUID][]pricing.Night{}}
-	rows, err := s.pool.Query(ctx, `SELECT rp.room_type_id, rp.id, rp.code, rp.name, rp.refundable, rp.min_nights,
-			rt.base_occupancy, rt.max_adults, rt.max_children, rt.extra_adult_paise
-		FROM rate_plans rp JOIN room_types rt ON rt.id = rp.room_type_id
-		WHERE rp.is_active AND rt.is_active ORDER BY rp.sort`)
-	if err != nil {
-		return sp, err
-	}
+	sp := searchPricing{}
 	var planIDs []uuid.UUID
-	for rows.Next() {
-		var roomTypeID uuid.UUID
-		var p searchPlan
-		if err := rows.Scan(&roomTypeID, &p.PlanID, &p.Code, &p.Name, &p.Refundable, &p.info.minNights,
-			&p.info.room.BaseOccupancy, &p.info.room.MaxAdults, &p.info.room.MaxChildren, &p.info.room.ExtraAdultPaise); err != nil {
-			rows.Close()
-			return sp, err
-		}
-		sp.plans[roomTypeID] = append(sp.plans[roomTypeID], p)
-		planIDs = append(planIDs, p.PlanID)
-	}
-	if err := rows.Err(); err != nil {
+	var err error
+	if sp.plans, planIDs, err = (store{}).activePlans(ctx, s.pool); err != nil {
 		return sp, err
 	}
-
-	rows, err = s.pool.Query(ctx, `SELECT rate_plan_id, date, price_paise FROM night_rates
-		WHERE rate_plan_id = ANY($1) AND date >= $2 AND date < $3 ORDER BY rate_plan_id, date`, planIDs, req.CheckIn, req.CheckOut)
-	if err != nil {
-		return sp, err
-	}
-	for rows.Next() {
-		var planID uuid.UUID
-		var n pricing.Night
-		if err := rows.Scan(&planID, &n.Date, &n.PricePaise); err != nil {
-			rows.Close()
-			return sp, err
-		}
-		sp.rates[planID] = append(sp.rates[planID], n)
-	}
-	if err := rows.Err(); err != nil {
+	if sp.rates, err = (store{}).ratesFor(ctx, s.pool, planIDs, req.CheckIn, req.CheckOut); err != nil {
 		return sp, err
 	}
 
@@ -183,36 +139,6 @@ func attachQuotes(opt *Option, req SearchRequest, st settings, today time.Time, 
 	return nil
 }
 
-// nightsByRoom returns rooms left per night (allotment − sold − live holds) for every room type.
-func (s *Service) nightsByRoom(ctx context.Context, from, to time.Time) (map[uuid.UUID][]nightAvail, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT ni.room_type_id, ni.date,
-		       ni.allotment - ni.sold - coalesce(h.held, 0) AS left,
-		       ni.min_stay, ni.stop_sell, ni.closed_to_arrival
-		FROM night_inventory ni
-		LEFT JOIN LATERAL (
-			SELECT sum(rooms)::int AS held FROM holds
-			WHERE room_type_id = ni.room_type_id AND status = $3 AND expires_at > now()
-			  AND check_in <= ni.date AND check_out > ni.date
-		) h ON true
-		WHERE ni.date >= $1 AND ni.date < $2
-		ORDER BY ni.room_type_id, ni.date`, from, to, domain.HoldActive)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[uuid.UUID][]nightAvail{}
-	for rows.Next() {
-		var id uuid.UUID
-		var n nightAvail
-		if err := rows.Scan(&id, &n.date, &n.left, &n.minStay, &n.stopSell, &n.cta); err != nil {
-			return nil, err
-		}
-		out[id] = append(out[id], n)
-	}
-	return out, rows.Err()
-}
-
 // Alternatives finds nearby check-in dates (within a week either side) where the same
 // length of stay is fully available, nearest first.
 func (s *Service) Alternatives(ctx context.Context, roomTypeID uuid.UUID, checkIn time.Time, nights, rooms int) ([]time.Time, error) {
@@ -225,7 +151,7 @@ func (s *Service) Alternatives(ctx context.Context, roomTypeID uuid.UUID, checkI
 	if from.Before(today) {
 		from = today
 	}
-	all, err := s.nightsByRoom(ctx, from, checkIn.AddDate(0, 0, alternativesWindowDays+nights))
+	all, err := store{}.nightsByRoom(ctx, s.pool, from, checkIn.AddDate(0, 0, alternativesWindowDays+nights))
 	if err != nil {
 		return nil, err
 	}

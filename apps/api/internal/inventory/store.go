@@ -2,7 +2,9 @@ package inventory
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,6 +12,7 @@ import (
 
 	"kaapi/api/internal/domain"
 	"kaapi/api/internal/platform/db"
+	"kaapi/api/internal/pricing"
 )
 
 // store is every query the hold engine runs. The overbooking rules (lock order, restriction
@@ -113,4 +116,168 @@ func (store) sellNight(ctx context.Context, q db.Querier, roomTypeID, bookingID 
 	_, err := q.Exec(ctx, `INSERT INTO booking_nights (booking_id, date, room_type_id, rooms) VALUES ($1,$2,$3,$4)`,
 		bookingID, day, roomTypeID, rooms)
 	return err
+}
+
+// ---- search and pricing loaders
+
+// searchRoom is a room type as the search lists it.
+type searchRoom struct {
+	id                              uuid.UUID
+	slug, name                      string
+	baseOcc, maxAdults, maxChildren int
+}
+
+func (store) searchRooms(ctx context.Context, q Querier) ([]searchRoom, error) {
+	rows, err := q.Query(ctx, `SELECT id, slug, name, base_occupancy, max_adults, max_children FROM room_types WHERE is_active ORDER BY sort`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (searchRoom, error) {
+		var x searchRoom
+		return x, r.Scan(&x.id, &x.slug, &x.name, &x.baseOcc, &x.maxAdults, &x.maxChildren)
+	})
+}
+
+// activePlans is every plan on sale, by room type in display order, and their ids.
+func (store) activePlans(ctx context.Context, q Querier) (map[uuid.UUID][]searchPlan, []uuid.UUID, error) {
+	plans := map[uuid.UUID][]searchPlan{}
+	rows, err := q.Query(ctx, `SELECT rp.room_type_id, rp.id, rp.code, rp.name, rp.refundable, rp.min_nights,
+			rt.base_occupancy, rt.max_adults, rt.max_children, rt.extra_adult_paise
+		FROM rate_plans rp JOIN room_types rt ON rt.id = rp.room_type_id
+		WHERE rp.is_active AND rt.is_active ORDER BY rp.sort`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var roomTypeID uuid.UUID
+		var p searchPlan
+		if err := rows.Scan(&roomTypeID, &p.PlanID, &p.Code, &p.Name, &p.Refundable, &p.info.minNights,
+			&p.info.room.BaseOccupancy, &p.info.room.MaxAdults, &p.info.room.MaxChildren, &p.info.room.ExtraAdultPaise); err != nil {
+			return nil, nil, err
+		}
+		plans[roomTypeID] = append(plans[roomTypeID], p)
+		ids = append(ids, p.PlanID)
+	}
+	return plans, ids, rows.Err()
+}
+
+// ratesFor is each plan's nightly prices for [from, to), in date order.
+func (store) ratesFor(ctx context.Context, q Querier, planIDs []uuid.UUID, from, to time.Time) (map[uuid.UUID][]pricing.Night, error) {
+	out := map[uuid.UUID][]pricing.Night{}
+	rows, err := q.Query(ctx, `SELECT rate_plan_id, date, price_paise FROM night_rates
+		WHERE rate_plan_id = ANY($1) AND date >= $2 AND date < $3 ORDER BY rate_plan_id, date`, planIDs, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var planID uuid.UUID
+		var n pricing.Night
+		if err := rows.Scan(&planID, &n.Date, &n.PricePaise); err != nil {
+			return nil, err
+		}
+		out[planID] = append(out[planID], n)
+	}
+	return out, rows.Err()
+}
+
+// planFor is what pricing one plan needs; pgx.ErrNoRows when the plan isn't on sale for that room.
+func (store) planFor(ctx context.Context, q Querier, roomTypeID, planID uuid.UUID) (planInfo, error) {
+	var p planInfo
+	err := q.QueryRow(ctx, `SELECT rt.base_occupancy, rt.max_adults, rt.max_children, rt.extra_adult_paise, rp.min_nights
+		FROM rate_plans rp JOIN room_types rt ON rt.id = rp.room_type_id
+		WHERE rp.id = $1 AND rt.id = $2 AND rp.is_active AND rt.is_active`, planID, roomTypeID).
+		Scan(&p.room.BaseOccupancy, &p.room.MaxAdults, &p.room.MaxChildren, &p.room.ExtraAdultPaise, &p.minNights)
+	return p, err
+}
+
+// nightRates is one plan's nightly prices for [from, to), in date order.
+func (store) nightRates(ctx context.Context, q Querier, planID uuid.UUID, from, to time.Time) ([]pricing.Night, error) {
+	rows, err := q.Query(ctx, `SELECT date, price_paise FROM night_rates
+		WHERE rate_plan_id = $1 AND date >= $2 AND date < $3 ORDER BY date`, planID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (pricing.Night, error) {
+		var n pricing.Night
+		return n, r.Scan(&n.Date, &n.PricePaise)
+	})
+}
+
+// nightsByRoom returns rooms left per night (allotment − sold − live holds) for every room type.
+func (store) nightsByRoom(ctx context.Context, q Querier, from, to time.Time) (map[uuid.UUID][]nightAvail, error) {
+	rows, err := q.Query(ctx, `
+		SELECT ni.room_type_id, ni.date,
+		       ni.allotment - ni.sold - coalesce(h.held, 0) AS left,
+		       ni.min_stay, ni.stop_sell, ni.closed_to_arrival
+		FROM night_inventory ni
+		LEFT JOIN LATERAL (
+			SELECT sum(rooms)::int AS held FROM holds
+			WHERE room_type_id = ni.room_type_id AND status = $3 AND expires_at > now()
+			  AND check_in <= ni.date AND check_out > ni.date
+		) h ON true
+		WHERE ni.date >= $1 AND ni.date < $2
+		ORDER BY ni.room_type_id, ni.date`, from, to, domain.HoldActive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID][]nightAvail{}
+	for rows.Next() {
+		var id uuid.UUID
+		var n nightAvail
+		if err := rows.Scan(&id, &n.date, &n.left, &n.minStay, &n.stopSell, &n.cta); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], n)
+	}
+	return out, rows.Err()
+}
+
+func loadSettings(ctx context.Context, q Querier) (settings, error) {
+	var st settings
+	var tz string
+	var slabs []byte
+	err := q.QueryRow(ctx, `SELECT timezone, hold_minutes, max_nights, max_rooms_per_booking, gst_slabs FROM property_settings`).
+		Scan(&tz, &st.holdMinutes, &st.maxNights, &st.maxRooms, &slabs)
+	if err != nil {
+		return st, fmt.Errorf("load property settings: %w", err)
+	}
+	if st.location, err = time.LoadLocation(tz); err != nil {
+		st.location = istFallback
+	}
+	return st, json.Unmarshal(slabs, &st.slabs)
+}
+
+// loadAutoOffers returns the automatic offers bookable today; Eligible then checks the stay.
+func loadAutoOffers(ctx context.Context, q Querier, today time.Time) ([]autoOffer, error) {
+	rows, err := q.Query(ctx, `SELECT id, code, type, value, stay_from, stay_to, book_from, book_to, min_nights, max_uses, used_count,
+		coalesce(room_type_ids, '{}'), is_active FROM promo_codes
+		WHERE auto_apply AND is_active AND book_from <= $1 AND book_to >= $1
+		  AND (max_uses IS NULL OR used_count < max_uses)
+		ORDER BY code`, today)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (autoOffer, error) {
+		var a autoOffer
+		err := r.Scan(&a.id, &a.rule.Code, &a.rule.Type, &a.rule.Value, &a.rule.StayFrom, &a.rule.StayTo, &a.rule.BookFrom, &a.rule.BookTo,
+			&a.rule.MinNights, &a.rule.MaxUses, &a.rule.UsedCount, &a.rule.RoomTypeIDs, &a.rule.Active)
+		return a, err
+	})
+}
+
+func loadPromo(ctx context.Context, q Querier, code string) (pricing.PromoRule, uuid.UUID, error) {
+	var r pricing.PromoRule
+	var id uuid.UUID
+	err := q.QueryRow(ctx, `SELECT id, code, type, value, stay_from, stay_to, book_from, book_to, min_nights, max_uses, used_count,
+		coalesce(room_type_ids, '{}'), is_active FROM promo_codes WHERE code = $1`, code).
+		Scan(&id, &r.Code, &r.Type, &r.Value, &r.StayFrom, &r.StayTo, &r.BookFrom, &r.BookTo, &r.MinNights, &r.MaxUses, &r.UsedCount,
+			&r.RoomTypeIDs, &r.Active)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return r, id, &PromoError{Err: errPromoUnknown}
+	}
+	return r, id, err
 }
