@@ -26,7 +26,6 @@ import (
 	"kaapi/api/internal/platform/db"
 	"kaapi/api/internal/platform/idgen"
 	"kaapi/api/internal/platform/money"
-	"kaapi/api/internal/platform/pii"
 	"kaapi/api/internal/pricing"
 )
 
@@ -37,8 +36,9 @@ var (
 )
 
 type Service struct {
-	pool *pgxpool.Pool
-	now  func() time.Time
+	pool  *pgxpool.Pool
+	store store
+	now   func() time.Time
 }
 
 func NewService(pool *pgxpool.Pool, now func() time.Time) *Service {
@@ -56,18 +56,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Booking, error) {
 	}
 	var bookingID uuid.UUID
 	err := db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var (
-			h         inventory.HoldRequest
-			quoteJSON []byte
-			promoID   *uuid.UUID
-			status    domain.HoldStatus
-			live      bool
-			tokenHash []byte
-		)
-		err := tx.QueryRow(ctx, `SELECT room_type_id, rate_plan_id, check_in, check_out, rooms, adults, children, quote,
-			promo_code_id, status, expires_at > now(), hold_token_hash FROM holds WHERE id = $1 FOR UPDATE`, in.HoldID).
-			Scan(&h.RoomTypeID, &h.RatePlanID, &h.CheckIn, &h.CheckOut, &h.Rooms, &h.Adults, &h.Children, &quoteJSON,
-				&promoID, &status, &live, &tokenHash)
+		h, err := s.store.lockHold(ctx, tx, in.HoldID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return inventory.ErrHoldNotFound
 		}
@@ -75,76 +64,50 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Booking, error) {
 			return err
 		}
 		sum := sha256.Sum256([]byte(in.HoldToken))
-		if subtle.ConstantTimeCompare(sum[:], tokenHash) != 1 {
+		if subtle.ConstantTimeCompare(sum[:], h.tokenHash) != 1 {
 			return inventory.ErrHoldNotFound
 		}
 		// Idempotent: a double-click or a retried request gets the booking already made.
-		err = tx.QueryRow(ctx, `SELECT id FROM bookings WHERE hold_id = $1`, in.HoldID).Scan(&bookingID)
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
+		bookingID, err = s.store.bookingForHold(ctx, tx, in.HoldID)
+		if err == nil || !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
-		if status != domain.HoldActive || !live {
+		if h.status != domain.HoldActive || !h.live {
 			return inventory.ErrHoldNotActive
 		}
 		var q pricing.Quote
-		if err := json.Unmarshal(quoteJSON, &q); err != nil {
+		if err := json.Unmarshal(h.quoteJSON, &q); err != nil {
 			return fmt.Errorf("hold quote: %w", err)
 		}
 
 		// What the guest was reading prices in, with that moment's rate. Never part of the charge.
-		var shown *domain.Currency
-		var rate *fx.Rate
+		nb := newBooking{holdID: in.HoldID, in: in, hold: h, quote: q, at: s.now()}
 		if in.DisplayCurrency != "" {
-			shown = &in.DisplayCurrency
-			if rate, err = fx.Snapshot(ctx, tx, in.DisplayCurrency); err != nil {
+			nb.shown = &in.DisplayCurrency
+			if nb.rate, err = fx.Snapshot(ctx, tx, in.DisplayCurrency); err != nil {
 				return err
 			}
 		}
-		var rateMicros *int64
-		var rateDate *time.Time
-		if rate != nil {
-			rateMicros, rateDate = &rate.INRPerUnitMicros, &rate.Date
-		}
-
-		now := s.now()
 		for attempt := 0; attempt < refAttempts; attempt++ {
-			id := idgen.New()
-			tag, err := tx.Exec(ctx, `INSERT INTO bookings
-				(id, ref, hold_id, guest_user_id, guest_name, guest_email, guest_email_hash, guest_phone, guest_country, adults, children, rooms,
-				 room_type_id, rate_plan_id, check_in, check_out, arrival_window, special_requests, status,
-				 subtotal_paise, discount_paise, tax_paise, total_paise, price_breakdown, promo_code_id,
-				 consent_version, consent_at, marketing_opt_in, source, display_currency, fx_inr_per_unit_micros, fx_rate_date)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
-				ON CONFLICT (ref) DO NOTHING`,
-				id, idgen.BookingRef(), in.HoldID, in.GuestUserID, pii.Text(in.Guest.Name), pii.Text(in.Guest.Email),
-				pii.EmailIndex(in.Guest.Email), pii.Text(in.Guest.Phone), pii.Text(in.Guest.Country),
-				h.Adults, h.Children, h.Rooms, h.RoomTypeID, h.RatePlanID, h.CheckIn, h.CheckOut, nilIfEmpty(in.ArrivalWindow),
-				nilIfEmpty(in.SpecialRequests), domain.BookingPendingPayment, q.SubtotalPaise, q.DiscountPaise, q.TaxPaise,
-				q.TotalPaise, quoteJSON, promoID, ConsentVersion, now, in.MarketingOptIn, domain.BookingSourceDirectWeb,
-				shown, rateMicros, rateDate)
+			nb.id, nb.ref = idgen.New(), idgen.BookingRef()
+			ok, err := s.store.insertBooking(ctx, tx, nb)
 			if err != nil {
 				return err
 			}
-			if tag.RowsAffected() == 1 {
-				bookingID = id
+			if ok {
+				bookingID = nb.id
 				break
 			}
 		}
 		if bookingID == uuid.Nil {
 			return errors.New("booking: could not allocate a unique reference")
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO payments (id, booking_id, provider, provider_order_id, amount_paise, status, idempotency_key)
-			VALUES ($1,$2,$3,$4,$5,$6,$7)`, idgen.New(), bookingID, domain.PaymentProviderMock, payment.NewOrderID(),
-			q.TotalPaise, domain.PaymentCreated, in.HoldID.String())
-		return err
+		return s.store.insertPaymentOrder(ctx, tx, bookingID, q.TotalPaise, in.HoldID.String())
 	})
 	if err != nil {
 		return Booking{}, err
 	}
-	return s.one(ctx, `b.id = $1`, bookingID)
+	return s.store.one(ctx, s.pool, `b.id = $1`, bookingID)
 }
 
 // HandlePaymentEvent applies a verified provider event. A repeated delivery (same event id)
@@ -156,69 +119,52 @@ func (s *Service) HandlePaymentEvent(ctx context.Context, e payment.Event) (Book
 	}
 	var bookingID uuid.UUID
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var (
-			paymentID, holdID uuid.UUID
-			payStatus         domain.PaymentStatus
-			amount            int64
-			guestEmail        pii.Text
-			ref               string
-			promoID           *uuid.UUID
-			holdRef           *uuid.UUID
-		)
-		err := tx.QueryRow(ctx, `SELECT p.id, p.status, p.amount_paise, b.id, b.hold_id, b.ref, b.guest_email, b.promo_code_id
-			FROM payments p JOIN bookings b ON b.id = p.booking_id WHERE p.provider_order_id = $1 FOR UPDATE OF p, b`, e.OrderID).
-			Scan(&paymentID, &payStatus, &amount, &bookingID, &holdRef, &ref, &guestEmail, &promoID)
+		o, err := s.store.lockOrder(ctx, tx, e.OrderID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrOrderNotFound
 		}
 		if err != nil {
 			return err
 		}
-		tag, err := tx.Exec(ctx, `INSERT INTO payment_events (id, provider, provider_event_id, type, payload, signature_valid, processed_at)
-			VALUES ($1,$2,$3,$4,$5,true,now()) ON CONFLICT (provider, provider_event_id) DO NOTHING`,
-			idgen.New(), e.Provider, e.ID, e.Type, payload)
+		bookingID = o.bookingID
+		fresh, err := s.store.recordEvent(ctx, tx, e, payload)
 		if err != nil {
 			return err
 		}
-		if tag.RowsAffected() == 0 || payStatus == domain.PaymentCaptured {
+		if !fresh || o.status == domain.PaymentCaptured {
 			return nil // already processed, or already paid by an earlier event
 		}
-		if e.AmountPaise != amount {
+		if e.AmountPaise != o.amount {
 			return ErrAmountMismatch
 		}
-		if holdRef != nil {
-			holdID = *holdRef
+		var holdID uuid.UUID
+		if o.holdID != nil {
+			holdID = *o.holdID
 		}
 
 		switch e.Type {
 		case payment.EventFailed:
-			if _, err := tx.Exec(ctx, `UPDATE payments SET status = $2, provider_payment_id = $3, failure_reason = $4, updated_at = now() WHERE id = $1`,
-				paymentID, domain.PaymentFailed, e.PaymentID, e.FailureReason); err != nil {
+			if err := s.store.setPayment(ctx, tx, o.paymentID, domain.PaymentFailed, e.PaymentID, &e.FailureReason); err != nil {
 				return err
 			}
-			_, err = tx.Exec(ctx, `UPDATE bookings SET status = $2, updated_at = now() WHERE id = $1`, bookingID, domain.BookingPaymentFailed)
-			return err
+			return s.store.setBookingStatus(ctx, tx, bookingID, domain.BookingPaymentFailed)
 
 		case payment.EventCaptured:
 			err := inventory.Confirm(ctx, tx, holdID, bookingID)
 			if errors.Is(err, inventory.ErrSoldOut) || errors.Is(err, inventory.ErrHoldNotActive) {
-				return s.refundPath(ctx, tx, paymentID, bookingID, ref, string(guestEmail), e)
+				return s.refundPath(ctx, tx, o, e)
 			}
 			if err != nil {
 				return err // rolled back; the provider retries the delivery
 			}
-			if _, err := tx.Exec(ctx, `UPDATE payments SET status = $2, provider_payment_id = $3, failure_reason = NULL, updated_at = now() WHERE id = $1`,
-				paymentID, domain.PaymentCaptured, e.PaymentID); err != nil {
+			if err := s.store.setPayment(ctx, tx, o.paymentID, domain.PaymentCaptured, e.PaymentID, nil); err != nil {
 				return err
 			}
-			if _, err := tx.Exec(ctx, `UPDATE bookings SET status = $2, confirmed_at = now(), updated_at = now() WHERE id = $1`,
-				bookingID, domain.BookingConfirmed); err != nil {
+			if err := s.store.setBookingStatus(ctx, tx, bookingID, domain.BookingConfirmed); err != nil {
 				return err
 			}
-			if promoID != nil {
-				// The guest was shown this price, so it's honoured even if the last use went meanwhile.
-				if _, err := tx.Exec(ctx, `UPDATE promo_codes SET used_count = used_count + 1
-					WHERE id = $1 AND (max_uses IS NULL OR used_count < max_uses)`, *promoID); err != nil {
+			if o.promoID != nil {
+				if err := s.store.usePromo(ctx, tx, *o.promoID); err != nil {
 					return err
 				}
 			}
@@ -229,32 +175,30 @@ func (s *Service) HandlePaymentEvent(ctx context.Context, e payment.Event) (Book
 	if err != nil {
 		return Booking{}, err
 	}
-	return s.one(ctx, `b.id = $1`, bookingID)
+	return s.store.one(ctx, s.pool, `b.id = $1`, bookingID)
 }
 
-func (s *Service) refundPath(ctx context.Context, tx pgx.Tx, paymentID, bookingID uuid.UUID, ref, email string, e payment.Event) error {
-	if _, err := tx.Exec(ctx, `UPDATE payments SET status = $2, provider_payment_id = $3, updated_at = now() WHERE id = $1`,
-		paymentID, domain.PaymentRefundPending, e.PaymentID); err != nil {
+// refundPath: the payment arrived after the room was taken. Mark it for refund, alert the
+// GM and tell the guest.
+func (s *Service) refundPath(ctx context.Context, tx pgx.Tx, o orderRow, e payment.Event) error {
+	if err := s.store.setPayment(ctx, tx, o.paymentID, domain.PaymentRefundPending, e.PaymentID, nil); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE bookings SET status = $2, updated_at = now() WHERE id = $1`, bookingID, domain.BookingRefundPending); err != nil {
+	if err := s.store.setBookingStatus(ctx, tx, o.bookingID, domain.BookingRefundPending); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO notifications (id, recipient_role, type, booking_id, body) VALUES ($1,$2,$3,$4,$5)`,
-		idgen.New(), domain.RoleGM, domain.NotifyRefundNeeded, bookingID,
-		fmt.Sprintf("Refund %s for %s: the payment arrived after the room was taken.", money.FormatINR(e.AmountPaise), ref)); err != nil {
+	if err := s.store.notify(ctx, tx, domain.RoleGM, domain.NotifyRefundNeeded, o.bookingID,
+		fmt.Sprintf("Refund %s for %s: the payment arrived after the room was taken.", money.FormatINR(e.AmountPaise), o.ref)); err != nil {
 		return err
 	}
-	_, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body, booking_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		idgen.New(), domain.OutboxEmail, domain.OutboxRefundNotice, domain.OutboxQueued, pii.Text(email), "We couldn't complete booking "+ref,
-		pii.Text(fmt.Sprintf("We're sorry: your payment of %s reached us after your 10-minute hold ended, and the room had been booked by then. "+
+	return s.store.queueEmail(ctx, tx, domain.OutboxRefundNotice, string(o.guestEmail), "We couldn't complete booking "+o.ref,
+		fmt.Sprintf("We're sorry: your payment of %s reached us after your 10-minute hold ended, and the room had been booked by then. "+
 			"We've started a full refund, and it should reach you in 5 to 7 working days. Our reservations team will also call you with other dates.",
-			money.FormatINR(e.AmountPaise))), bookingID)
-	return err
+			money.FormatINR(e.AmountPaise)), o.bookingID)
 }
 
 func (s *Service) confirmationMessages(ctx context.Context, tx pgx.Tx, bookingID uuid.UUID) error {
-	b, err := s.oneTx(ctx, tx, `b.id = $1`, bookingID)
+	b, err := s.store.one(ctx, tx, `b.id = $1`, bookingID)
 	if err != nil {
 		return err
 	}
@@ -263,15 +207,11 @@ func (s *Service) confirmationMessages(ctx context.Context, tx pgx.Tx, bookingID
 		firstName(b.Guest.Name), b.Ref, b.RoomTypeName, b.RatePlanName, b.CheckIn.Format("Mon 2 Jan"), b.CheckOut.Format("Mon 2 Jan 2006"),
 		b.Nights(), b.Rooms, money.FormatINR(b.Quote.TotalPaise), money.FormatINR(b.Quote.TaxPaise))
 	// Queued in the payment's transaction, so a confirmed booking always gets its email.
-	if _, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body, booking_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		idgen.New(), domain.OutboxEmail, domain.OutboxBookingConfirmation, domain.OutboxQueued, pii.Text(b.Guest.Email), "Booking confirmed: "+b.Ref,
-		pii.Text(body), bookingID); err != nil {
+	if err := s.store.queueEmail(ctx, tx, domain.OutboxBookingConfirmation, b.Guest.Email, "Booking confirmed: "+b.Ref, body, bookingID); err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO notifications (id, recipient_role, type, booking_id, body) VALUES ($1,$2,$3,$4,$5)`,
-		idgen.New(), domain.RoleReservations, domain.NotifyBooking, bookingID,
+	return s.store.notify(ctx, tx, domain.RoleReservations, domain.NotifyBooking, bookingID,
 		fmt.Sprintf("New direct booking %s: %s, %s", b.Ref, b.RoomTypeName, b.CheckIn.Format("2 Jan")))
-	return err
 }
 
 // Sweep expires bookings whose hold ran out unpaid. Late payments within the grace period
@@ -279,16 +219,11 @@ func (s *Service) confirmationMessages(ctx context.Context, tx pgx.Tx, bookingID
 func (s *Service) Sweep(ctx context.Context, grace time.Duration) (int64, error) {
 	var n int64
 	err := db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE bookings b SET status = $1, updated_at = now() FROM holds h
-			WHERE h.id = b.hold_id AND b.status IN ($2, $3) AND h.expires_at < now() - make_interval(secs => $4)`,
-			domain.BookingExpired, domain.BookingPendingPayment, domain.BookingPaymentFailed, grace.Seconds())
-		if err != nil {
+		var err error
+		if n, err = s.store.expireUnpaid(ctx, tx, grace); err != nil {
 			return err
 		}
-		n = tag.RowsAffected()
-		_, err = tx.Exec(ctx, `UPDATE holds SET status = $1 WHERE status = $2 AND expires_at < now() - make_interval(secs => $3)`,
-			domain.HoldExpired, domain.HoldActive, grace.Seconds())
-		return err
+		return s.store.expireHolds(ctx, tx, grace)
 	})
 	return n, err
 }
