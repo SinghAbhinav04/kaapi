@@ -70,20 +70,15 @@ func (s *Service) CreateHold(ctx context.Context, req HoldRequest) (Hold, error)
 
 		hold = Hold{ID: idgen.New(), Token: token, RoomTypeID: req.RoomTypeID, RatePlanID: req.RatePlanID,
 			Stay: req.Stay, Rooms: req.Rooms, Quote: quote}
-		return tx.QueryRow(ctx, `INSERT INTO holds
-			(id, room_type_id, rate_plan_id, check_in, check_out, rooms, adults, children, hold_token_hash, quote, promo_code_id, status, expires_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now() + make_interval(mins => $13))
-			RETURNING expires_at`,
-			hold.ID, req.RoomTypeID, req.RatePlanID, req.CheckIn, req.CheckOut, req.Rooms, req.Adults, req.Children,
-			tokenHash, quoteJSON, promoID, domain.HoldActive, st.holdMinutes).Scan(&hold.ExpiresAt)
+		hold.ExpiresAt, err = store{}.insertHold(ctx, tx, hold, req, tokenHash, quoteJSON, promoID, st.holdMinutes)
+		return err
 	})
 	return hold, err
 }
 
 // VerifyToken checks a guest's hold token in constant time.
 func (s *Service) VerifyToken(ctx context.Context, holdID uuid.UUID, token string) error {
-	var stored []byte
-	err := s.pool.QueryRow(ctx, `SELECT hold_token_hash FROM holds WHERE id = $1`, holdID).Scan(&stored)
+	stored, err := store{}.holdTokenHash(ctx, s.pool, holdID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrHoldNotFound
 	}
@@ -99,12 +94,11 @@ func (s *Service) VerifyToken(ctx context.Context, holdID uuid.UUID, token strin
 
 // Release gives the rooms back early, for example when the guest leaves checkout.
 func (s *Service) Release(ctx context.Context, holdID uuid.UUID) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE holds SET status = $2 WHERE id = $1 AND status = $3`,
-		holdID, domain.HoldReleased, domain.HoldActive)
+	released, err := store{}.release(ctx, s.pool, holdID)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	if !released {
 		return ErrHoldNotActive
 	}
 	return nil
@@ -117,36 +111,30 @@ func (s *Service) Release(ctx context.Context, holdID uuid.UUID) error {
 // is still free the booking goes through; otherwise it returns a SoldOutError and the
 // caller marks the payment for refund.
 func Confirm(ctx context.Context, tx pgx.Tx, holdID, bookingID uuid.UUID) error {
-	var (
-		roomTypeID uuid.UUID
-		stay       domain.Stay
-		rooms      int
-		status     domain.HoldStatus
-		expired    bool
-	)
-	err := tx.QueryRow(ctx, `SELECT room_type_id, check_in, check_out, rooms, status, expires_at <= now()
-		FROM holds WHERE id = $1 FOR UPDATE`, holdID).Scan(&roomTypeID, &stay.CheckIn, &stay.CheckOut, &rooms, &status, &expired)
+	st := store{}
+	h, err := st.lockHold(ctx, tx, holdID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrHoldNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if status != domain.HoldActive {
+	if h.status != domain.HoldActive {
 		return ErrHoldNotActive
 	}
+	roomTypeID, rooms := h.roomTypeID, h.rooms
 
-	nights, err := lockNights(ctx, tx, roomTypeID, stay)
+	nights, err := lockNights(ctx, tx, roomTypeID, h.stay)
 	if err != nil {
 		return err
 	}
-	if expired {
+	if h.expired {
 		// Late payment: only go ahead if the rooms are still free without our hold.
 		if err := countHolds(ctx, tx, roomTypeID, nights, holdID); err != nil {
 			return err
 		}
 		if err := checkCapacity(nights, rooms); err != nil {
-			if _, uerr := tx.Exec(ctx, `UPDATE holds SET status = $2 WHERE id = $1`, holdID, domain.HoldExpired); uerr != nil {
+			if uerr := st.setHoldStatus(ctx, tx, holdID, domain.HoldExpired); uerr != nil {
 				return uerr
 			}
 			return err
@@ -154,32 +142,16 @@ func Confirm(ctx context.Context, tx pgx.Tx, holdID, bookingID uuid.UUID) error 
 	}
 
 	for _, n := range nights {
-		// The CHECK (sold <= allotment) constraint is the backstop if anything above were wrong.
-		if _, err := tx.Exec(ctx, `UPDATE night_inventory SET sold = sold + $3, updated_at = now()
-			WHERE room_type_id = $1 AND date = $2`, roomTypeID, n.date, rooms); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO booking_nights (booking_id, date, room_type_id, rooms) VALUES ($1,$2,$3,$4)`,
-			bookingID, n.date, roomTypeID, rooms); err != nil {
+		if err := st.sellNight(ctx, tx, roomTypeID, bookingID, n.date, rooms); err != nil {
 			return err
 		}
 	}
-	_, err = tx.Exec(ctx, `UPDATE holds SET status = $2 WHERE id = $1`, holdID, domain.HoldConverted)
-	return err
+	return st.setHoldStatus(ctx, tx, holdID, domain.HoldConverted)
 }
 
 // lockNights locks the stay's nights in date order and returns them.
 func lockNights(ctx context.Context, tx pgx.Tx, roomTypeID uuid.UUID, stay domain.Stay) ([]night, error) {
-	rows, err := tx.Query(ctx, `SELECT date, allotment, sold, stop_sell, stop_sell_reason, min_stay, closed_to_arrival, closed_to_departure
-		FROM night_inventory WHERE room_type_id = $1 AND date >= $2 AND date < $3
-		ORDER BY date FOR UPDATE`, roomTypeID, stay.CheckIn, stay.CheckOut)
-	if err != nil {
-		return nil, err
-	}
-	nights, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (night, error) {
-		var n night
-		return n, r.Scan(&n.date, &n.allotment, &n.sold, &n.stopSell, &n.stopSellReason, &n.minStay, &n.closedToArrival, &n.closedToDeparture)
-	})
+	nights, err := store{}.lockNights(ctx, tx, roomTypeID, stay.CheckIn, stay.CheckOut)
 	if err != nil {
 		return nil, err
 	}
@@ -206,10 +178,8 @@ func checkRestrictions(ctx context.Context, tx pgx.Tx, roomTypeID uuid.UUID, che
 	if len(nights) < first.minStay {
 		return &RestrictionError{Err: ErrMinStay, Date: first.date, MinStay: first.minStay}
 	}
-	var ctd bool
-	err := tx.QueryRow(ctx, `SELECT closed_to_departure FROM night_inventory WHERE room_type_id = $1 AND date = $2`,
-		roomTypeID, checkOut).Scan(&ctd)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	ctd, err := store{}.closedToDeparture(ctx, tx, roomTypeID, checkOut)
+	if err != nil {
 		return err
 	}
 	if ctd {
@@ -220,26 +190,14 @@ func checkRestrictions(ctx context.Context, tx pgx.Tx, roomTypeID uuid.UUID, che
 
 // countHolds fills in the rooms held on each night by live holds, optionally ignoring one hold.
 func countHolds(ctx context.Context, tx pgx.Tx, roomTypeID uuid.UUID, nights []night, except uuid.UUID) error {
-	rows, err := tx.Query(ctx, `SELECT g.d, coalesce(sum(h.rooms), 0)::int
-		FROM (SELECT gs::date AS d FROM generate_series($2::date, $3::date, interval '1 day') AS gs) g
-		LEFT JOIN holds h ON h.room_type_id = $1 AND h.status = $5 AND h.expires_at > now()
-		                 AND h.check_in <= g.d AND h.check_out > g.d AND h.id <> $4
-		GROUP BY g.d ORDER BY g.d`, roomTypeID, nights[0].date, nights[len(nights)-1].date, except, domain.HoldActive)
+	held, err := store{}.heldPerNight(ctx, tx, roomTypeID, nights[0].date, nights[len(nights)-1].date, except)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-	for i := 0; rows.Next(); i++ {
-		var d time.Time
-		var held int
-		if err := rows.Scan(&d, &held); err != nil {
-			return err
-		}
-		if i < len(nights) {
-			nights[i].held = held
-		}
+	for i := range min(len(held), len(nights)) {
+		nights[i].held = held[i]
 	}
-	return rows.Err()
+	return nil
 }
 
 func checkCapacity(nights []night, rooms int) error {
