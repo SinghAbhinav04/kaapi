@@ -420,7 +420,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Staff sign-in, step 1. A correct password emails a 6-digit code (in demo mode it is also returned); step 2 is /v1/auth/staff/verify. */
+        /** Staff sign-in, step 1. A correct password emails a 6-digit code (never returned in the response); step 2 is /v1/auth/staff/verify. */
         post: {
             parameters: {
                 query?: never;
@@ -443,7 +443,6 @@ export interface paths {
                         "application/json": {
                             code_sent: boolean;
                             sent_to: string;
-                            demo_code?: string;
                         };
                     };
                 };
@@ -507,7 +506,7 @@ export interface paths {
         put?: never;
         /**
          * Email a guest a 6-digit sign-in code.
-         * @description Answers the same way whether or not the email has an account. In demo mode the code is also returned.
+         * @description Answers the same way whether or not the email has an account. The code goes by email only, never in the response.
          */
         post: {
             parameters: {
@@ -2920,8 +2919,6 @@ export interface components {
         };
         OTPRequestResponse: {
             sent: boolean;
-            /** @description Only when DEMO_MODE is on. */
-            demo_code?: string;
         };
         OTPVerifyRequest: {
             email: string;

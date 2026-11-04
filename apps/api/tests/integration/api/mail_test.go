@@ -68,8 +68,8 @@ func TestGuestEmailsGoOutThroughTheMailbox(t *testing.T) {
 	const newGuest = "first.timer@kaapi-guest.in"
 
 	// Sign-in code: queued with the request, delivered by the worker.
-	var sent api.OTPRequestResponse
-	s.Do(http.MethodPost, "/v1/auth/otp/request", api.OTPRequest{Email: newGuest}, nil).JSON(t, &sent)
+	s.Do(http.MethodPost, "/v1/auth/otp/request", api.OTPRequest{Email: newGuest}, nil)
+	code := emailedCode(t, s, domain.OutboxOTP, newGuest)
 	if st := outboxStatus(t, s, domain.OutboxOTP, newGuest); st != domain.OutboxQueued {
 		t.Fatalf("before the worker runs: %s", st)
 	}
@@ -77,7 +77,7 @@ func TestGuestEmailsGoOutThroughTheMailbox(t *testing.T) {
 		t.Fatalf("delivery: %+v", r)
 	}
 	mails := sentTo(fake, newGuest)
-	if len(mails) != 1 || !strings.Contains(mails[0], *sent.DemoCode) {
+	if len(mails) != 1 || !strings.Contains(mails[0], code) {
 		t.Fatalf("the code must arrive by email: %v", mails)
 	}
 	if outboxStatus(t, s, domain.OutboxOTP, newGuest) != domain.OutboxSent {
@@ -85,7 +85,7 @@ func TestGuestEmailsGoOutThroughTheMailbox(t *testing.T) {
 	}
 
 	// First sign-in is registration: one welcome email, never again on later sign-ins.
-	s.Do(http.MethodPost, "/v1/auth/otp/verify", api.OTPVerifyRequest{Email: newGuest, Code: *sent.DemoCode}, nil)
+	s.Do(http.MethodPost, "/v1/auth/otp/verify", api.OTPVerifyRequest{Email: newGuest, Code: code}, nil)
 	deliver(t, s)
 	guestLogin(t, s.NewSession(), newGuest)
 	deliver(t, s)

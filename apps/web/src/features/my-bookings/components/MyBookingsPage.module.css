@@ -29,20 +29,6 @@
   font-size: 15px;
 }
 
-.demo {
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  background: var(--amber-tint);
-  color: var(--amber-ink);
-  font-size: 14px;
-}
-
-.demo .mono,
-.demo span {
-  font-weight: 700;
-  letter-spacing: 0.2em;
-}
-
 .error {
   font-size: 14px;
   font-weight: 600;

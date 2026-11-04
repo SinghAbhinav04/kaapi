@@ -67,7 +67,7 @@ export function StaffLoginPage() {
             maxLength={CODE_LENGTH}
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-            hint={challenge.demo_code ? `Demo mode, no email sent. Your code: ${challenge.demo_code}` : 'Check your work inbox. The code works for 5 minutes.'}
+            hint="Check your work inbox. The code works for 5 minutes."
             required
           />
         )}

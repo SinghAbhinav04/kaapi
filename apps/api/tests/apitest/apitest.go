@@ -40,7 +40,6 @@ func TestConfig() config.Config {
 		PaymentSecret:  []byte("test-only-payment-secret-0123456789ab"),
 		Environment:    config.EnvDevelopment,
 		RequestTimeout: 15 * time.Second,
-		DemoMode:       true,
 	}
 }
 

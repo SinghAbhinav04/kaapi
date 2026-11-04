@@ -81,7 +81,7 @@ export function EmailVerify({ email, onEmail, error }: { email: string; onEmail:
             maxLength={OTP_LENGTH}
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-            hint={request.data?.demo_code ? `${EMAIL_COPY.demo} ${request.data.demo_code}` : EMAIL_COPY.after}
+            hint={EMAIL_COPY.after}
             error={verify.isError ? verify.error.message : undefined}
           />
           <Button onClick={confirm} loading={verify.isPending} disabled={code.length !== OTP_LENGTH}>

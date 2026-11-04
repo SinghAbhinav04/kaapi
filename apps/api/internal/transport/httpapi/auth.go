@@ -41,11 +41,8 @@ func (a *API) staffLogin(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := StaffChallengeResponse{CodeSent: true, SentTo: ch.SentTo}
-	if a.cfg.DemoMode {
-		out.DemoCode = &ch.Code // demo addresses can't receive mail
-	}
-	httpx.WriteJSON(w, http.StatusAccepted, out)
+	// The code goes by email only, never in the response: that's what makes it a second factor.
+	httpx.WriteJSON(w, http.StatusAccepted, StaffChallengeResponse{CodeSent: true, SentTo: ch.SentTo})
 	return nil
 }
 
@@ -68,15 +65,11 @@ func (a *API) otpRequest(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.DecodeJSON(w, r, &body); err != nil {
 		return err
 	}
-	code, err := a.auth.RequestOTP(r.Context(), body.Email)
-	if err != nil {
+	if err := a.auth.RequestOTP(r.Context(), body.Email); err != nil {
 		return err
 	}
-	out := OTPRequestResponse{Sent: true}
-	if a.cfg.DemoMode {
-		out.DemoCode = &code
-	}
-	httpx.WriteJSON(w, http.StatusAccepted, out)
+	// The code goes by email only, never in the response: it proves the guest owns the address.
+	httpx.WriteJSON(w, http.StatusAccepted, OTPRequestResponse{Sent: true})
 	return nil
 }
 

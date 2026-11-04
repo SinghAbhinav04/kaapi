@@ -213,8 +213,8 @@ Each run writes one `audit_logs` row with the counts.
 - **The refresh cookie's path is the one the browser sees:** `BROWSER_API_PREFIX` (default `/api`, the web proxy) + `/v1/auth`. With the bare `/v1/auth` the browser never sent it and every staff session ended after 15 minutes. `TestRefreshCookiePathMatchesTheBrowserProxy` guards it.
 - **Tabs refresh one at a time** (`navigator.locks` in `apis/http/index.ts`): two tabs sending the same refresh token look like theft to the API, which then revokes every session.
 - **Native clients** send `X-Client: native` and get tokens in the response body, then use Bearer.
-- **Guests** sign in with an email OTP: HMAC-bound, single use, rate-limited. In `DEMO_MODE` the API returns the code, because demo email is simulated. **Booking requires a signed-in guest** (the email is verified by code at checkout, so a typo can't lose the confirmation).
-- **Staff** sign in with two steps: `POST /v1/auth/staff/login` checks the password and emails a 6-digit code (202, masked address; demo mode returns the code), `POST /v1/auth/staff/verify` signs in. Codes: 5 min, 5 attempts, own purpose (`STAFF_2FA`), so a guest code can't stand in.
+- **Guests** sign in with an email OTP: HMAC-bound, single use, rate-limited. **A code is never returned by the API or shown on screen**, only emailed (tests read it from the outbox copy, `emailedCode`). `DEMO_MODE` was removed for this. **Booking requires a signed-in guest** (the email is verified by code at checkout, so a typo can't lose the confirmation).
+- **Staff** sign in with two steps: `POST /v1/auth/staff/login` checks the password and emails a 6-digit code (202, masked address only), `POST /v1/auth/staff/verify` signs in. Codes: 5 min, 5 attempts, own purpose (`STAFF_2FA`), so a guest code can't stand in.
 - **A token is only as good as its session:** `authenticate` decrypts it, rejects anything over 4 KB, issued in the future or living longer than 15 min, then asks `auth.SessionLive` (session not revoked or expired, user active; cached 30 s, cleared at once in-process on logout and rotation). Logging out or refreshing kills the old access token immediately.
 
 ### The gateway (`transport/httpapi/gateway.go` + `policies.go`)
@@ -371,12 +371,13 @@ Segmented, Stepper, Skeleton, EmptyState/ErrorState and Logo.
 - **No IPv6?** The Supabase direct host is unreachable; use the session pooler URL instead.
 - **Env names** (values never in git; see `.env.example`):
   - API (new): `WORKER_IN_PROCESS`, `GMAIL_REFRESH_TOKEN`; `GMAIL_POLL_SECONDS` defaults to 5; `PII_KEY` (32+ bytes, required in production); `DOTENV_FILE` (which settings file the commands load; default `.env`); `ANALYTICS_CACHE_SECONDS` (default 600; 0 = off).
-  - API: `DATABASE_URL`, `BROWSER_API_PREFIX` (optional, default `/api`), `FX_API_BASE_URL` (optional), `JWE_SECRET` (32+ bytes), `MOCK_PAYMENT_WEBHOOK_SECRET` (32+ bytes), `APP_ORIGIN`, `APP_ENV`, `DEMO_MODE`, `SEED_DEMO_PASSWORD`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`, `GEMINI_API_KEY`, `GEMINI_MODELS`, `GEMINI_RPM`, `GROQ_API_KEY`, `GROQ_MODELS`, `GROQ_RPM`, `SENTRY_DSN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_REDIRECT_URL` (optional), `GMAIL_POLL_SECONDS` (optional), `RATE_LIMITS` (optional, default on), `TRUSTED_PROXY_HOPS` (optional, default 1), `PORT` (default 8080)
+  - API: `DATABASE_URL`, `BROWSER_API_PREFIX` (optional, default `/api`), `FX_API_BASE_URL` (optional), `JWE_SECRET` (32+ bytes), `MOCK_PAYMENT_WEBHOOK_SECRET` (32+ bytes), `APP_ORIGIN`, `APP_ENV`, `SEED_DEMO_PASSWORD`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`, `GEMINI_API_KEY`, `GEMINI_MODELS`, `GEMINI_RPM`, `GROQ_API_KEY`, `GROQ_MODELS`, `GROQ_RPM`, `SENTRY_DSN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_REDIRECT_URL` (optional), `GMAIL_POLL_SECONDS` (optional), `RATE_LIMITS` (optional, default on), `TRUSTED_PROXY_HOPS` (optional, default 1), `PORT` (default 8080)
   - Web: `API_ORIGIN` (where `/api/*` is proxied; default `http://localhost:8080`), `NEXT_PUBLIC_APP_URL`
 - **Demo accounts:**
   - staff: `gm@`, `reservations@`, `reservations2@`, `sales@`, `admin@kaapiestate.test`
   - guest: `guest@example.test` (sign in by OTP)
   - The staff password is `SEED_DEMO_PASSWORD`, given to reviewers in deployment.md and nowhere else.
+  - These addresses are reserved test domains and can't receive email, so with codes sent by email only they can no longer sign in. Sign in with the real administrator (`SEED_ADMIN_EMAIL`), and give staff accounts real mailboxes (Team page) before reviewers need them.
 - **Demo "today"** for the seed data is 2026-11-02 (IST). The default search lands on the first weekend at least 7 days ahead.
 
 ### Commands
@@ -452,7 +453,6 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
    - Inbound replies on an existing Gmail thread become a new enquiry; linking them to the original is a next step.
    - Sessions slide forever: each refresh grants 30 more days, with no absolute cap. Consider one (e.g. 12 h for ADMIN).
    - Login is limited per IP only; a per-account limit (credential stuffing from many IPs) needs the email, which the gateway doesn't read.
-   - `DEMO_MODE` is not refused in production; it returns sign-in codes in responses.
    - Drafts (`enquiry_drafts`) can contain the guest's name and aren't encrypted yet.
    - Finish the store.go split for enquiry (gmail, auth, booking and inventory are done).
 5. Capacitor Android shell (`server.url` → production site; Bearer tokens in Preferences).

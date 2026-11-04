@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"kaapi/api/internal/domain"
@@ -20,8 +21,8 @@ func staffLogin(t *testing.T, s *apitest.Server, email string, headers map[strin
 	return staffSignIn(t, s, email, staffPassword, headers)
 }
 
-// staffSignIn does both steps: the password (which emails a code; demo mode returns it) and
-// the code.
+// staffSignIn does both steps: the password (which emails a code) and the code, read from
+// that email.
 func staffSignIn(t *testing.T, s *apitest.Server, email, password string, headers map[string]string) api.AuthResponse {
 	t.Helper()
 	var out api.AuthResponse
@@ -38,10 +39,7 @@ func staffSignInResponse(t *testing.T, s *apitest.Server, email, password string
 		t.Fatalf("login %s: %d %s", email, res.Status, res.Body)
 	}
 	res.JSON(t, &ch)
-	if ch.DemoCode == nil {
-		t.Fatal("demo mode should return the code")
-	}
-	res = s.Do(http.MethodPost, "/v1/auth/staff/verify", api.OTPVerifyRequest{Email: email, Code: *ch.DemoCode}, headers)
+	res = s.Do(http.MethodPost, "/v1/auth/staff/verify", api.OTPVerifyRequest{Email: email, Code: emailedCode(t, s, domain.OutboxStaffCode, email)}, headers)
 	if res.Status != http.StatusOK {
 		t.Fatalf("verify %s: %d %s", email, res.Status, res.Body)
 	}
@@ -50,13 +48,9 @@ func staffSignInResponse(t *testing.T, s *apitest.Server, email, password string
 
 func guestLogin(t *testing.T, s *apitest.Server, email string) api.AuthResponse {
 	t.Helper()
-	var sent api.OTPRequestResponse
-	s.Do(http.MethodPost, "/v1/auth/otp/request", api.OTPRequest{Email: email}, nil).JSON(t, &sent)
-	if sent.DemoCode == nil {
-		t.Fatal("demo mode should return the code")
-	}
+	s.Do(http.MethodPost, "/v1/auth/otp/request", api.OTPRequest{Email: email}, nil)
 	var out api.AuthResponse
-	res := s.Do(http.MethodPost, "/v1/auth/otp/verify", api.OTPVerifyRequest{Email: email, Code: *sent.DemoCode}, nil)
+	res := s.Do(http.MethodPost, "/v1/auth/otp/verify", api.OTPVerifyRequest{Email: email, Code: emailedCode(t, s, domain.OutboxOTP, email)}, nil)
 	if res.Status != http.StatusOK {
 		t.Fatalf("verify: %d %s", res.Status, res.Body)
 	}
@@ -96,31 +90,35 @@ func TestGuestOTPSignIn(t *testing.T) {
 
 	var sent api.OTPRequestResponse
 	s.Do(http.MethodPost, "/v1/auth/otp/request", api.OTPRequest{Email: email}, nil).JSON(t, &sent)
+	if !sent.Sent {
+		t.Fatal("request should say a code was sent")
+	}
+	code := emailedCode(t, s, domain.OutboxOTP, email)
 	wrong := "000000"
-	if *sent.DemoCode == wrong {
+	if code == wrong {
 		wrong = "111111"
 	}
 	if e := s.Do(http.MethodPost, "/v1/auth/otp/verify", api.OTPVerifyRequest{Email: email, Code: wrong}, nil).Error(t); e.Code != apperr.CodeUnauthenticated {
 		t.Fatalf("wrong code: %s", e.Code)
 	}
 	var out api.AuthResponse
-	s.Do(http.MethodPost, "/v1/auth/otp/verify", api.OTPVerifyRequest{Email: email, Code: *sent.DemoCode}, nil).JSON(t, &out)
+	s.Do(http.MethodPost, "/v1/auth/otp/verify", api.OTPVerifyRequest{Email: email, Code: code}, nil).JSON(t, &out)
 	if out.User.Role != domain.RoleGuest || out.User.Email != "arjun.menon@example.test" {
 		t.Fatalf("%+v", out.User)
 	}
 	if e := s.Do(http.MethodGet, "/v1/staff/outbox", nil, nil).Error(t); e.Code != apperr.CodeForbidden {
 		t.Fatalf("guest reading staff outbox: %s", e.Code)
 	}
-	if e := s.Do(http.MethodPost, "/v1/auth/otp/verify", api.OTPVerifyRequest{Email: email, Code: *sent.DemoCode}, nil).Error(t); e.Code != apperr.CodeUnauthenticated {
+	if e := s.Do(http.MethodPost, "/v1/auth/otp/verify", api.OTPVerifyRequest{Email: email, Code: code}, nil).Error(t); e.Code != apperr.CodeUnauthenticated {
 		t.Fatal("a code must only work once")
 	}
 }
 
 func TestOTPCannotGrantStaffAccess(t *testing.T) {
 	s := apitest.New(t)
-	var sent api.OTPRequestResponse
-	s.Do(http.MethodPost, "/v1/auth/otp/request", api.OTPRequest{Email: "gm@kaapiestate.test"}, nil).JSON(t, &sent)
-	if e := s.Do(http.MethodPost, "/v1/auth/otp/verify", api.OTPVerifyRequest{Email: "gm@kaapiestate.test", Code: *sent.DemoCode}, nil).Error(t); e.Code != apperr.CodeUnauthenticated {
+	s.Do(http.MethodPost, "/v1/auth/otp/request", api.OTPRequest{Email: "gm@kaapiestate.test"}, nil)
+	code := emailedCode(t, s, domain.OutboxOTP, "gm@kaapiestate.test")
+	if e := s.Do(http.MethodPost, "/v1/auth/otp/verify", api.OTPVerifyRequest{Email: "gm@kaapiestate.test", Code: code}, nil).Error(t); e.Code != apperr.CodeUnauthenticated {
 		t.Fatalf("a staff email signed in with a code: %s", e.Code)
 	}
 }
@@ -224,5 +222,17 @@ func TestCrossSiteWritesAreRefused(t *testing.T) {
 	}
 	if res := s.Do(http.MethodGet, "/v1/me", nil, nil); res.Status != http.StatusUnauthorized {
 		t.Fatalf("cookies should be cleared after logout: %d", res.Status)
+	}
+}
+
+// A code proves the person owns the address only if it reaches them by email alone.
+func TestSignInCodesAreNeverInResponses(t *testing.T) {
+	s := apitest.New(t)
+	res := s.Do(http.MethodPost, "/v1/auth/otp/request", api.OTPRequest{Email: "asha@kaapi-guest.in"}, nil)
+	staff := s.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: "gm@kaapiestate.test", Password: staffPassword}, nil)
+	for name, body := range map[string]string{"guest": string(res.Body), "staff": string(staff.Body)} {
+		if codeRe.MatchString(body) || strings.Contains(body, "demo_code") {
+			t.Errorf("%s response carries a code: %s", name, body)
+		}
 	}
 }

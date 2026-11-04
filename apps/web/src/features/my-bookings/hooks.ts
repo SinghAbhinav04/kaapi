@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 import { useRequestOtp, useVerifyOtp } from '@/apis/auth';
 
-/** Email → one-time code → signed in. The code is sent by email (simulated in the demo). */
+/** Email → one-time code → signed in. The code arrives by email only. */
 export function useOtpSignIn() {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -18,8 +18,6 @@ export function useOtpSignIn() {
     code,
     setCode,
     sent,
-    /** Shown only when the API runs in demo mode, since no real email is sent. */
-    demoCode: request.data?.demo_code,
     sendCode: () => request.mutate(email.trim()),
     verifyCode: () => verify.mutate({ email: email.trim(), code: code.trim() }),
     restart: () => {

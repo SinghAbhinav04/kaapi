@@ -52,7 +52,15 @@ function SignIn() {
   return (
     <form className={styles.card} onSubmit={onSubmit}>
       {!otp.sent ? (
-        <TextField label="Email you booked with" type="email" autoComplete="email" inputMode="email" value={otp.email} onChange={(e) => otp.setEmail(e.target.value)} required />
+        <TextField
+          label="Email you booked with"
+          type="email"
+          autoComplete="email"
+          inputMode="email"
+          value={otp.email}
+          onChange={(e) => otp.setEmail(e.target.value)}
+          required
+        />
       ) : (
         <>
           <p className={styles.sentTo}>
@@ -61,11 +69,6 @@ function SignIn() {
               Use another email
             </button>
           </p>
-          {otp.demoCode && (
-            <p className={styles.demo} role="status">
-              Demo: email is simulated, so here is your code: <span className="mono">{otp.demoCode}</span>
-            </p>
-          )}
           <TextField
             label="One-time code"
             inputMode="numeric"

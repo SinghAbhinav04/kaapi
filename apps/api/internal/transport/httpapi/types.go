@@ -194,9 +194,8 @@ type AuthResponse struct {
 
 // StaffChallengeResponse: the password was right and a code was emailed.
 type StaffChallengeResponse struct {
-	CodeSent bool    `json:"code_sent"`
-	SentTo   string  `json:"sent_to"`
-	DemoCode *string `json:"demo_code,omitempty"`
+	CodeSent bool   `json:"code_sent"`
+	SentTo   string `json:"sent_to"`
 }
 
 type StaffLoginRequest struct {
@@ -209,8 +208,7 @@ type OTPRequest struct {
 }
 
 type OTPRequestResponse struct {
-	Sent     bool    `json:"sent"`
-	DemoCode *string `json:"demo_code,omitempty"` // only when DEMO_MODE is on, so reviewers can sign in
+	Sent bool `json:"sent"`
 }
 
 type OTPVerifyRequest struct {

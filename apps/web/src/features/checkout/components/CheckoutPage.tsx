@@ -88,13 +88,19 @@ function CheckoutForm({ ticket }: { ticket: HoldTicket }) {
 
         {expired && (
           <div className={styles.expired} role="alert">
-            <strong>Your 10-minute hold has ended.</strong> The room may still be free.{' '}
-            <Link href={roomHref(ticket)}>Check and hold it again</Link>
+            <strong>Your 10-minute hold has ended.</strong> The room may still be free. <Link href={roomHref(ticket)}>Check and hold it again</Link>
           </div>
         )}
 
         <div className={styles.fields}>
-          <TextField label="Full name" autoComplete="name" value={form.name} onChange={(e) => update('name', e.target.value)} error={errors['guest.name']} required />
+          <TextField
+            label="Full name"
+            autoComplete="name"
+            value={form.name}
+            onChange={(e) => update('name', e.target.value)}
+            error={errors['guest.name']}
+            required
+          />
           <EmailVerify email={form.email} onEmail={(v) => update('email', v)} error={errors['guest.email']} />
           <TextField
             label="Mobile"
@@ -145,7 +151,9 @@ function CheckoutForm({ ticket }: { ticket: HoldTicket }) {
 
         {formError && (
           <p className={styles.fieldError} role="alert">
-            {formError.code === 'HOLD_EXPIRED' || formError.code === 'HOLD_NOT_FOUND' ? 'Your hold has ended. Check the room again to hold it.' : formError.message}
+            {formError.code === 'HOLD_EXPIRED' || formError.code === 'HOLD_NOT_FOUND'
+              ? 'Your hold has ended. Check the room again to hold it.'
+              : formError.message}
           </p>
         )}
 

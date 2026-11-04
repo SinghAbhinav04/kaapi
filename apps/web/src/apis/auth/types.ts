@@ -31,4 +31,4 @@ export type Permission =
   | 'analytics:read';
 
 /** Staff sign-in step 1's answer: a code went to sent_to (masked). */
-export type StaffChallenge = { code_sent: boolean; sent_to: string; demo_code?: string };
+export type StaffChallenge = { code_sent: boolean; sent_to: string };

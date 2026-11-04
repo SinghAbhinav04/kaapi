@@ -95,7 +95,7 @@ func (s *Service) StaffLogin(ctx context.Context, email, password string) (Staff
 				"If you didn't just sign in to the Kaapi Estate console, someone has your password: change it and tell the administrator.",
 				code, int(OTPTTL.Minutes())))
 	})
-	return StaffChallenge{SentTo: maskEmail(addr), Code: code}, err
+	return StaffChallenge{SentTo: maskEmail(addr)}, err
 }
 
 // VerifyStaffCode finishes a staff sign-in with the emailed code.
@@ -145,17 +145,16 @@ func maskEmail(email string) string {
 	return email[:1] + "•••" + email[at:]
 }
 
-// RequestOTP creates a sign-in code for a guest and "emails" it (to the outbox).
-// It answers the same way whether or not the email has an account. The code is
-// returned so demo mode can show it on screen; production never sends it to the client.
-func (s *Service) RequestOTP(ctx context.Context, email string) (string, error) {
+// RequestOTP creates a sign-in code for a guest and emails it (through the outbox). It
+// answers the same way whether or not the email has an account, and never returns the code.
+func (s *Service) RequestOTP(ctx context.Context, email string) error {
 	email, err := normaliseEmail(email)
 	if err != nil {
-		return "", err
+		return err
 	}
 	code, err := randomDigits(OTPLength)
 	if err != nil {
-		return "", err
+		return err
 	}
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		recent, err := s.store.recentOTPs(ctx, tx, domain.OTPGuestLogin, email, OTPWindow)
@@ -173,7 +172,7 @@ func (s *Service) RequestOTP(ctx context.Context, email string) (string, error) 
 			fmt.Sprintf("Your sign-in code is %s. It expires in %d minutes. If you didn't ask for it, you can ignore this email.",
 				code, int(OTPTTL.Minutes())))
 	})
-	return code, err
+	return err
 }
 
 // VerifyOTP signs a guest in with a code, creating their guest account on first use.

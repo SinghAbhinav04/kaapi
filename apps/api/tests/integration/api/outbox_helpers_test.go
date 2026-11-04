@@ -1,6 +1,8 @@
 package api_test
 
 import (
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -33,9 +35,26 @@ func outboxTo(t *testing.T, s *apitest.Server, kind domain.OutboxKind, to string
 		if err := rows.Scan(&m.ID, &m.Status, &recipient, pii.Into(&m.Body)); err != nil {
 			t.Fatal(err)
 		}
-		if string(recipient) == to {
+		if strings.EqualFold(string(recipient), strings.TrimSpace(to)) { // addresses are stored lower-cased
 			out = append(out, m)
 		}
 	}
 	return out
+}
+
+var codeRe = regexp.MustCompile(`\b\d{6}\b`)
+
+// emailedCode reads the newest sign-in code emailed to an address, as the person would from
+// their inbox: the API never returns codes.
+func emailedCode(t *testing.T, s *apitest.Server, kind domain.OutboxKind, to string) string {
+	t.Helper()
+	mails := outboxTo(t, s, kind, to)
+	if len(mails) == 0 {
+		t.Fatalf("no %s email to %s", kind, to)
+	}
+	code := codeRe.FindString(mails[0].Body)
+	if code == "" {
+		t.Fatalf("no code in the %s email", kind)
+	}
+	return code
 }

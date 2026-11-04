@@ -34,7 +34,6 @@ const (
 	EnvLogLevel          = "LOG_LEVEL"
 	EnvNativeAppOrigins  = "NATIVE_APP_ORIGINS"
 	EnvRequestTimeoutSec = "REQUEST_TIMEOUT_SECONDS"
-	EnvDemoMode          = "DEMO_MODE"
 	EnvBrowserAPIPrefix  = "BROWSER_API_PREFIX"      // where browsers reach the API; default /api (the web app's proxy)
 	EnvFXBaseURL         = "FX_API_BASE_URL"         // exchange rates; empty = Frankfurter (ECB). Tests point it at a fake
 	EnvWorkerInProcess   = "WORKER_IN_PROCESS"       // run background jobs inside cmd/api (default: on in development)
@@ -83,8 +82,6 @@ type Config struct {
 	CookieSecure     bool
 	LogLevel         string
 	RequestTimeout   time.Duration
-	// DemoMode shows guest sign-in codes on screen, because the demo has no real email.
-	DemoMode bool
 	// BrowserAPIPrefix is the path browsers put in front of /v1: the web app proxies /api/*
 	// here, so cookies scoped to a path must use the path the browser sees.
 	BrowserAPIPrefix string
@@ -117,7 +114,6 @@ func Load() (Config, error) {
 		MigrateOnStart: get(EnvMigrateOnStart, "true") == "true",
 		Environment:    Environment(get(EnvEnvironment, string(EnvDevelopment))),
 		LogLevel:       get(EnvLogLevel, "info"),
-		DemoMode:       get(EnvDemoMode, "false") == "true",
 		FXBaseURL:      os.Getenv(EnvFXBaseURL),
 	}
 	// LookupEnv, not get: an empty value is meaningful (the API is reached directly).

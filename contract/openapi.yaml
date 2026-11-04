@@ -162,7 +162,7 @@ paths:
   /v1/auth/staff/login:
     post:
       tags: [auth]
-      summary: Staff sign-in, step 1. A correct password emails a 6-digit code (in demo mode it is also returned); step 2 is /v1/auth/staff/verify.
+      summary: Staff sign-in, step 1. A correct password emails a 6-digit code (never returned in the response); step 2 is /v1/auth/staff/verify.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/StaffLoginRequest" } } }
@@ -174,7 +174,7 @@ paths:
               schema:
                 type: object
                 required: [code_sent, sent_to]
-                properties: { code_sent: { type: boolean }, sent_to: { type: string }, demo_code: { type: string } }
+                properties: { code_sent: { type: boolean }, sent_to: { type: string } }
         "401": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
@@ -195,7 +195,7 @@ paths:
     post:
       tags: [auth]
       summary: Email a guest a 6-digit sign-in code.
-      description: Answers the same way whether or not the email has an account. In demo mode the code is also returned.
+      description: Answers the same way whether or not the email has an account. The code goes by email only, never in the response.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/OTPRequest" } } }
@@ -1331,7 +1331,6 @@ components:
       required: [sent]
       properties:
         sent: { type: boolean }
-        demo_code: { type: string, description: Only when DEMO_MODE is on. }
 
     OTPVerifyRequest:
       type: object
