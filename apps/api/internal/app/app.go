@@ -25,9 +25,13 @@ import (
 	"kaapi/api/internal/platform/cache"
 	"kaapi/api/internal/platform/changes"
 	"kaapi/api/internal/platform/config"
+	"kaapi/api/internal/platform/emailtpl"
 	"kaapi/api/internal/platform/pii"
 	"kaapi/api/internal/retention"
 )
+
+// estateDirections opens the estate in Google Maps (the site's map uses the same pin).
+const estateDirections = "https://www.google.com/maps/search/?api=1&query=Baba+Budangiri%2C+Chikkamagaluru%2C+Karnataka"
 
 // aiDiscoveryTimeout bounds the background call that lists the models each key can use.
 const aiDiscoveryTimeout = time.Minute
@@ -89,6 +93,10 @@ func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() tim
 	a.Gmail.SetInbox(mailInbox{a})
 	a.Enquiries.SetMailer(a.Gmail)
 	a.Outbox.SetMailer(a.Gmail)
+	// Emails' buttons point at the site; directions at the estate (an assumed pin, as on the site).
+	links := emailtpl.Links{Site: cfg.AppOrigin, Directions: estateDirections}
+	a.Outbox.SetLinks(links)
+	a.Enquiries.SetLinks(links)
 	a.Changes = changes.New(pool, log)
 	if cfg.AnalyticsCacheTTL > 0 {
 		a.Analytics.SetCache(cache.New[string, analytics.Report](cfg.AnalyticsCacheTTL, maxCachedReports))

@@ -101,17 +101,38 @@ func build(from string, m domain.Mail) (string, error) {
 		header("References", m.InReplyTo)
 	}
 	header("MIME-Version", "1.0")
-	header("Content-Type", `text/plain; charset="UTF-8"`)
-	header("Content-Transfer-Encoding", "quoted-printable")
+	if m.HTML == "" {
+		header("Content-Type", `text/plain; charset="UTF-8"`)
+		header("Content-Transfer-Encoding", "quoted-printable")
+		b.WriteString("\r\n")
+		if err := writeQP(&b, strings.ReplaceAll(m.Body, "\n", "\r\n")); err != nil {
+			return "", err
+		}
+		return base64.RawURLEncoding.EncodeToString(b.Bytes()), nil
+	}
+	// Text and HTML of the same message; clients show the last part they can render.
+	const boundary = "kaapi-alt-6f1d2c"
+	header("Content-Type", `multipart/alternative; boundary="`+boundary+`"`)
 	b.WriteString("\r\n")
-	qp := quotedprintable.NewWriter(&b)
-	if _, err := qp.Write([]byte(strings.ReplaceAll(m.Body, "\n", "\r\n"))); err != nil {
-		return "", err
+	for _, part := range []struct{ kind, body string }{{"text/plain", strings.ReplaceAll(m.Body, "\n", "\r\n")}, {"text/html", m.HTML}} {
+		b.WriteString("--" + boundary + "\r\n")
+		b.WriteString(`Content-Type: ` + part.kind + `; charset="UTF-8"` + "\r\n")
+		b.WriteString("Content-Transfer-Encoding: quoted-printable\r\n\r\n")
+		if err := writeQP(&b, part.body); err != nil {
+			return "", err
+		}
+		b.WriteString("\r\n")
 	}
-	if err := qp.Close(); err != nil {
-		return "", err
-	}
+	b.WriteString("--" + boundary + "--\r\n")
 	return base64.RawURLEncoding.EncodeToString(b.Bytes()), nil
+}
+
+func writeQP(b *bytes.Buffer, s string) error {
+	qp := quotedprintable.NewWriter(b)
+	if _, err := qp.Write([]byte(s)); err != nil {
+		return err
+	}
+	return qp.Close()
 }
 
 // clean stops header injection: a value can never start a new header line.

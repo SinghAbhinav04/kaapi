@@ -15,6 +15,7 @@ import (
 	"kaapi/api/internal/domain"
 	"kaapi/api/internal/platform/apperr"
 	"kaapi/api/internal/platform/db"
+	"kaapi/api/internal/platform/emailtpl"
 	"kaapi/api/internal/platform/idgen"
 	"kaapi/api/internal/platform/pii"
 )
@@ -334,7 +335,8 @@ func (s *Service) Send(ctx context.Context, ref string, actor uuid.UUID) error {
 		return err
 	}
 
-	sent, err := s.mailer.Send(ctx, domain.Mail{To: p.recipient, Subject: p.subject, Body: p.body, InReplyTo: p.inReplyTo, ThreadID: p.threadID})
+	html := emailtpl.Render(domain.OutboxEnquiryReply, p.subject, p.body, s.links).HTML
+	sent, err := s.mailer.Send(ctx, domain.Mail{To: p.recipient, Subject: p.subject, Body: p.body, HTML: html, InReplyTo: p.inReplyTo, ThreadID: p.threadID})
 	if err != nil {
 		// Detached context: release the claim even if the request was cancelled.
 		_, _ = s.pool.Exec(context.WithoutCancel(ctx), `UPDATE enquiry_drafts SET sending_at = NULL WHERE id = $1`, p.draftID)

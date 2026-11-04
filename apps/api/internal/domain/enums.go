@@ -216,6 +216,9 @@ const (
 	OutboxAlert               OutboxKind = "ALERT"
 	OutboxRefundNotice        OutboxKind = "REFUND_NOTICE"
 	OutboxStaffMessage        OutboxKind = "STAFF_MESSAGE" // written from scratch by staff, not a reply
+	OutboxStaffCode           OutboxKind = "STAFF_CODE"    // the second step of staff sign-in
+	OutboxCheckInReminder     OutboxKind = "CHECKIN_REMINDER"
+	OutboxCheckOutReminder    OutboxKind = "CHECKOUT_REMINDER"
 )
 
 type OutboxStatus string

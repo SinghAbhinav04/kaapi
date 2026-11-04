@@ -22,6 +22,7 @@ import (
 	"kaapi/api/internal/domain"
 	"kaapi/api/internal/inventory"
 	"kaapi/api/internal/platform/db"
+	"kaapi/api/internal/platform/emailtpl"
 	"kaapi/api/internal/platform/idgen"
 	"kaapi/api/internal/platform/pii"
 )
@@ -33,6 +34,7 @@ type Service struct {
 	inventory  *inventory.Service
 	now        func() time.Time
 	mailer     Mailer // nil: replies are simulated
+	links      emailtpl.Links
 	wake       chan struct{}
 	mu         sync.Mutex // serialises queue processing within this process
 }
@@ -47,6 +49,9 @@ func NewService(pool *pgxpool.Pool, provider ai.Provider, inv *inventory.Service
 
 // SetMailer connects real delivery; the API does it once at start-up.
 func (s *Service) SetMailer(m Mailer) { s.mailer = m }
+
+// SetLinks gives emails' buttons the site's address.
+func (s *Service) SetLinks(l emailtpl.Links) { s.links = l }
 
 // AIEnabled reports whether a model is configured (otherwise rules and templates only).
 func (s *Service) AIEnabled() bool { return s.provider != nil }

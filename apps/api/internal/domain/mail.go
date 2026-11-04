@@ -6,6 +6,7 @@ type Mail struct {
 	To        string
 	Subject   string
 	Body      string
+	HTML      string // optional: sent with Body as multipart/alternative
 	InReplyTo string
 	ThreadID  string
 }

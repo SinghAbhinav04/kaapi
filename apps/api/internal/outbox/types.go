@@ -55,6 +55,7 @@ const (
 // queued is a message claimed for delivery.
 type queued struct {
 	ID        uuid.UUID
+	Kind      domain.OutboxKind
 	Recipient string
 	Subject   string
 	Body      string

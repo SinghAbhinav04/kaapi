@@ -46,14 +46,14 @@ func (store) claim(ctx context.Context, q db.Querier, limit int) ([]queued, erro
 			WHERE status = $1 AND channel = $2 AND next_attempt_at <= now()
 			  AND (claimed_at IS NULL OR claimed_at < now() - make_interval(secs => $3))
 			ORDER BY next_attempt_at LIMIT $4 FOR UPDATE SKIP LOCKED)
-		RETURNING id, recipient, coalesce(subject, ''), body, attempts`,
+		RETURNING id, kind, recipient, coalesce(subject, ''), body, attempts`,
 		domain.OutboxQueued, domain.OutboxEmail, claimTimeout.Seconds(), limit)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (queued, error) {
 		var m queued
-		return m, r.Scan(&m.ID, pii.Into(&m.Recipient), &m.Subject, pii.Into(&m.Body), &m.Attempts)
+		return m, r.Scan(&m.ID, &m.Kind, pii.Into(&m.Recipient), &m.Subject, pii.Into(&m.Body), &m.Attempts)
 	})
 }
 

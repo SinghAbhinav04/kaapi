@@ -13,18 +13,23 @@ import (
 
 	"kaapi/api/internal/domain"
 	"kaapi/api/internal/platform/apperr"
+	"kaapi/api/internal/platform/emailtpl"
 )
 
 type Service struct {
 	pool   *pgxpool.Pool
 	store  store
 	mailer Mailer // nil: messages are simulated
+	links  emailtpl.Links
 }
 
 func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
 
 // SetMailer connects real delivery; the app does it once at start-up.
 func (s *Service) SetMailer(m Mailer) { s.mailer = m }
+
+// SetLinks gives emails' buttons the site's address.
+func (s *Service) SetLinks(l emailtpl.Links) { s.links = l }
 
 // List returns the newest messages first.
 func (s *Service) List(ctx context.Context, limit int) ([]Message, error) {
@@ -41,7 +46,8 @@ func (s *Service) Send(ctx context.Context, actor uuid.UUID, c Compose) (Message
 	}
 	status, sent := domain.OutboxSimulated, domain.SentMail{}
 	if s.mailer != nil && s.mailer.Connected(ctx) {
-		if sent, err = s.mailer.Send(ctx, domain.Mail{To: c.To, Subject: c.Subject, Body: c.Body}); err != nil {
+		e := emailtpl.Render(domain.OutboxStaffMessage, c.Subject, c.Body, s.links)
+		if sent, err = s.mailer.Send(ctx, domain.Mail{To: c.To, Subject: c.Subject, Body: c.Body, HTML: e.HTML}); err != nil {
 			return Message{}, err
 		}
 		status = domain.OutboxSent
@@ -75,7 +81,8 @@ func (s *Service) Deliver(ctx context.Context, limit int) (DeliverResult, error)
 			}
 			continue
 		}
-		sent, sendErr := s.mailer.Send(ctx, domain.Mail{To: m.Recipient, Subject: m.Subject, Body: m.Body})
+		e := emailtpl.Render(m.Kind, m.Subject, m.Body, s.links)
+		sent, sendErr := s.mailer.Send(ctx, domain.Mail{To: m.Recipient, Subject: m.Subject, Body: m.Body, HTML: e.HTML})
 		if sendErr == nil {
 			r.Sent++
 			id := sent.MessageID
