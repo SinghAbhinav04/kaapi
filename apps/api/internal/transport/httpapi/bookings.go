@@ -27,14 +27,22 @@ func (a *API) createBooking(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.DecodeJSON(w, r, &body); err != nil {
 		return err
 	}
+	// Only a guest whose email we've verified (signed in with an emailed code) can book: the
+	// confirmation, reminders and refunds all go to that address, so it must be real. The
+	// booking's email is always the account's, whatever the form sent.
+	p := principal(r.Context())
+	if !p.IsAuthenticated() || p.Role != domain.RoleGuest {
+		return errVerifyEmailToBook
+	}
+	me, err := a.auth.Me(r.Context(), p.UserID)
+	if err != nil {
+		return err
+	}
 	in := booking.CreateInput{
-		HoldID: body.HoldID, HoldToken: r.Header.Get(headerHoldToken),
-		Guest:         booking.Guest{Name: body.Guest.Name, Email: body.Guest.Email, Phone: body.Guest.Phone, Country: body.Guest.Country},
+		HoldID: body.HoldID, HoldToken: r.Header.Get(headerHoldToken), GuestUserID: &p.UserID,
+		Guest:         booking.Guest{Name: body.Guest.Name, Email: me.Email, Phone: body.Guest.Phone, Country: body.Guest.Country},
 		ArrivalWindow: body.ArrivalWindow, SpecialRequests: body.SpecialRequests,
 		Consent: body.Consent, MarketingOptIn: body.MarketingOptIn, DisplayCurrency: body.DisplayCurrency,
-	}
-	if p := principal(r.Context()); p.IsAuthenticated() && p.Role == domain.RoleGuest {
-		in.GuestUserID = &p.UserID
 	}
 	b, err := a.bookings.Create(r.Context(), in)
 	if err != nil {
@@ -43,6 +51,9 @@ func (a *API) createBooking(w http.ResponseWriter, r *http.Request) error {
 	httpx.WriteJSON(w, http.StatusCreated, BookingResponse{Booking: bookingDTO(b)})
 	return nil
 }
+
+// errVerifyEmailToBook asks the guest to confirm their email (sign in with a code) first.
+var errVerifyEmailToBook = apperr.New(apperr.CodeUnauthenticated, "Confirm your email with the code we send you, then you can pay.")
 
 // getBooking: GET /v1/bookings/{ref}. Visible to the browser that made it (hold token),
 // the signed-in guest it belongs to, and staff. Anyone else gets "not found".

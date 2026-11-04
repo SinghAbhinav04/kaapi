@@ -3,14 +3,16 @@
 import Link from 'next/link';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
+import { useMe } from '@/apis/auth';
 import { HoldTimer, Steps, type HoldTicket } from '@/features/booking-flow';
 import { searchToQuery } from '@/features/stay-search';
 import { ROUTES } from '@/shared/const';
 import { formatINR } from '@/shared/lib/money';
 import { Button, ButtonLink, Checkbox, EmptyState, Logo, SelectField, Skeleton, TextAreaField, TextField } from '@/shared/ui';
 
-import { ARRIVAL_WINDOWS, COUNTRIES } from '../const';
+import { ARRIVAL_WINDOWS, COUNTRIES, EMAIL_COPY } from '../const';
 import { useCheckout, useHoldTicket } from '../hooks';
+import { EmailVerify } from './EmailVerify';
 import styles from './CheckoutPage.module.css';
 import { OrderSummary } from './OrderSummary';
 
@@ -68,6 +70,7 @@ function Shell({ children, ticket, onExpire }: { children: ReactNode; ticket?: H
 function CheckoutForm({ ticket }: { ticket: HoldTicket }) {
   const { form, update, submit, errors, formError, submitting } = useCheckout(ticket);
   const [expired, setExpired] = useState(() => new Date(ticket.hold.expires_at).getTime() <= Date.now());
+  const emailVerified = useMe().data?.role === 'GUEST';
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     submit();
@@ -92,17 +95,7 @@ function CheckoutForm({ ticket }: { ticket: HoldTicket }) {
 
         <div className={styles.fields}>
           <TextField label="Full name" autoComplete="name" value={form.name} onChange={(e) => update('name', e.target.value)} error={errors['guest.name']} required />
-          <TextField
-            label="Email"
-            type="email"
-            autoComplete="email"
-            inputMode="email"
-            value={form.email}
-            onChange={(e) => update('email', e.target.value)}
-            hint="Your confirmation goes here."
-            error={errors['guest.email']}
-            required
-          />
+          <EmailVerify email={form.email} onEmail={(v) => update('email', v)} error={errors['guest.email']} />
           <TextField
             label="Mobile"
             type="tel"
@@ -157,7 +150,8 @@ function CheckoutForm({ ticket }: { ticket: HoldTicket }) {
         )}
 
         <div className={styles.actions}>
-          <Button type="submit" size="lg" loading={submitting} disabled={expired}>
+          {!emailVerified && <span className={styles.muted}>{EMAIL_COPY.needed}</span>}
+          <Button type="submit" size="lg" loading={submitting} disabled={expired || !emailVerified}>
             Continue to payment · {formatINR(ticket.hold.quote.total_paise)}
           </Button>
           <span className={styles.muted}>Test mode: no real money moves.</span>

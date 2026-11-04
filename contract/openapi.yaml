@@ -248,8 +248,11 @@ paths:
   /v1/bookings:
     post:
       tags: [booking]
-      summary: Turn a hold into a booking awaiting payment.
-      description: Submitting twice for the same hold returns the same booking. The price is the hold's frozen quote.
+      summary: Turn a hold into a booking awaiting payment. The guest must be signed in (email verified by code).
+      description: >-
+        Submitting twice for the same hold returns the same booking. The price is the hold's frozen quote. The booking's email
+        is always the signed-in guest's verified email, whatever guest.email says, so confirmations and reminders reach a real inbox.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
       parameters:
         - { name: X-Hold-Token, in: header, required: true, schema: { type: string } }
       requestBody:
@@ -259,6 +262,7 @@ paths:
         "201":
           description: Created
           content: { application/json: { schema: { $ref: "#/components/schemas/BookingResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "410": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }

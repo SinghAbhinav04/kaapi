@@ -184,3 +184,25 @@
     padding-top: 32px;
   }
 }
+
+/* email verification */
+.verify {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.verifyRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.verifyRow > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.verifyRow > button {
+  margin-top: 26px;
+}

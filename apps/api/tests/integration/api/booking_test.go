@@ -18,6 +18,7 @@ var guest = api.GuestDTO{Name: "Arjun Menon", Email: "arjun.menon@example.test",
 // holdVilla holds the last Coffee Villa (breakfast) for 14–16 Nov, as on the design boards.
 func holdVilla(t *testing.T, s *apitest.Server) api.HoldDTO {
 	t.Helper()
+	guestLogin(t, s, guest.Email) // only a guest with a verified email can book
 	var room api.RoomResponse
 	s.Do(http.MethodGet, "/v1/rooms/coffee-villa", nil, nil).JSON(t, &room)
 	var planID = room.Room.Plans[1].ID // BB-FLEX
@@ -106,6 +107,28 @@ func TestBookAndPay(t *testing.T) {
 	}
 }
 
+// Without a verified email (signing in with a code) nobody can book: the confirmation would
+// have nowhere real to go.
+func TestBookingNeedsAVerifiedEmail(t *testing.T) {
+	s := apitest.New(t)
+	h := holdVilla(t, s)
+	anon := s.NewSession()
+	e := anon.Do(http.MethodPost, "/v1/bookings", api.CreateBookingRequest{HoldID: h.ID, Guest: guest, Consent: true},
+		map[string]string{"X-Hold-Token": h.Token}).Error(t)
+	if e.Code != apperr.CodeUnauthenticated {
+		t.Fatalf("anonymous booking: %s, want UNAUTHENTICATED", e.Code)
+	}
+	// A typed email that differs from the verified one is ignored.
+	other := guest
+	other.Email = "someone.else@example.test"
+	var res api.BookingResponse
+	s.Do(http.MethodPost, "/v1/bookings", api.CreateBookingRequest{HoldID: h.ID, Guest: other, Consent: true},
+		map[string]string{"X-Hold-Token": h.Token}).JSON(t, &res)
+	if res.Booking.Guest.Email != guest.Email {
+		t.Fatalf("booking email %q, want the verified %q", res.Booking.Guest.Email, guest.Email)
+	}
+}
+
 func TestBookingIsIdempotentAndValidated(t *testing.T) {
 	s := apitest.New(t)
 	h := holdVilla(t, s)
@@ -114,7 +137,8 @@ func TestBookingIsIdempotentAndValidated(t *testing.T) {
 	e := s.Do(http.MethodPost, "/v1/bookings", api.CreateBookingRequest{HoldID: h.ID,
 		Guest: api.GuestDTO{Name: "A", Email: "nope", Phone: "123", Country: "India"}}, tok).Error(t)
 	fields, _ := e.Details["fields"].(map[string]any)
-	for _, f := range []string{"guest.name", "guest.email", "guest.phone", "guest.country", "consent"} {
+	// No guest.email: the booking always uses the signed-in guest's verified address.
+	for _, f := range []string{"guest.name", "guest.phone", "guest.country", "consent"} {
 		if fields[f] == nil {
 			t.Errorf("missing problem for %s: %+v", f, fields)
 		}
