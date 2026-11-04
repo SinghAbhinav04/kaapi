@@ -39,7 +39,18 @@ func parse(m message) Inbound {
 			}
 		case "message-id":
 			in.RFCMessageID = strings.TrimSpace(h.Value)
+		case "auto-submitted": // RFC 3834: anything but "no" was sent by a machine
+			in.Automated = in.Automated || !strings.EqualFold(strings.TrimSpace(h.Value), "no")
+		case "x-autoreply", "x-autorespond":
+			in.Automated = true
 		}
+	}
+	// Delivery reports (bounces) are multipart/report, sent from the mailer daemon.
+	if strings.HasPrefix(m.Payload.MimeType, "multipart/report") {
+		in.Automated = true
+	}
+	if local, _, ok := strings.Cut(in.FromEmail, "@"); ok && (local == "mailer-daemon" || local == "postmaster") {
+		in.Automated = true
 	}
 	text := findBody(m.Payload, "text/plain")
 	if text == "" {

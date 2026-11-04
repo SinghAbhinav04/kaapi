@@ -44,4 +44,5 @@ type Inbound struct {
 	FromEmail    string
 	Subject      string
 	Text         string
+	Automated    bool // a bounce or auto-reply: never an enquiry
 }

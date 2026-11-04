@@ -58,6 +58,7 @@ func (f *fakeGoogle) handler(t *testing.T) http.Handler {
 		_ = json.NewEncoder(w).Encode(map[string]any{"historyId": "101", "history": []any{
 			map[string]any{"messagesAdded": []any{map[string]any{"message": map[string]string{"id": "m1"}}}},
 			map[string]any{"messagesAdded": []any{map[string]any{"message": map[string]string{"id": "own"}}}},
+			map[string]any{"messagesAdded": []any{map[string]any{"message": map[string]string{"id": "bounce"}}}},
 		}})
 	})
 	// The catch-up search returns the same messages history already delivered: neither may duplicate.
@@ -65,12 +66,20 @@ func (f *fakeGoogle) handler(t *testing.T) http.Handler {
 		if !strings.Contains(r.URL.Query().Get("q"), "after:") {
 			t.Errorf("catch-up search without a start: %q", r.URL.Query().Get("q"))
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"messages": []map[string]string{{"id": "m1"}, {"id": "own"}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"messages": []map[string]string{{"id": "m1"}, {"id": "own"}, {"id": "bounce"}}})
 	})
 	mux.HandleFunc("GET /gmail/v1/users/me/messages/{id}", func(w http.ResponseWriter, r *http.Request) {
 		from, labels := "Asha Rao <asha@example.test>", []string{"INBOX", "UNREAD"}
 		if r.PathValue("id") == "own" { // our own sent copy must never become an enquiry
 			from, labels = "Kaapi <stay@kaapiestate.test>", []string{"SENT"}
+		}
+		if r.PathValue("id") == "bounce" { // a guest mistyped their email: the bounce must never become an enquiry
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "bounce", "threadId": "t9", "labelIds": []string{"INBOX"},
+				"payload": map[string]any{"mimeType": "multipart/report",
+					"headers": []map[string]string{{"name": "From", "value": "Mail Delivery Subsystem <mailer-daemon@googlemail.com>"},
+						{"name": "Subject", "value": "Delivery Status Notification (Failure)"}, {"name": "Auto-Submitted", "value": "auto-replied"}},
+					"parts": []any{map[string]any{"mimeType": "text/plain", "body": map[string]string{"data": b64("** Address not found **")}}}}})
+			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": r.PathValue("id"), "threadId": "t1", "labelIds": labels,
 			"payload": map[string]any{"mimeType": "multipart/alternative",

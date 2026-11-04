@@ -353,8 +353,8 @@ func (s *Service) importIDs(ctx context.Context, access, account string, ids []s
 			continue
 		}
 		in := parse(m)
-		if in.FromEmail == "" || in.FromEmail == account || in.Text == "" {
-			continue // our own sent copies, bounces with no sender, empty mail
+		if in.FromEmail == "" || in.FromEmail == account || in.Text == "" || in.Automated {
+			continue // our own sent copies, bounces and auto-replies, empty mail
 		}
 		if err := s.inbox.Deliver(ctx, in); err != nil {
 			return imported, fmt.Errorf("gmail: deliver %s: %w", id, err)
