@@ -79,3 +79,10 @@ const (
 	// maxCachedSessions bounds the live-session cache's memory.
 	maxCachedSessions = 50_000
 )
+
+// StaffChallenge is the result of a correct staff password: a code was emailed. Code is
+// shown on screen only in DEMO_MODE (demo addresses can't receive mail).
+type StaffChallenge struct {
+	SentTo string
+	Code   string
+}

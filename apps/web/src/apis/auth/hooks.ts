@@ -19,10 +19,15 @@ export function hasPermission(user: User | null, permission: Permission): boolea
   return user?.permissions.includes(permission) ?? false;
 }
 
-export function useStaffLogin() {
+/** Staff sign-in step 1: checks the password and emails a code. */
+export const useStaffLogin = () =>
+  useMutation({ mutationFn: ({ email, password }: { email: string; password: string }) => authApi.staffLogin(email, password) });
+
+/** Staff sign-in step 2: the emailed code. */
+export function useStaffVerify() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ email, password }: { email: string; password: string }) => authApi.staffLogin(email, password),
+    mutationFn: ({ email, code }: { email: string; code: string }) => authApi.staffVerify(email, code),
     onSuccess: (data) => queryClient.setQueryData(authKeys.me(), data.user),
   });
 }

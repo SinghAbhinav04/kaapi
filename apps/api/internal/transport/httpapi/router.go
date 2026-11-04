@@ -89,6 +89,7 @@ func (a *API) Router() http.Handler {
 		r.Use(a.checkOrigin)
 
 		r.Post("/auth/staff/login", h(a.staffLogin))
+		r.Post("/auth/staff/verify", h(a.staffVerify))
 		r.Post("/auth/otp/request", h(a.otpRequest))
 		r.Post("/auth/otp/verify", h(a.otpVerify))
 		r.Post("/auth/refresh", h(a.refresh))

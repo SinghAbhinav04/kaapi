@@ -65,11 +65,9 @@ func TestAdminManagesRolesAndPeople(t *testing.T) {
 
 	// The new person sees exactly what the role grants.
 	desk := s.NewSession()
-	var me api.AuthResponse
-	r = desk.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: "desk@kaapiestate.test", Password: "front-desk-pass-1"}, nil)
-	r.JSON(t, &me)
-	if r.Status != http.StatusOK || len(me.User.Permissions) != 2 {
-		t.Fatalf("login: %d %s", r.Status, r.Body)
+	me := staffSignIn(t, desk, "desk@kaapiestate.test", "front-desk-pass-1", nil)
+	if len(me.User.Permissions) != 2 {
+		t.Fatalf("permissions: %v", me.User.Permissions)
 	}
 	if r := desk.Do(http.MethodGet, "/v1/staff/bookings", nil, nil); r.Status != http.StatusOK {
 		t.Fatalf("bookings: %d", r.Status)

@@ -55,6 +55,8 @@ var groups = []group{
 
 	{name: "staff-login", match: post("/v1/auth/staff/login"), cors: corsClient, key: byIP,
 		rule: ratelimit.Rule{Name: "staff-login", Limit: 10, Window: 15 * time.Minute, Shared: true}},
+	{name: "staff-verify", match: post("/v1/auth/staff/verify"), cors: corsClient, key: byIP,
+		rule: ratelimit.Rule{Name: "staff-verify", Limit: 20, Window: 10 * time.Minute, Shared: true}},
 	{name: "otp-request", match: post("/v1/auth/otp/request"), cors: corsClient, key: byIP,
 		rule: ratelimit.Rule{Name: "otp-request", Limit: 10, Window: 10 * time.Minute, Shared: true}},
 	{name: "otp-verify", match: post("/v1/auth/otp/verify"), cors: corsClient, key: byIP,

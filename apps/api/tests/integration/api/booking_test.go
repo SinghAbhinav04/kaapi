@@ -102,7 +102,14 @@ func TestBookAndPay(t *testing.T) {
 
 	var out api.OutboxResponse
 	gm.Do(http.MethodGet, "/v1/staff/outbox", nil, nil).JSON(t, &out)
-	if m := out.Messages[0]; m.Kind != domain.OutboxBookingConfirmation || !strings.Contains(m.Body, b.Ref) || !strings.Contains(m.Body, "₹42,480") {
+	var m *api.OutboxMessageDTO
+	for i := range out.Messages {
+		if out.Messages[i].Kind == domain.OutboxBookingConfirmation {
+			m = &out.Messages[i]
+			break
+		}
+	}
+	if m == nil || !strings.Contains(m.Body, b.Ref) || !strings.Contains(m.Body, "₹42,480") {
 		t.Fatalf("confirmation email: %+v", m)
 	}
 }

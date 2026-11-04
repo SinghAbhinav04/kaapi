@@ -1,5 +1,6 @@
 export const AUTH_PATHS = {
   staffLogin: '/v1/auth/staff/login',
+  staffVerify: '/v1/auth/staff/verify',
   otpRequest: '/v1/auth/otp/request',
   otpVerify: '/v1/auth/otp/verify',
   logout: '/v1/auth/logout',

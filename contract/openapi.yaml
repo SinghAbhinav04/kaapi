@@ -162,11 +162,30 @@ paths:
   /v1/auth/staff/login:
     post:
       tags: [auth]
-      summary: Staff sign in with email and password.
-      parameters: [{ $ref: "#/components/parameters/XClient" }]
+      summary: Staff sign-in, step 1. A correct password emails a 6-digit code (in demo mode it is also returned); step 2 is /v1/auth/staff/verify.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/StaffLoginRequest" } } }
+      responses:
+        "202":
+          description: Code emailed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code_sent, sent_to]
+                properties: { code_sent: { type: boolean }, sent_to: { type: string }, demo_code: { type: string } }
+        "401": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/auth/staff/verify:
+    post:
+      tags: [auth]
+      summary: Staff sign-in, step 2. The emailed code signs the staff member in.
+      parameters: [{ $ref: "#/components/parameters/XClient" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OTPVerifyRequest" } } }
       responses:
         "200": { $ref: "#/components/responses/SignedIn" }
         "401": { $ref: "#/components/responses/Error" }
@@ -1291,7 +1310,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         channel: { type: string, enum: [EMAIL, WHATSAPP, SMS] }
-        kind: { type: string, enum: [OTP, WELCOME, BOOKING_CONFIRMATION, ENQUIRY_REPLY, ALERT, REFUND_NOTICE, STAFF_MESSAGE] }
+        kind: { type: string, enum: [OTP, WELCOME, BOOKING_CONFIRMATION, ENQUIRY_REPLY, ALERT, REFUND_NOTICE, STAFF_MESSAGE, STAFF_CODE, CHECKIN_REMINDER, CHECKOUT_REMINDER] }
         status: { type: string, enum: [QUEUED, SIMULATED, SENT, FAILED], description: "QUEUED is waiting for the worker (guest emails are delivered within seconds); SENT went out through the connected mailbox; SIMULATED was only recorded (no mailbox connected); FAILED gave up after 5 tries." }
         recipient: { type: string }
         subject: { type: string, nullable: true }

@@ -57,28 +57,92 @@ var dummyHash = sync.OnceValue(func() string {
 	return h
 })
 
-// StaffLogin checks an email and password for a staff account.
-func (s *Service) StaffLogin(ctx context.Context, email, password string, client ClientInfo) (User, Tokens, error) {
+// StaffLogin checks a staff member's password. It doesn't sign them in: it emails a one-time
+// code (the second factor) and says where it went; VerifyStaffCode finishes. A leaked
+// password alone is no longer enough to get into the console.
+func (s *Service) StaffLogin(ctx context.Context, email, password string) (StaffChallenge, error) {
 	a, err := s.store.accountByEmail(ctx, s.pool, email)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return User{}, Tokens{}, err
+		return StaffChallenge{}, err
 	}
 	u, hash := a.User, a.hash
 	if err != nil || hash == nil || !a.active || !u.Role.IsStaff() {
 		_, _ = CheckPassword(dummyHash(), password)
-		return User{}, Tokens{}, ErrBadCredentials
+		return StaffChallenge{}, ErrBadCredentials
 	}
 	ok, err := CheckPassword(*hash, password)
 	if err != nil || !ok {
-		return User{}, Tokens{}, ErrBadCredentials
+		return StaffChallenge{}, ErrBadCredentials
 	}
-	var t Tokens
+	code, err := randomDigits(OTPLength)
+	if err != nil {
+		return StaffChallenge{}, err
+	}
+	addr := strings.ToLower(u.Email)
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var err error
+		recent, err := s.store.recentOTPs(ctx, tx, domain.OTPStaff2FA, addr, OTPWindow)
+		if err != nil {
+			return err
+		}
+		if recent >= OTPMaxPerWindow {
+			return ErrOTPRateLimited
+		}
+		if err := s.store.insertOTP(ctx, tx, domain.OTPStaff2FA, addr, s.otpHash(addr, code), OTPTTL); err != nil {
+			return err
+		}
+		return s.store.queueEmail(ctx, tx, domain.OutboxStaffCode, addr, "Your Kaapi Estate staff sign-in code",
+			fmt.Sprintf("Your staff sign-in code is %s. It expires in %d minutes.\n\n"+
+				"If you didn't just sign in to the Kaapi Estate console, someone has your password: change it and tell the administrator.",
+				code, int(OTPTTL.Minutes())))
+	})
+	return StaffChallenge{SentTo: maskEmail(addr), Code: code}, err
+}
+
+// VerifyStaffCode finishes a staff sign-in with the emailed code.
+func (s *Service) VerifyStaffCode(ctx context.Context, email, code string, client ClientInfo) (User, Tokens, error) {
+	email, err := normaliseEmail(email)
+	if err != nil {
+		return User{}, Tokens{}, err
+	}
+	var u User
+	var t Tokens
+	wrongCode := false
+	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		id, stored, attempts, err := s.store.latestOTP(ctx, tx, domain.OTPStaff2FA, email)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrOTPInvalid
+		}
+		if err != nil {
+			return err
+		}
+		if attempts >= OTPMaxAttempts || subtle.ConstantTimeCompare(stored, s.otpHash(email, strings.TrimSpace(code))) != 1 {
+			wrongCode = true // count the attempt and commit it; report the failure after
+			return s.store.countOTPAttempt(ctx, tx, id, OTPMaxAttempts)
+		}
+		if err := s.store.consumeOTP(ctx, tx, id); err != nil {
+			return err
+		}
+		a, err := s.store.accountByEmail(ctx, tx, email)
+		if err != nil || !a.active || !a.Role.IsStaff() {
+			return ErrOTPInvalid // deactivated between the two steps
+		}
+		u = a.User
 		t, _, err = s.newSession(ctx, tx, u, client)
 		return err
 	})
+	if wrongCode {
+		return User{}, Tokens{}, ErrOTPInvalid
+	}
 	return u, t, err
+}
+
+// maskEmail shows enough to recognise an address without spelling it out: g•••@kaapiestate.test.
+func maskEmail(email string) string {
+	at := strings.LastIndex(email, "@")
+	if at < 1 {
+		return email
+	}
+	return email[:1] + "•••" + email[at:]
 }
 
 // RequestOTP creates a sign-in code for a guest and "emails" it (to the outbox).
@@ -94,14 +158,14 @@ func (s *Service) RequestOTP(ctx context.Context, email string) (string, error) 
 		return "", err
 	}
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		recent, err := s.store.recentOTPs(ctx, tx, email, OTPWindow)
+		recent, err := s.store.recentOTPs(ctx, tx, domain.OTPGuestLogin, email, OTPWindow)
 		if err != nil {
 			return err
 		}
 		if recent >= OTPMaxPerWindow {
 			return ErrOTPRateLimited
 		}
-		if err := s.store.insertOTP(ctx, tx, email, s.otpHash(email, code), OTPTTL); err != nil {
+		if err := s.store.insertOTP(ctx, tx, domain.OTPGuestLogin, email, s.otpHash(email, code), OTPTTL); err != nil {
 			return err
 		}
 		// Queued with the code itself: the worker emails it through the connected mailbox.
@@ -122,7 +186,7 @@ func (s *Service) VerifyOTP(ctx context.Context, email, code string, client Clie
 	var t Tokens
 	wrongCode := false
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		id, stored, attempts, err := s.store.latestOTP(ctx, tx, email)
+		id, stored, attempts, err := s.store.latestOTP(ctx, tx, domain.OTPGuestLogin, email)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrOTPInvalid
 		}

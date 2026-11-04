@@ -420,7 +420,54 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Staff sign in with email and password. */
+        /** Staff sign-in, step 1. A correct password emails a 6-digit code (in demo mode it is also returned); step 2 is /v1/auth/staff/verify. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["StaffLoginRequest"];
+                };
+            };
+            responses: {
+                /** @description Code emailed. */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code_sent: boolean;
+                            sent_to: string;
+                            demo_code?: string;
+                        };
+                    };
+                };
+                401: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/staff/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Staff sign-in, step 2. The emailed code signs the staff member in. */
         post: {
             parameters: {
                 query?: never;
@@ -433,7 +480,7 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["StaffLoginRequest"];
+                    "application/json": components["schemas"]["OTPVerifyRequest"];
                 };
             };
             responses: {
@@ -696,8 +743,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Turn a hold into a booking awaiting payment.
-         * @description Submitting twice for the same hold returns the same booking. The price is the hold's frozen quote.
+         * Turn a hold into a booking awaiting payment. The guest must be signed in (email verified by code).
+         * @description Submitting twice for the same hold returns the same booking. The price is the hold's frozen quote. The booking's email is always the signed-in guest's verified email, whatever guest.email says, so confirmations and reminders reach a real inbox.
          */
         post: {
             parameters: {
@@ -723,6 +770,7 @@ export interface paths {
                         "application/json": components["schemas"]["BookingResponse"];
                     };
                 };
+                401: components["responses"]["Error"];
                 404: components["responses"]["Error"];
                 410: components["responses"]["Error"];
                 422: components["responses"]["Error"];
@@ -2778,7 +2826,7 @@ export interface components {
             /** @enum {string} */
             channel: "EMAIL" | "WHATSAPP" | "SMS";
             /** @enum {string} */
-            kind: "OTP" | "WELCOME" | "BOOKING_CONFIRMATION" | "ENQUIRY_REPLY" | "ALERT" | "REFUND_NOTICE" | "STAFF_MESSAGE";
+            kind: "OTP" | "WELCOME" | "BOOKING_CONFIRMATION" | "ENQUIRY_REPLY" | "ALERT" | "REFUND_NOTICE" | "STAFF_MESSAGE" | "STAFF_CODE" | "CHECKIN_REMINDER" | "CHECKOUT_REMINDER";
             /**
              * @description QUEUED is waiting for the worker (guest emails are delivered within seconds); SENT went out through the connected mailbox; SIMULATED was only recorded (no mailbox connected); FAILED gave up after 5 tries.
              * @enum {string}

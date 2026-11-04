@@ -64,25 +64,25 @@ func (store) queueEmail(ctx context.Context, q db.Querier, kind domain.OutboxKin
 
 // ---- one-time codes (only the email's blind index is kept: a code is only ever matched)
 
-func (store) recentOTPs(ctx context.Context, q db.Querier, email string, window time.Duration) (int, error) {
+func (store) recentOTPs(ctx context.Context, q db.Querier, purpose domain.OTPPurpose, email string, window time.Duration) (int, error) {
 	var n int
-	err := q.QueryRow(ctx, `SELECT count(*) FROM otp_codes WHERE email_hash = $1 AND created_at > now() - make_interval(secs => $2)`,
-		pii.EmailIndex(email), window.Seconds()).Scan(&n)
+	err := q.QueryRow(ctx, `SELECT count(*) FROM otp_codes WHERE email_hash = $1 AND purpose = $3 AND created_at > now() - make_interval(secs => $2)`,
+		pii.EmailIndex(email), window.Seconds(), purpose).Scan(&n)
 	return n, err
 }
 
-func (store) insertOTP(ctx context.Context, q db.Querier, email string, codeHash []byte, ttl time.Duration) error {
+func (store) insertOTP(ctx context.Context, q db.Querier, purpose domain.OTPPurpose, email string, codeHash []byte, ttl time.Duration) error {
 	_, err := q.Exec(ctx, `INSERT INTO otp_codes (id, email_hash, purpose, code_hash, expires_at)
 		VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))`,
-		idgen.New(), pii.EmailIndex(email), domain.OTPGuestLogin, codeHash, ttl.Seconds())
+		idgen.New(), pii.EmailIndex(email), purpose, codeHash, ttl.Seconds())
 	return err
 }
 
 // latestOTP locks the newest live code for an email; pgx.ErrNoRows when there is none.
-func (store) latestOTP(ctx context.Context, q db.Querier, email string) (id uuid.UUID, codeHash []byte, attempts int, err error) {
+func (store) latestOTP(ctx context.Context, q db.Querier, purpose domain.OTPPurpose, email string) (id uuid.UUID, codeHash []byte, attempts int, err error) {
 	err = q.QueryRow(ctx, `SELECT id, code_hash, attempts FROM otp_codes
 		WHERE email_hash = $1 AND purpose = $2 AND consumed_at IS NULL AND expires_at > now()
-		ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, pii.EmailIndex(email), domain.OTPGuestLogin).Scan(&id, &codeHash, &attempts)
+		ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, pii.EmailIndex(email), purpose).Scan(&id, &codeHash, &attempts)
 	return id, codeHash, attempts, err
 }
 

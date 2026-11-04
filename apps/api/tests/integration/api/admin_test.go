@@ -16,11 +16,9 @@ func TestEnvironmentAdministratorCanSignIn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out api.AuthResponse
-	res := s.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: "owner.admin@example.test", Password: account.Password}, nil)
-	res.JSON(t, &out)
-	if res.Status != http.StatusOK || out.User.Role != "ADMIN" {
-		t.Fatalf("%d %s", res.Status, res.Body)
+	out := staffSignIn(t, s, "owner.admin@example.test", account.Password, nil)
+	if out.User.Role != "ADMIN" {
+		t.Fatalf("role %s", out.User.Role)
 	}
 	// The administrator sees every lane.
 	if r := s.Do(http.MethodGet, "/v1/staff/enquiries?lane=GM", nil, nil); r.Status != http.StatusOK {
@@ -39,7 +37,7 @@ func TestEnvironmentAdministratorCanSignIn(t *testing.T) {
 	if r := fresh.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: account.Email, Password: "first-Pass(1)"}, nil); r.Status != http.StatusUnauthorized {
 		t.Fatalf("old password still works: %d", r.Status)
 	}
-	if r := fresh.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: account.Email, Password: account.Password}, nil); r.Status != http.StatusOK {
+	if r := fresh.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: account.Email, Password: account.Password}, nil); r.Status != http.StatusAccepted {
 		t.Fatalf("new password: %d", r.Status)
 	}
 

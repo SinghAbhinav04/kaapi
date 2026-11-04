@@ -241,7 +241,10 @@ const (
 
 type OTPPurpose string
 
-const OTPGuestLogin OTPPurpose = "GUEST_LOGIN"
+const (
+	OTPGuestLogin OTPPurpose = "GUEST_LOGIN"
+	OTPStaff2FA   OTPPurpose = "STAFF_2FA" // the emailed second step of staff sign-in
+)
 
 type BookingSource string
 

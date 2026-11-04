@@ -37,7 +37,25 @@ func (a *API) staffLogin(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.DecodeJSON(w, r, &body); err != nil {
 		return err
 	}
-	u, t, err := a.auth.StaffLogin(r.Context(), body.Email, body.Password, clientInfo(r))
+	ch, err := a.auth.StaffLogin(r.Context(), body.Email, body.Password)
+	if err != nil {
+		return err
+	}
+	out := StaffChallengeResponse{CodeSent: true, SentTo: ch.SentTo}
+	if a.cfg.DemoMode {
+		out.DemoCode = &ch.Code // demo addresses can't receive mail
+	}
+	httpx.WriteJSON(w, http.StatusAccepted, out)
+	return nil
+}
+
+// staffVerify: POST /v1/auth/staff/verify — the emailed code; signs the staff member in.
+func (a *API) staffVerify(w http.ResponseWriter, r *http.Request) error {
+	var body OTPVerifyRequest
+	if err := httpx.DecodeJSON(w, r, &body); err != nil {
+		return err
+	}
+	u, t, err := a.auth.VerifyStaffCode(r.Context(), body.Email, body.Code, clientInfo(r))
 	if err != nil {
 		return err
 	}

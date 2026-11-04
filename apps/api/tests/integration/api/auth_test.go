@@ -17,13 +17,35 @@ var native = map[string]string{"X-Client": "native"}
 
 func staffLogin(t *testing.T, s *apitest.Server, email string, headers map[string]string) api.AuthResponse {
 	t.Helper()
+	return staffSignIn(t, s, email, staffPassword, headers)
+}
+
+// staffSignIn does both steps: the password (which emails a code; demo mode returns it) and
+// the code.
+func staffSignIn(t *testing.T, s *apitest.Server, email, password string, headers map[string]string) api.AuthResponse {
+	t.Helper()
 	var out api.AuthResponse
-	res := s.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: email, Password: staffPassword}, headers)
-	if res.Status != http.StatusOK {
+	staffSignInResponse(t, s, email, password, headers).JSON(t, &out)
+	return out
+}
+
+// staffSignInResponse is the raw response of the code step, for tests that read its cookies.
+func staffSignInResponse(t *testing.T, s *apitest.Server, email, password string, headers map[string]string) apitest.Response {
+	t.Helper()
+	var ch api.StaffChallengeResponse
+	res := s.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: email, Password: password}, headers)
+	if res.Status != http.StatusAccepted {
 		t.Fatalf("login %s: %d %s", email, res.Status, res.Body)
 	}
-	res.JSON(t, &out)
-	return out
+	res.JSON(t, &ch)
+	if ch.DemoCode == nil {
+		t.Fatal("demo mode should return the code")
+	}
+	res = s.Do(http.MethodPost, "/v1/auth/staff/verify", api.OTPVerifyRequest{Email: email, Code: *ch.DemoCode}, headers)
+	if res.Status != http.StatusOK {
+		t.Fatalf("verify %s: %d %s", email, res.Status, res.Body)
+	}
+	return res
 }
 
 func guestLogin(t *testing.T, s *apitest.Server, email string) api.AuthResponse {
@@ -168,7 +190,7 @@ func TestRefreshCookiePathMatchesTheBrowserProxy(t *testing.T) {
 	cfg := apitest.TestConfig()
 	cfg.BrowserAPIPrefix = "/api"
 	s := apitest.NewWith(t, cfg)
-	res := s.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: "gm@kaapiestate.test", Password: staffPassword}, nil)
+	res := staffSignInResponse(t, s, "gm@kaapiestate.test", staffPassword, nil)
 	paths := map[string]string{}
 	for _, c := range (&http.Response{Header: res.Header}).Cookies() {
 		paths[c.Name] = c.Path

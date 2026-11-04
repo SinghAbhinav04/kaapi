@@ -192,6 +192,13 @@ type AuthResponse struct {
 	RefreshToken    *string    `json:"refresh_token,omitempty"`
 }
 
+// StaffChallengeResponse: the password was right and a code was emailed.
+type StaffChallengeResponse struct {
+	CodeSent bool    `json:"code_sent"`
+	SentTo   string  `json:"sent_to"`
+	DemoCode *string `json:"demo_code,omitempty"`
+}
+
 type StaffLoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`

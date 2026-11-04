@@ -35,7 +35,7 @@ export const OTP_LENGTH = 6;
 /** The email step: a code proves the address is real before anything is paid. */
 export const EMAIL_COPY = {
   before: 'We\u2019ll send a 6-digit code to check it: your confirmation and reminders go here.',
-  after: 'Check your inbox (and spam). The code works for 10 minutes.',
+  after: 'Check your inbox (and spam). The code works for 5 minutes.',
   demo: 'Demo mode, no email sent. Your code:',
   verified: 'Verified. Your confirmation, reminders and any refund go here.',
   needed: 'Verify your email to continue to payment.',

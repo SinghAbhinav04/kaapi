@@ -75,7 +75,7 @@ func TestAnalyticsAreCachedUntilAPaymentChangesThem(t *testing.T) {
 
 func TestChangeStreamTellsConsolesWhatChanged(t *testing.T) {
 	s := withChangeFeed(t)
-	login := s.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: "gm@kaapiestate.test", Password: staffPassword}, nil)
+	login := staffSignInResponse(t, s, "gm@kaapiestate.test", staffPassword, nil)
 	var cookies []string
 	for _, c := range (&http.Response{Header: login.Header}).Cookies() {
 		cookies = append(cookies, c.Name+"="+c.Value)
