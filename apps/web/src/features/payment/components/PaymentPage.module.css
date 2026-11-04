@@ -92,3 +92,89 @@
     padding-top: 28px;
   }
 }
+
+/* payment methods */
+.methods {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.inline {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.inline > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.inline > button {
+  flex: 0 0 auto;
+}
+
+.upi {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.upi .inline {
+  width: 100%;
+  text-align: left;
+}
+
+.qr {
+  width: 236px;
+  height: 236px;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: #fffdf9;
+}
+
+.qrWait {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 3px solid var(--hairline);
+  border-top-color: var(--estate);
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.decline {
+  align-self: center;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--grey);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qrWait {
+    animation: none;
+  }
+}

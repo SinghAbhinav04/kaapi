@@ -14,12 +14,14 @@
   "dependencies": {
     "@tanstack/react-query": "5.105.3",
     "next": "16.4.4",
+    "qrcode": "1.5.4",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
   "devDependencies": {
     "@tanstack/react-query-devtools": "5.105.3",
     "@types/node": "26.6.6",
+    "@types/qrcode": "1.5.5",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "babel-plugin-react-compiler": "1.0.0",

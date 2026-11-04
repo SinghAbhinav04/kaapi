@@ -9,10 +9,11 @@ import { ROUTES } from '@/shared/const';
 import { formatStay } from '@/shared/lib/dates';
 import { formatINR } from '@/shared/lib/money';
 import { plural } from '@/shared/lib/text';
-import { Button, ButtonLink, ErrorState, Logo, Pill, Skeleton } from '@/shared/ui';
+import { ButtonLink, ErrorState, Logo, Pill, Skeleton } from '@/shared/ui';
 
 import { PAID_STATUSES } from '../const';
 import styles from './PaymentPage.module.css';
+import { PaymentMethods } from './PaymentMethods';
 
 /**
  * Step 3, the mock gateway. In production this is the provider's hosted page; here the two
@@ -88,14 +89,12 @@ export function PaymentPage({ orderId }: { orderId: string }) {
                   </ButtonLink>
                 </div>
               ) : (
-                <div className={styles.buttons}>
-                  <Button size="lg" block onClick={() => pay('SUCCESS')} loading={simulate.isPending && simulate.variables === 'SUCCESS'} disabled={simulate.isPending}>
-                    Pay {formatINR(data.amount_paise)}
-                  </Button>
-                  <Button variant="outline" block onClick={() => pay('FAILURE')} loading={simulate.isPending && simulate.variables === 'FAILURE'} disabled={simulate.isPending}>
+                <>
+                  <PaymentMethods amountPaise={data.amount_paise} bookingRef={data.booking_ref} busy={simulate.isPending} onPay={() => pay('SUCCESS')} />
+                  <button type="button" className={styles.decline} onClick={() => pay('FAILURE')} disabled={simulate.isPending}>
                     Simulate a declined payment
-                  </Button>
-                </div>
+                  </button>
+                </>
               )}
               <p className={styles.fine}>No real money moves. The gateway signs a webhook to our API, which confirms the booking only after verifying it.</p>
             </section>
