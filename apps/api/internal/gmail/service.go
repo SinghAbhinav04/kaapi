@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"kaapi/api/internal/domain"
@@ -40,6 +39,7 @@ type Service struct {
 	stateKey []byte
 	tokenKey []byte
 	inbox    Inbox
+	store    store
 
 	mu        sync.Mutex // guards the cached access token and serialises polls
 	access    string
@@ -96,7 +96,7 @@ func (s *Service) Callback(ctx context.Context, code, state string) (string, err
 	if err != nil {
 		return "", apperr.Wrap(err, apperr.CodeUnavailable, "Connected, but Gmail couldn't be read. Try again.")
 	}
-	if err := s.store(ctx, p.EmailAddress, tok.RefreshToken, p.HistoryID, &user); err != nil {
+	if err := s.save(ctx, p.EmailAddress, tok.RefreshToken, p.HistoryID, &user); err != nil {
 		return "", err
 	}
 	s.mu.Lock()
@@ -135,7 +135,7 @@ func (s *Service) Bootstrap(ctx context.Context) error {
 	if row.email == p.EmailAddress && row.historyID != "" {
 		history = row.historyID // same mailbox: carry on from the last poll
 	}
-	if err := s.store(ctx, p.EmailAddress, refresh, history, nil); err != nil {
+	if err := s.save(ctx, p.EmailAddress, refresh, history, nil); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -155,17 +155,13 @@ func (s *Service) RefreshToken(ctx context.Context) (token, email string, err er
 	return string(plain), row.email, err
 }
 
-func (s *Service) store(ctx context.Context, email, refresh, historyID string, user *uuid.UUID) error {
+// save encrypts the grant and stores the connection.
+func (s *Service) save(ctx context.Context, email, refresh, historyID string, user *uuid.UUID) error {
 	sealed, err := seal(s.tokenKey, []byte(refresh))
 	if err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO integrations (provider, account_email, refresh_token_enc, history_id, connected_by, connected_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (provider) DO UPDATE SET account_email = $2, refresh_token_enc = $3, history_id = $4, connected_by = $5,
-			connected_at = $6, last_sync_at = NULL, last_error = NULL`,
-		provider, email, sealed, historyID, user, s.now())
-	return err
+	return s.store.upsert(ctx, s.pool, email, sealed, historyID, user, s.now())
 }
 
 // Disconnect forgets the mailbox and asks Google to revoke the grant (best effort: the
@@ -186,8 +182,7 @@ func (s *Service) Disconnect(ctx context.Context) error {
 	s.mu.Lock()
 	s.access, s.accessExp = "", time.Time{}
 	s.mu.Unlock()
-	_, err = s.pool.Exec(ctx, `DELETE FROM integrations WHERE provider = $1`, provider)
-	return err
+	return s.store.remove(ctx, s.pool)
 }
 
 func (s *Service) Status(ctx context.Context) (Status, error) {
@@ -205,9 +200,7 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 
 // Connected reports whether replies can go out for real. It satisfies the inbox's Mailer.
 func (s *Service) Connected(ctx context.Context) bool {
-	var ok bool
-	_ = s.pool.QueryRow(ctx, `SELECT true FROM integrations WHERE provider = $1`, provider).Scan(&ok)
-	return ok && s.Configured()
+	return s.Configured() && s.store.exists(ctx, s.pool)
 }
 
 // ---- sending
@@ -268,7 +261,7 @@ func (s *Service) Poll(ctx context.Context) (int, error) {
 	defer s.mu.Unlock()
 	n, err := s.poll(ctx)
 	if err != nil && !errors.Is(err, ErrNotConnected) {
-		_, _ = s.pool.Exec(ctx, `UPDATE integrations SET last_error = $2 WHERE provider = $1`, provider, truncate(err.Error(), maxErrorRunes))
+		s.store.setError(ctx, s.pool, truncate(err.Error(), maxErrorRunes))
 	}
 	return n, err
 }
@@ -303,14 +296,11 @@ func (s *Service) poll(ctx context.Context) (int, error) {
 	if err != nil {
 		return imported, err
 	}
-	q := `UPDATE integrations SET last_sync_at = $2, last_error = NULL WHERE provider = $1`
-	args := []any{provider, s.now()}
+	var next *string
 	if advance {
-		q = `UPDATE integrations SET last_sync_at = $2, last_error = NULL, history_id = $3 WHERE provider = $1`
-		args = append(args, latest)
+		next = &latest
 	}
-	_, err = s.pool.Exec(ctx, q, args...)
-	return imported, err
+	return imported, s.store.synced(ctx, s.pool, s.now(), next)
 }
 
 // CatchUp imports everything that reached the inbox since the last successful sync, however
@@ -411,19 +401,7 @@ func (r stored) resumeFrom() time.Time {
 	return t.Add(-catchUpMargin)
 }
 
-func (s *Service) load(ctx context.Context) (stored, error) {
-	var r stored
-	var history *string
-	err := s.pool.QueryRow(ctx, `SELECT account_email, refresh_token_enc, history_id, connected_at, last_sync_at, last_error
-		FROM integrations WHERE provider = $1`, provider).Scan(&r.email, &r.sealed, &history, &r.connectedAt, &r.lastSync, &r.lastError)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return r, ErrNotConnected
-	}
-	if history != nil {
-		r.historyID = *history
-	}
-	return r, err
-}
+func (s *Service) load(ctx context.Context) (stored, error) { return s.store.load(ctx, s.pool) }
 
 // token returns a live access token and the mailbox address.
 func (s *Service) token(ctx context.Context) (string, string, error) {
