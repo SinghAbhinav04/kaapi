@@ -23,11 +23,11 @@ import (
 	"kaapi/api/internal/platform/apperr"
 	"kaapi/api/internal/platform/db"
 	"kaapi/api/internal/platform/idgen"
-	"kaapi/api/internal/platform/pii"
 )
 
 type Service struct {
 	pool   *pgxpool.Pool
+	store  store
 	sealer *Sealer
 	key    []byte // HMAC key for OTP codes and IP hashes, derived from the token secret
 	now    func() time.Time
@@ -59,16 +59,12 @@ var dummyHash = sync.OnceValue(func() string {
 
 // StaffLogin checks an email and password for a staff account.
 func (s *Service) StaffLogin(ctx context.Context, email, password string, client ClientInfo) (User, Tokens, error) {
-	var u User
-	var hash *string
-	var active bool
-	// Emails are encrypted at rest; the account is found by its email's blind index.
-	err := s.pool.QueryRow(ctx, `SELECT id, email, name, role, password_hash, is_active FROM users WHERE email_hash = $1`,
-		pii.EmailIndex(email)).Scan(&u.ID, pii.Into(&u.Email), pii.Into(&u.Name), &u.Role, &hash, &active)
+	a, err := s.store.accountByEmail(ctx, s.pool, email)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return User{}, Tokens{}, err
 	}
-	if err != nil || hash == nil || !active || !u.Role.IsStaff() {
+	u, hash := a.User, a.hash
+	if err != nil || hash == nil || !a.active || !u.Role.IsStaff() {
 		_, _ = CheckPassword(dummyHash(), password)
 		return User{}, Tokens{}, ErrBadCredentials
 	}
@@ -98,26 +94,20 @@ func (s *Service) RequestOTP(ctx context.Context, email string) (string, error) 
 		return "", err
 	}
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var recent int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM otp_codes WHERE email_hash = $1 AND created_at > now() - make_interval(secs => $2)`,
-			pii.EmailIndex(email), OTPWindow.Seconds()).Scan(&recent); err != nil {
+		recent, err := s.store.recentOTPs(ctx, tx, email, OTPWindow)
+		if err != nil {
 			return err
 		}
 		if recent >= OTPMaxPerWindow {
 			return ErrOTPRateLimited
 		}
-		// A code is only ever matched, so the email itself isn't kept: only its blind index.
-		if _, err := tx.Exec(ctx, `INSERT INTO otp_codes (id, email_hash, purpose, code_hash, expires_at)
-			VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))`,
-			idgen.New(), pii.EmailIndex(email), domain.OTPGuestLogin, s.otpHash(email, code), OTPTTL.Seconds()); err != nil {
+		if err := s.store.insertOTP(ctx, tx, email, s.otpHash(email, code), OTPTTL); err != nil {
 			return err
 		}
 		// Queued with the code itself: the worker emails it through the connected mailbox.
-		_, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-			idgen.New(), domain.OutboxEmail, domain.OutboxOTP, domain.OutboxQueued, pii.Text(email), "Your Kaapi Estate sign-in code",
-			pii.Text(fmt.Sprintf("Your sign-in code is %s. It expires in %d minutes. If you didn't ask for it, you can ignore this email.",
-				code, int(OTPTTL.Minutes()))))
-		return err
+		return s.store.queueEmail(ctx, tx, domain.OutboxOTP, email, "Your Kaapi Estate sign-in code",
+			fmt.Sprintf("Your sign-in code is %s. It expires in %d minutes. If you didn't ask for it, you can ignore this email.",
+				code, int(OTPTTL.Minutes())))
 	})
 	return code, err
 }
@@ -132,12 +122,7 @@ func (s *Service) VerifyOTP(ctx context.Context, email, code string, client Clie
 	var t Tokens
 	wrongCode := false
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var id uuid.UUID
-		var stored []byte
-		var attempts int
-		err := tx.QueryRow(ctx, `SELECT id, code_hash, attempts FROM otp_codes
-			WHERE email_hash = $1 AND purpose = $2 AND consumed_at IS NULL AND expires_at > now()
-			ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, pii.EmailIndex(email), domain.OTPGuestLogin).Scan(&id, &stored, &attempts)
+		id, stored, attempts, err := s.store.latestOTP(ctx, tx, email)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrOTPInvalid
 		}
@@ -147,10 +132,9 @@ func (s *Service) VerifyOTP(ctx context.Context, email, code string, client Clie
 		if attempts >= OTPMaxAttempts || subtle.ConstantTimeCompare(stored, s.otpHash(email, strings.TrimSpace(code))) != 1 {
 			// Count the attempt and commit it, then report the failure outside the transaction.
 			wrongCode = true
-			_, err := tx.Exec(ctx, `UPDATE otp_codes SET attempts = least(attempts + 1, $2) WHERE id = $1`, id, OTPMaxAttempts)
-			return err
+			return s.store.countOTPAttempt(ctx, tx, id, OTPMaxAttempts)
 		}
-		if _, err := tx.Exec(ctx, `UPDATE otp_codes SET consumed_at = now() WHERE id = $1`, id); err != nil {
+		if err := s.store.consumeOTP(ctx, tx, id); err != nil {
 			return err
 		}
 		if u, err = s.guestFor(ctx, tx, email); err != nil {
@@ -168,27 +152,21 @@ func (s *Service) VerifyOTP(ctx context.Context, email, code string, client Clie
 // guestFor finds or creates the guest account for an email. A staff email can't sign in
 // this way: staff use their password, and a code must never grant staff access.
 func (s *Service) guestFor(ctx context.Context, tx pgx.Tx, email string) (User, error) {
-	var u User
-	var active bool
-	err := tx.QueryRow(ctx, `SELECT id, email, name, role, is_active FROM users WHERE email_hash = $1`, pii.EmailIndex(email)).
-		Scan(&u.ID, pii.Into(&u.Email), pii.Into(&u.Name), &u.Role, &active)
+	a, err := s.store.accountByEmail(ctx, tx, email)
 	switch {
-	case err == nil && (u.Role != domain.RoleGuest || !active):
+	case err == nil && (a.Role != domain.RoleGuest || !a.active):
 		return User{}, ErrOTPInvalid
 	case err == nil:
-		return u, nil
+		return a.User, nil
 	case !errors.Is(err, pgx.ErrNoRows):
 		return User{}, err
 	}
-	u = User{ID: idgen.New(), Email: email, Name: strings.SplitN(email, "@", 2)[0], Role: domain.RoleGuest}
-	if _, err = tx.Exec(ctx, `INSERT INTO users (id, email, email_hash, name, role) VALUES ($1,$2,$3,$4,$5)`,
-		u.ID, pii.Text(u.Email), pii.EmailIndex(u.Email), pii.Text(u.Name), u.Role); err != nil {
+	u := User{ID: idgen.New(), Email: email, Name: strings.SplitN(email, "@", 2)[0], Role: domain.RoleGuest}
+	if err := s.store.insertGuest(ctx, tx, u); err != nil {
 		return u, err
 	}
 	// First sign-in is registration: welcome them in the same transaction, so it's sent exactly once.
-	_, err = tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		idgen.New(), domain.OutboxEmail, domain.OutboxWelcome, domain.OutboxQueued, pii.Text(email), "Welcome to Kaapi Estate", pii.Text(welcomeBody))
-	return u, err
+	return u, s.store.queueEmail(ctx, tx, domain.OutboxWelcome, email, "Welcome to Kaapi Estate", welcomeBody)
 }
 
 // Refresh rotates a refresh token. Presenting one that was already rotated means it
@@ -202,37 +180,30 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string, client Clien
 	var t Tokens
 	reused := false
 	err := db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var sid uuid.UUID
-		var expired, active bool
-		var revokedAt *time.Time
-		var replacedBy *uuid.UUID
-		err := tx.QueryRow(ctx, `SELECT s.id, s.expires_at <= now(), s.revoked_at, s.replaced_by, u.id, u.email, u.name, u.role, u.is_active
-			FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.refresh_hash = $1 FOR UPDATE OF s`, sum[:]).
-			Scan(&sid, &expired, &revokedAt, &replacedBy, &u.ID, pii.Into(&u.Email), pii.Into(&u.Name), &u.Role, &active)
+		row, err := s.store.sessionByRefresh(ctx, tx, sum[:])
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrTokenInvalid
 		}
 		if err != nil {
 			return err
 		}
-		if revokedAt != nil {
-			if replacedBy != nil {
+		u = row.user
+		if row.revokedAt != nil {
+			if row.replacedBy != nil {
 				reused = true
-				_, err := tx.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, u.ID)
-				return err
+				return s.store.revokeAllSessions(ctx, tx, u.ID)
 			}
 			return ErrTokenInvalid
 		}
-		if expired || !active {
+		if row.expired || !row.active {
 			return ErrTokenInvalid
 		}
 		var newSID uuid.UUID
 		if t, newSID, err = s.newSession(ctx, tx, u, client); err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `UPDATE sessions SET revoked_at = now(), replaced_by = $2 WHERE id = $1`, sid, newSID)
-		s.forget(sid) // the old access token dies with its session (harmless if the transaction retries)
-		return err
+		s.forget(row.id) // the old access token dies with its session (harmless if the transaction retries)
+		return s.store.replaceSession(ctx, tx, row.id, newSID)
 	})
 	if reused {
 		s.mu.Lock()
@@ -246,9 +217,8 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string, client Clien
 // Logout ends a session. Its access token stops working at once in this process and within
 // SessionCheckTTL in any other (SessionLive).
 func (s *Service) Logout(ctx context.Context, sessionID uuid.UUID) error {
-	_, err := s.pool.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`, sessionID)
 	s.forget(sessionID)
-	return err
+	return s.store.revokeSession(ctx, s.pool, sessionID)
 }
 
 // SessionLive reports whether an access token's session still stands: not revoked (logout,
@@ -263,9 +233,7 @@ func (s *Service) SessionLive(ctx context.Context, sessionID uuid.UUID) (bool, e
 	if ok && now.Before(until) {
 		return true, nil
 	}
-	var live bool
-	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM sessions se JOIN users u ON u.id = se.user_id
-		WHERE se.id = $1 AND se.revoked_at IS NULL AND se.expires_at > now() AND u.is_active)`, sessionID).Scan(&live)
+	live, err := s.store.sessionLive(ctx, s.pool, sessionID)
 	if err != nil {
 		return false, err
 	}
@@ -299,9 +267,7 @@ func (s *Service) forget(ids ...uuid.UUID) {
 
 // Me returns the signed-in user.
 func (s *Service) Me(ctx context.Context, userID uuid.UUID) (User, error) {
-	var u User
-	err := s.pool.QueryRow(ctx, `SELECT id, email, name, role FROM users WHERE id = $1 AND is_active`, userID).
-		Scan(&u.ID, pii.Into(&u.Email), pii.Into(&u.Name), &u.Role)
+	u, err := s.store.activeUser(ctx, s.pool, userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrTokenInvalid
 	}
@@ -321,8 +287,7 @@ func (s *Service) newSession(ctx context.Context, tx pgx.Tx, u User, client Clie
 	if len(ua) > userAgentMaxLen {
 		ua = ua[:userAgentMaxLen]
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO sessions (id, user_id, refresh_hash, user_agent, ip_hash, expires_at) VALUES ($1,$2,$3,$4,$5,$6)`,
-		sid, u.ID, sum[:], ua, s.mac(client.IP), refreshExp); err != nil {
+	if err := s.store.insertSession(ctx, tx, sid, u.ID, sum[:], ua, s.mac(client.IP), refreshExp); err != nil {
 		return Tokens{}, uuid.Nil, err
 	}
 	access, accessExp, err := s.sealer.issue(u, sid)
