@@ -1,0 +1,26 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+  max-width: 560px;
+  padding: 24px 0 64px;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--text-display-md);
+  line-height: var(--leading-display);
+}
+
+.lead {
+  font-size: 17px;
+  color: var(--grey);
+}
+
+.error {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cherry);
+}

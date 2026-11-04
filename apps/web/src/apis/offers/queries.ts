@@ -5,4 +5,5 @@ import { offersApi } from './offers.api';
 
 export const offersQueries = {
   list: () => queryOptions({ queryKey: offersKeys.list(), queryFn: ({ signal }) => offersApi.list(signal) }),
+  campaigns: () => queryOptions({ queryKey: offersKeys.campaigns(), queryFn: ({ signal }) => offersApi.campaigns(signal) }),
 };

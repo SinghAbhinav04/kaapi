@@ -1,5 +1,5 @@
 export { OFFERS_PATHS, offersKeys } from './const';
-export { useCreateOffer, useOffers, useUpdateOffer } from './hooks';
+export { useCampaigns, useCreateCampaign, useCreateOffer, useOffers, useUpdateOffer } from './hooks';
 export type { OffersApi } from './interface';
 export { createOffersApi, offersApi } from './offers.api';
 export { offersQueries } from './queries';

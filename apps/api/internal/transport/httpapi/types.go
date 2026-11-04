@@ -893,6 +893,7 @@ type OfferRequest struct {
 	RoomTypeIDs []uuid.UUID      `json:"room_type_ids"`
 	AutoApply   bool             `json:"auto_apply"`
 	Active      bool             `json:"active"`
+	Announce    bool             `json:"announce"` // email it to guests who opted in to offers
 }
 
 type OfferDTO struct {
@@ -925,4 +926,38 @@ type ReplyTimeDTO struct {
 type InboxCountsResponse struct {
 	Lanes     []LaneCountDTO `json:"lanes"`
 	ReplyTime *ReplyTimeDTO  `json:"reply_time"` // null when the caller can't see the dashboard
+}
+
+// ---- campaigns
+
+type CampaignDTO struct {
+	ID         uuid.UUID  `json:"id"`
+	Kind       string     `json:"kind"`
+	Subject    string     `json:"subject"`
+	Body       string     `json:"body"`
+	Status     string     `json:"status"`
+	SendAt     time.Time  `json:"send_at"`
+	SentAt     *time.Time `json:"sent_at"`
+	Recipients int        `json:"recipients"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+type CampaignsResponse struct {
+	Campaigns   []CampaignDTO `json:"campaigns"`
+	Subscribers int           `json:"subscribers"`
+}
+
+type CampaignRequest struct {
+	Kind    string     `json:"kind"`
+	Subject string     `json:"subject"`
+	Body    string     `json:"body"`
+	SendAt  *time.Time `json:"send_at"`
+}
+
+type CampaignResponse struct {
+	Campaign CampaignDTO `json:"campaign"`
+}
+
+type UnsubscribeRequest struct {
+	Token string `json:"token"`
 }

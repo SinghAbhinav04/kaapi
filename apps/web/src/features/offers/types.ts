@@ -15,6 +15,7 @@ export interface OfferForm {
   roomTypeIds: string[];
   autoApply: boolean;
   active: boolean;
+  announce: boolean;
 }
 
 export type OfferState = 'LIVE' | 'SCHEDULED' | 'ENDED' | 'PAUSED' | 'USED_UP';

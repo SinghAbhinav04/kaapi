@@ -2433,6 +2433,114 @@ export interface paths {
         };
         trace?: never;
     };
+    "/v1/staff/campaigns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recent offer and seasonal emails, and how many guests currently receive them (opted in). */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CampaignsResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /** Schedule a festive or announcement email to every guest who opted in to offers. Offers themselves are announced from the offer (announce). */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CampaignRequest"];
+                };
+            };
+            responses: {
+                /** @description Scheduled. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CampaignResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/marketing/unsubscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop offer emails (the one-click link in every one). */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        token: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Unsubscribed. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                404: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/staff/analytics": {
         parameters: {
             query?: never;
@@ -2629,6 +2737,8 @@ export interface components {
             auto_apply: boolean;
             /** @description False pauses it. */
             active: boolean;
+            /** @description Also email it to every guest who opted in to offers (only while active). An offer is announced once; later edits never email again. */
+            announce?: boolean;
         };
         Offer: components["schemas"]["OfferRequest"] & {
             /** Format: uuid */
@@ -2826,7 +2936,7 @@ export interface components {
             /** @enum {string} */
             channel: "EMAIL" | "WHATSAPP" | "SMS";
             /** @enum {string} */
-            kind: "OTP" | "WELCOME" | "BOOKING_CONFIRMATION" | "ENQUIRY_REPLY" | "ALERT" | "REFUND_NOTICE" | "STAFF_MESSAGE" | "STAFF_CODE" | "CHECKIN_REMINDER" | "CHECKOUT_REMINDER";
+            kind: "OTP" | "WELCOME" | "BOOKING_CONFIRMATION" | "ENQUIRY_REPLY" | "ALERT" | "REFUND_NOTICE" | "STAFF_MESSAGE" | "STAFF_CODE" | "CHECKIN_REMINDER" | "CHECKOUT_REMINDER" | "PROMOTION";
             /**
              * @description QUEUED is waiting for the worker (guest emails are delivered within seconds); SENT went out through the connected mailbox; SIMULATED was only recorded (no mailbox connected); FAILED gave up after 5 tries.
              * @enum {string}
@@ -3238,6 +3348,38 @@ export interface components {
             active?: boolean;
             password?: string;
         };
+        Campaign: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "OFFER" | "FESTIVE" | "ANNOUNCEMENT";
+            subject: string;
+            body: string;
+            /** @enum {string} */
+            status: "SCHEDULED" | "SENDING" | "SENT" | "CANCELLED";
+            /** Format: date-time */
+            send_at: string;
+            /** Format: date-time */
+            sent_at: string | null;
+            recipients: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CampaignsResponse: {
+            campaigns: components["schemas"]["Campaign"][];
+            subscribers: number;
+        };
+        CampaignRequest: {
+            /** @enum {string} */
+            kind: "FESTIVE" | "ANNOUNCEMENT";
+            subject: string;
+            body: string;
+            /** Format: date-time */
+            send_at?: string | null;
+        };
+        CampaignResponse: {
+            campaign: components["schemas"]["Campaign"];
+        };
         GmailStatus: {
             /** @description The server has a Google OAuth client. */
             configured: boolean;
@@ -3483,6 +3625,10 @@ export type MembersResponse = components['schemas']['MembersResponse'];
 export type MemberResponse = components['schemas']['MemberResponse'];
 export type CreateMemberRequest = components['schemas']['CreateMemberRequest'];
 export type UpdateMemberRequest = components['schemas']['UpdateMemberRequest'];
+export type Campaign = components['schemas']['Campaign'];
+export type CampaignsResponse = components['schemas']['CampaignsResponse'];
+export type CampaignRequest = components['schemas']['CampaignRequest'];
+export type CampaignResponse = components['schemas']['CampaignResponse'];
 export type GmailStatus = components['schemas']['GmailStatus'];
 export type GmailStatusResponse = components['schemas']['GmailStatusResponse'];
 export type GmailConnectResponse = components['schemas']['GmailConnectResponse'];

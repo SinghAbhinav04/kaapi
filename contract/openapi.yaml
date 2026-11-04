@@ -886,6 +886,43 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+  /v1/staff/campaigns:
+    get:
+      tags: [offers]
+      summary: Recent offer and seasonal emails, and how many guests currently receive them (opted in).
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/CampaignsResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [offers]
+      summary: Schedule a festive or announcement email to every guest who opted in to offers. Offers themselves are announced from the offer (announce).
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CampaignRequest" } } }
+      responses:
+        "201":
+          description: Scheduled.
+          content: { application/json: { schema: { $ref: "#/components/schemas/CampaignResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/marketing/unsubscribe:
+    post:
+      tags: [offers]
+      summary: Stop offer emails (the one-click link in every one).
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [token], properties: { token: { type: string } } } } }
+      responses:
+        "204": { description: Unsubscribed. }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/staff/analytics:
     get:
       tags: [staff]
@@ -1070,6 +1107,7 @@ components:
         room_type_ids: { type: array, items: { type: string, format: uuid }, description: Empty for every room type. }
         auto_apply: { type: boolean, description: "Applies by itself to stays it covers (a festive or seasonal offer). Guests always get their best offer: an automatic one or the code they typed." }
         active: { type: boolean, description: False pauses it. }
+        announce: { type: boolean, description: "Also email it to every guest who opted in to offers (only while active). An offer is announced once; later edits never email again." }
 
     Offer:
       allOf:
@@ -1310,7 +1348,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         channel: { type: string, enum: [EMAIL, WHATSAPP, SMS] }
-        kind: { type: string, enum: [OTP, WELCOME, BOOKING_CONFIRMATION, ENQUIRY_REPLY, ALERT, REFUND_NOTICE, STAFF_MESSAGE, STAFF_CODE, CHECKIN_REMINDER, CHECKOUT_REMINDER] }
+        kind: { type: string, enum: [OTP, WELCOME, BOOKING_CONFIRMATION, ENQUIRY_REPLY, ALERT, REFUND_NOTICE, STAFF_MESSAGE, STAFF_CODE, CHECKIN_REMINDER, CHECKOUT_REMINDER, PROMOTION] }
         status: { type: string, enum: [QUEUED, SIMULATED, SENT, FAILED], description: "QUEUED is waiting for the worker (guest emails are delivered within seconds); SENT went out through the connected mailbox; SIMULATED was only recorded (no mailbox connected); FAILED gave up after 5 tries." }
         recipient: { type: string }
         subject: { type: string, nullable: true }
@@ -1768,6 +1806,42 @@ components:
         role_id: { type: string, format: uuid }
         active: { type: boolean }
         password: { type: string, minLength: 12 }
+
+    Campaign:
+      type: object
+      required: [id, kind, subject, body, status, send_at, sent_at, recipients, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [OFFER, FESTIVE, ANNOUNCEMENT] }
+        subject: { type: string }
+        body: { type: string }
+        status: { type: string, enum: [SCHEDULED, SENDING, SENT, CANCELLED] }
+        send_at: { type: string, format: date-time }
+        sent_at: { type: string, format: date-time, nullable: true }
+        recipients: { type: integer }
+        created_at: { type: string, format: date-time }
+
+    CampaignsResponse:
+      type: object
+      required: [campaigns, subscribers]
+      properties:
+        campaigns: { type: array, items: { $ref: "#/components/schemas/Campaign" } }
+        subscribers: { type: integer }
+
+    CampaignRequest:
+      type: object
+      required: [kind, subject, body]
+      additionalProperties: false
+      properties:
+        kind: { type: string, enum: [FESTIVE, ANNOUNCEMENT] }
+        subject: { type: string }
+        body: { type: string }
+        send_at: { type: string, format: date-time, nullable: true }
+
+    CampaignResponse:
+      type: object
+      required: [campaign]
+      properties: { campaign: { $ref: "#/components/schemas/Campaign" } }
 
     GmailStatus:
       type: object

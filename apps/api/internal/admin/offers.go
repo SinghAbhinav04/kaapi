@@ -29,6 +29,22 @@ func (s *Service) Offers(ctx context.Context) ([]Offer, error) {
 	return s.store.offers(ctx, s.pool)
 }
 
+// Watch registers an observer of published offers.
+func (s *Service) Watch(o OfferObserver) { s.watchers = append(s.watchers, o) }
+
+// announce tells the watchers about an active offer staff chose to announce.
+func (s *Service) announce(ctx context.Context, tx pgx.Tx, in OfferInput, o Offer, by uuid.UUID) error {
+	if !in.Announce || !o.Active {
+		return nil
+	}
+	for _, w := range s.watchers {
+		if err := w.OfferPublished(ctx, tx, o, by); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // CreateOffer adds an offer.
 func (s *Service) CreateOffer(ctx context.Context, actor uuid.UUID, in OfferInput) (Offer, error) {
 	if err := validateOffer(&in, 0); err != nil {
@@ -47,7 +63,10 @@ func (s *Service) CreateOffer(ctx context.Context, actor uuid.UUID, in OfferInpu
 		if out, err = s.store.offer(ctx, tx, id); err != nil {
 			return err
 		}
-		return s.store.auditEntry(ctx, tx, actor, auditActionOfferCreate, auditEntityOffer, id.String(), offerAudit(out))
+		if err := s.store.auditEntry(ctx, tx, actor, auditActionOfferCreate, auditEntityOffer, id.String(), offerAudit(out)); err != nil {
+			return err
+		}
+		return s.announce(ctx, tx, in, out, actor)
 	})
 	return out, err
 }
@@ -73,7 +92,10 @@ func (s *Service) UpdateOffer(ctx context.Context, actor, id uuid.UUID, in Offer
 		if out, err = s.store.offer(ctx, tx, id); err != nil {
 			return err
 		}
-		return s.store.auditEntry(ctx, tx, actor, auditActionOfferUpdate, auditEntityOffer, id.String(), offerAudit(out))
+		if err := s.store.auditEntry(ctx, tx, actor, auditActionOfferUpdate, auditEntityOffer, id.String(), offerAudit(out)); err != nil {
+			return err
+		}
+		return s.announce(ctx, tx, in, out, actor)
 	})
 	return out, err
 }

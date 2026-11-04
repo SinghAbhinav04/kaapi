@@ -219,6 +219,7 @@ const (
 	OutboxStaffCode           OutboxKind = "STAFF_CODE"    // the second step of staff sign-in
 	OutboxCheckInReminder     OutboxKind = "CHECKIN_REMINDER"
 	OutboxCheckOutReminder    OutboxKind = "CHECKOUT_REMINDER"
+	OutboxPromotion           OutboxKind = "PROMOTION" // offers and seasonal emails, only to guests who opted in
 )
 
 type OutboxStatus string

@@ -9,6 +9,7 @@ import { Button, EmptyState, ErrorState, Pill, Skeleton } from '@/shared/ui';
 
 import { COPY, STATE_PILL } from '../const';
 import { describeValue, offerState } from '../lib';
+import { CampaignsCard } from './CampaignsCard';
 import { OfferDialog } from './OfferDialog';
 import styles from './Offers.module.css';
 
@@ -86,6 +87,7 @@ export function OffersPage() {
           </div>
         )}
       </Card>
+      <CampaignsCard />
       <OfferDialog editing={editing} onClose={() => setEditing(null)} />
     </div>
   );

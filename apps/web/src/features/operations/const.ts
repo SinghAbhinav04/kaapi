@@ -12,6 +12,7 @@ export const OUTBOX_KIND: Record<OutboxMessage['kind'], { label: string; tone: P
   STAFF_CODE: { label: 'Staff sign-in code', tone: 'neutral' },
   CHECKIN_REMINDER: { label: 'Arrival reminder', tone: 'estate' },
   CHECKOUT_REMINDER: { label: 'Check-out reminder', tone: 'neutral' },
+  PROMOTION: { label: 'Offer email', tone: 'estate' },
 };
 
 /** Whether a message really left the building. */

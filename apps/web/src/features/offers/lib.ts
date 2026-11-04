@@ -23,6 +23,7 @@ export function toForm(o?: Offer): OfferForm {
     roomTypeIds: o.room_type_ids,
     autoApply: o.auto_apply,
     active: o.active,
+    announce: false,
   };
 }
 
@@ -42,6 +43,7 @@ export function toRequest(f: OfferForm): OfferRequest {
     room_type_ids: f.roomTypeIds,
     auto_apply: f.autoApply,
     active: f.active,
+    announce: f.announce,
   };
 }
 

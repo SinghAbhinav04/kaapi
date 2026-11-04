@@ -36,10 +36,19 @@ var (
 )
 
 type Service struct {
-	pool  *pgxpool.Pool
-	store store
-	now   func() time.Time
+	pool     *pgxpool.Pool
+	store    store
+	now      func() time.Time
+	consents Consents // nil: the offers opt-in is only kept on the booking
 }
+
+// Consents records a guest's opt-in to offer emails (package campaign).
+type Consents interface {
+	OptIn(ctx context.Context, q db.Querier, userID uuid.UUID) error
+}
+
+// SetConsents wires the offers opt-in; the app does it once.
+func (s *Service) SetConsents(c Consents) { s.consents = c }
 
 func NewService(pool *pgxpool.Pool, now func() time.Time) *Service {
 	if now == nil {
@@ -101,6 +110,11 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Booking, error) {
 		}
 		if bookingID == uuid.Nil {
 			return errors.New("booking: could not allocate a unique reference")
+		}
+		if in.MarketingOptIn && in.GuestUserID != nil && s.consents != nil {
+			if err := s.consents.OptIn(ctx, tx, *in.GuestUserID); err != nil {
+				return err
+			}
 		}
 		return s.store.insertPaymentOrder(ctx, tx, bookingID, q.TotalPaise, in.HoldID.String())
 	})

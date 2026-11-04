@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 
 import { useRooms } from '@/apis/catalog';
-import { useCreateOffer, useUpdateOffer, type Offer } from '@/apis/offers';
+import { useCampaigns, useCreateOffer, useUpdateOffer, type Offer } from '@/apis/offers';
 import { Button, Checkbox, SelectField, TextField } from '@/shared/ui';
 
 import { COPY, TYPE_OPTIONS } from '../const';
@@ -39,6 +39,7 @@ export function OfferDialog({ editing, onClose }: OfferDialogProps) {
 function OfferFormBody({ offer, onDone }: { offer?: Offer; onDone: () => void }) {
   const [form, setForm] = useState<OfferForm>(() => toForm(offer));
   const rooms = useRooms();
+  const subscribers = useCampaigns().data?.subscribers ?? 0;
   const create = useCreateOffer();
   const update = useUpdateOffer();
   const mutation = offer ? update : create;
@@ -51,8 +52,7 @@ function OfferFormBody({ offer, onDone }: { offer?: Offer; onDone: () => void })
     if (offer) update.mutate({ id: offer.id, body }, { onSuccess: onDone });
     else create.mutate(body, { onSuccess: onDone });
   };
-  const toggleRoom = (id: string, on: boolean) =>
-    set('roomTypeIds', on ? [...form.roomTypeIds, id] : form.roomTypeIds.filter((r) => r !== id));
+  const toggleRoom = (id: string, on: boolean) => set('roomTypeIds', on ? [...form.roomTypeIds, id] : form.roomTypeIds.filter((r) => r !== id));
 
   return (
     <form className={styles.dialogBody} onSubmit={submit}>
@@ -96,7 +96,14 @@ function OfferFormBody({ offer, onDone }: { offer?: Offer; onDone: () => void })
       <fieldset className={styles.fieldset}>
         <legend>Stays it covers</legend>
         <div className={styles.grid2}>
-          <TextField label="First night" type="date" value={form.stayFrom} onChange={(e) => set('stayFrom', e.target.value)} error={field('stay_from')} required />
+          <TextField
+            label="First night"
+            type="date"
+            value={form.stayFrom}
+            onChange={(e) => set('stayFrom', e.target.value)}
+            error={field('stay_from')}
+            required
+          />
           <TextField label="Last night" type="date" value={form.stayTo} onChange={(e) => set('stayTo', e.target.value)} error={field('stay_to')} required />
         </div>
       </fieldset>
@@ -145,6 +152,9 @@ function OfferFormBody({ offer, onDone }: { offer?: Offer; onDone: () => void })
       </Checkbox>
       <Checkbox checked={form.active} onChange={(e) => set('active', e.target.checked)}>
         Active <span className={styles.muted}>· untick to pause</span>
+      </Checkbox>
+      <Checkbox checked={form.announce && form.active} disabled={!form.active} onChange={(e) => set('announce', e.target.checked)}>
+        Email it <span className={styles.muted}>· {COPY.announce(subscribers)}</span>
       </Checkbox>
       {mutation.isError && Object.keys(mutation.error.fieldErrors).length === 0 && (
         <p className={styles.error} role="alert">

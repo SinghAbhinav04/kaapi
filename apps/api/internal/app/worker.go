@@ -24,6 +24,9 @@ const (
 	// The enquiry worker wakes on every new message; this tick is only a safety net.
 	enquiryTick = 15 * time.Second
 
+	// Campaign fan-out: a minute's wait before an announced offer starts going out is fine.
+	campaignEvery = time.Minute
+
 	// Reminders are due by the day (and the morning of check-out); a quarter-hour is plenty.
 	reminderEvery = 15 * time.Minute
 
@@ -54,6 +57,15 @@ func (a *App) RunWorkers(ctx context.Context) {
 					a.Log.Error("booking sweep failed", "err", err)
 				} else if n > 0 {
 					a.Log.Info("expired unpaid bookings", "count", n)
+				}
+			})
+		},
+		func(ctx context.Context) {
+			every(ctx, campaignEvery, true, func() {
+				if n, err := a.Campaigns.Dispatch(ctx); err != nil {
+					a.Log.Error("campaign dispatch failed", "err", err)
+				} else if n > 0 {
+					a.Log.Info("campaign emails queued", "count", n)
 				}
 			})
 		},

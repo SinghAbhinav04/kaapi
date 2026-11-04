@@ -23,8 +23,9 @@ import (
 )
 
 type Service struct {
-	pool  *pgxpool.Pool
-	store store
+	pool     *pgxpool.Pool
+	store    store
+	watchers []OfferObserver
 }
 
 func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }

@@ -8,6 +8,8 @@ export function createOffersApi(client: HttpClient): OffersApi {
     list: (signal) => client.get(OFFERS_PATHS.offers, { signal }),
     create: (body) => client.post(OFFERS_PATHS.offers, body),
     update: (id, body) => client.put(OFFERS_PATHS.offer(id), body),
+    campaigns: (signal) => client.get(OFFERS_PATHS.campaigns, { signal }),
+    createCampaign: (body) => client.post(OFFERS_PATHS.campaigns, body),
   };
 }
 

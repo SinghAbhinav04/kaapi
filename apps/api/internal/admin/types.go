@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"context"
+	"github.com/jackc/pgx/v5"
 	"time"
 
 	"github.com/google/uuid"
@@ -114,4 +116,11 @@ type OfferInput struct {
 	RoomTypeIDs      []uuid.UUID
 	AutoApply        bool
 	Active           bool
+	Announce         bool // email it to guests who opted in to offers (through the watchers)
+}
+
+// OfferObserver watches published offers. Watchers run inside the offer's transaction, so an
+// announcement exists exactly when the offer does.
+type OfferObserver interface {
+	OfferPublished(ctx context.Context, tx pgx.Tx, o Offer, by uuid.UUID) error
 }

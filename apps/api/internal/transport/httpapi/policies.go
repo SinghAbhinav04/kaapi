@@ -71,6 +71,8 @@ var groups = []group{
 		rule: ratelimit.Rule{Name: "bookings", Limit: 20, Window: 10 * time.Minute, Shared: true}},
 	{name: "enquiries", match: post("/v1/enquiries"), cors: corsClient, key: byIP,
 		rule: ratelimit.Rule{Name: "enquiries", Limit: 20, Window: time.Hour, Shared: true}},
+	{name: "unsubscribe", match: post("/v1/marketing/unsubscribe"), cors: corsClient, key: byIP,
+		rule: ratelimit.Rule{Name: "unsubscribe", Limit: 20, Window: 10 * time.Minute, Shared: true}},
 	{name: "payment-simulate", match: func(m, p string) bool {
 		return m == http.MethodPost && strings.HasPrefix(p, "/v1/payments/") && strings.HasSuffix(p, "/simulate")
 	}, cors: corsClient, key: byIP, rule: ratelimit.Rule{Name: "payment-simulate", Limit: 30, Window: 10 * time.Minute}},

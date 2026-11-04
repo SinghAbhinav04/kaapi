@@ -159,6 +159,8 @@ func eyebrow(kind domain.OutboxKind) string {
 		return "Check-out today"
 	case domain.OutboxRefundNotice:
 		return "About your payment"
+	case domain.OutboxPromotion:
+		return "Offers for you"
 	default:
 		return "Kaapi Estate"
 	}

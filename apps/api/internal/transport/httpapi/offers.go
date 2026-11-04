@@ -66,7 +66,7 @@ func decodeOffer(w http.ResponseWriter, r *http.Request) (admin.OfferInput, erro
 	in := admin.OfferInput{Code: body.Code, Description: body.Description, Type: body.Type, Value: body.Value,
 		StayFrom: httpx.ParseDate(fields, "stay_from", body.StayFrom), StayTo: httpx.ParseDate(fields, "stay_to", body.StayTo),
 		BookFrom: httpx.ParseDate(fields, "book_from", body.BookFrom), BookTo: httpx.ParseDate(fields, "book_to", body.BookTo),
-		MinNights: body.MinNights, MaxUses: body.MaxUses, RoomTypeIDs: body.RoomTypeIDs, AutoApply: body.AutoApply, Active: body.Active}
+		MinNights: body.MinNights, MaxUses: body.MaxUses, RoomTypeIDs: body.RoomTypeIDs, AutoApply: body.AutoApply, Active: body.Active, Announce: body.Announce}
 	if len(fields) > 0 {
 		return in, apperr.Validation(fields)
 	}

@@ -18,6 +18,7 @@ import (
 	"kaapi/api/internal/app"
 	"kaapi/api/internal/auth"
 	"kaapi/api/internal/booking"
+	"kaapi/api/internal/campaign"
 	"kaapi/api/internal/catalog"
 	"kaapi/api/internal/enquiry"
 	"kaapi/api/internal/fx"
@@ -41,6 +42,7 @@ type API struct {
 	analytics *analytics.Service
 	auth      *auth.Service
 	bookings  *booking.Service
+	campaigns *campaign.Service
 	catalog   *catalog.Service
 	enquiries *enquiry.Service
 	fx        *fx.Service
@@ -56,7 +58,7 @@ type API struct {
 // New exposes the app's services over HTTP.
 func New(a *app.App) *API {
 	return &API{cfg: a.Config, log: a.Log, pool: a.Pool, access: a.Access, admin: a.Admin, analytics: a.Analytics, auth: a.Auth,
-		bookings: a.Bookings, catalog: a.Catalog, enquiries: a.Enquiries, fx: a.FX, gmail: a.Gmail, inventory: a.Inventory,
+		bookings: a.Bookings, campaigns: a.Campaigns, catalog: a.Catalog, enquiries: a.Enquiries, fx: a.FX, gmail: a.Gmail, inventory: a.Inventory,
 		outbox: a.Outbox, retention: a.Retention, hub: newHub(a.Pool, a.Log), changes: a.Changes,
 		limits: ratelimit.New(a.Pool, a.Config.JWESecret, time.Now)}
 }
@@ -120,6 +122,9 @@ func (a *API) Router() http.Handler {
 		// Google sends the admin's browser back here after the Gmail consent screen.
 		r.Get("/integrations/gmail/callback", h(a.gmailCallback))
 
+		// The unsubscribe link in every offers email.
+		r.Post("/marketing/unsubscribe", h(a.unsubscribe))
+
 		// Staff console. Each route names the permission it needs.
 		r.Route("/staff", func(r chi.Router) {
 			r.With(a.requirePermission(auth.PermOutboxRead)).Get("/outbox", h(a.listOutbox))
@@ -132,6 +137,8 @@ func (a *API) Router() http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(a.requirePermission(auth.PermPromosWrite))
 				r.Get("/offers", h(a.listOffers))
+				r.Get("/campaigns", h(a.listCampaigns))
+				r.Post("/campaigns", h(a.createCampaign))
 				r.Post("/offers", h(a.createOffer))
 				r.Put("/offers/{id}", h(a.updateOffer))
 			})

@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"kaapi/api/internal/access"
@@ -16,6 +18,7 @@ import (
 	"kaapi/api/internal/analytics"
 	"kaapi/api/internal/auth"
 	"kaapi/api/internal/booking"
+	"kaapi/api/internal/campaign"
 	"kaapi/api/internal/catalog"
 	"kaapi/api/internal/enquiry"
 	"kaapi/api/internal/fx"
@@ -50,6 +53,7 @@ type App struct {
 	Changes   *changes.Feed
 	Auth      *auth.Service
 	Bookings  *booking.Service
+	Campaigns *campaign.Service
 	Catalog   *catalog.Service
 	Enquiries *enquiry.Service
 	FX        *fx.Service
@@ -93,6 +97,11 @@ func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() tim
 	a.Gmail.SetInbox(mailInbox{a})
 	a.Enquiries.SetMailer(a.Gmail)
 	a.Outbox.SetMailer(a.Gmail)
+	// Offers staff choose to announce reach opted-in guests: the campaign service watches
+	// published offers, and a booking's opt-in is recorded through it.
+	a.Campaigns = campaign.NewService(pool, now, cfg.AppOrigin)
+	a.Admin.Watch(offerWatcher{a.Campaigns})
+	a.Bookings.SetConsents(a.Campaigns)
 	// Emails' buttons point at the site; directions at the estate (an assumed pin, as on the site).
 	links := emailtpl.Links{Site: cfg.AppOrigin, Directions: estateDirections}
 	a.Outbox.SetLinks(links)
@@ -135,4 +144,12 @@ func startAI(c config.AI, log *slog.Logger) ai.Provider {
 func AIOptions(c config.AI) ai.Options {
 	return ai.Options{GeminiKey: c.GeminiKey, GeminiBaseURL: c.GeminiBaseURL, GeminiModels: c.GeminiModels, GeminiRPM: c.GeminiRPM,
 		GroqKey: c.GroqKey, GroqBaseURL: c.GroqBaseURL, GroqModels: c.GroqModels, GroqRPM: c.GroqRPM}
+}
+
+// offerWatcher adapts the campaign service to the offers service's observer interface.
+type offerWatcher struct{ c *campaign.Service }
+
+func (w offerWatcher) OfferPublished(ctx context.Context, tx pgx.Tx, o admin.Offer, by uuid.UUID) error {
+	return w.c.OfferPublished(ctx, tx, campaign.Offer{ID: o.ID, Code: o.Code, Description: o.Description,
+		StayFrom: o.StayFrom, StayTo: o.StayTo, BookTo: o.BookTo, MinNights: o.MinNights}, by)
 }
