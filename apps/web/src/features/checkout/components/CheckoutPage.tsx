@@ -70,7 +70,7 @@ function Shell({ children, ticket, onExpire }: { children: ReactNode; ticket?: H
 function CheckoutForm({ ticket }: { ticket: HoldTicket }) {
   const { form, update, submit, errors, formError, submitting } = useCheckout(ticket);
   const [expired, setExpired] = useState(() => new Date(ticket.hold.expires_at).getTime() <= Date.now());
-  const emailVerified = useMe().data?.role === 'GUEST';
+  const emailVerified = !!useMe().data; // a guest signed in by code, or staff by password and code
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     submit();

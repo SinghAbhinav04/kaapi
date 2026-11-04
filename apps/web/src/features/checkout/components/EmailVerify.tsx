@@ -1,9 +1,11 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { useEffect, useEffectEvent, useState } from 'react';
 
 import { useLogout, useMe, useRequestOtp, useVerifyOtp } from '@/apis/auth';
-import { Button, TextField } from '@/shared/ui';
+import { ROUTES } from '@/shared/const';
+import { Button, ButtonLink, TextField } from '@/shared/ui';
 
 import { EMAIL_COPY, OTP_LENGTH } from '../const';
 import styles from './CheckoutPage.module.css';
@@ -15,7 +17,9 @@ import styles from './CheckoutPage.module.css';
  */
 export function EmailVerify({ email, onEmail, error }: { email: string; onEmail: (email: string) => void; error?: string }) {
   const me = useMe().data;
-  const verified = me?.role === 'GUEST' ? me.email : null;
+  // Signed in already (a guest by code, or staff by password and code): the email is proven.
+  const verified = me ? me.email : null;
+  const pathname = usePathname();
   const request = useRequestOtp();
   const verify = useVerifyOtp();
   const logout = useLogout();
@@ -88,6 +92,11 @@ export function EmailVerify({ email, onEmail, error }: { email: string; onEmail:
             Verify
           </Button>
         </div>
+      )}
+      {verify.error?.code === 'FORBIDDEN' && (
+        <ButtonLink href={`${ROUTES.staff.login}?next=${encodeURIComponent(pathname)}`} variant="ink">
+          Sign in with your staff password
+        </ButtonLink>
       )}
     </div>
   );

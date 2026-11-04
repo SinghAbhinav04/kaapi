@@ -217,7 +217,9 @@ func (s *Service) VerifyOTP(ctx context.Context, email, code string, client Clie
 func (s *Service) guestFor(ctx context.Context, tx pgx.Tx, email string) (User, error) {
 	a, err := s.store.accountByEmail(ctx, tx, email)
 	switch {
-	case err == nil && (a.Role != domain.RoleGuest || !a.active):
+	case err == nil && a.Role != domain.RoleGuest:
+		return User{}, ErrOTPStaffEmail
+	case err == nil && !a.active:
 		return User{}, ErrOTPInvalid
 	case err == nil:
 		return a.User, nil

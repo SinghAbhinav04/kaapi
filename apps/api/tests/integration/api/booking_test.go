@@ -284,3 +284,29 @@ func TestStaffListAndExport(t *testing.T) {
 		t.Fatalf("sales exporting: %s", e.Code)
 	}
 }
+
+// Staff book stays too: password and emailed code already proved their address, and the
+// booking goes to it whatever the form says.
+func TestStaffCanBook(t *testing.T) {
+	s := apitest.New(t)
+	staffLogin(t, s, "gm@kaapiestate.test", nil)
+	var room api.RoomResponse
+	s.Do(http.MethodGet, "/v1/rooms/coffee-villa", nil, nil).JSON(t, &room)
+	var held api.HoldResponse
+	res := s.Do(http.MethodPost, "/v1/holds", api.CreateHoldRequest{RoomTypeID: room.Room.ID, RatePlanID: room.Room.Plans[1].ID,
+		CheckIn: "2026-11-14", CheckOut: "2026-11-16", Adults: 2}, nil)
+	if res.Status != http.StatusCreated {
+		t.Fatalf("hold: %d %s", res.Status, res.Body)
+	}
+	res.JSON(t, &held)
+	var out api.BookingResponse
+	res = s.Do(http.MethodPost, "/v1/bookings", api.CreateBookingRequest{HoldID: held.Hold.ID, Guest: guest, Consent: true},
+		map[string]string{"X-Hold-Token": held.Hold.Token})
+	if res.Status != http.StatusCreated {
+		t.Fatalf("staff book: %d %s", res.Status, res.Body)
+	}
+	res.JSON(t, &out)
+	if out.Booking.Guest.Email != "gm@kaapiestate.test" {
+		t.Fatalf("booking email %q, want the signed-in staff member's", out.Booking.Guest.Email)
+	}
+}

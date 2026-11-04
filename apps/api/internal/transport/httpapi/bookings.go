@@ -27,11 +27,12 @@ func (a *API) createBooking(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.DecodeJSON(w, r, &body); err != nil {
 		return err
 	}
-	// Only a guest whose email we've verified (signed in with an emailed code) can book: the
-	// confirmation, reminders and refunds all go to that address, so it must be real. The
-	// booking's email is always the account's, whatever the form sent.
+	// Only someone whose email we've verified can book: a guest signed in with an emailed
+	// code, or staff signed in with password and code (staff book stays too). The confirmation,
+	// reminders and refunds all go to that address, so it must be real. The booking's email
+	// is always the account's, whatever the form sent.
 	p := principal(r.Context())
-	if !p.IsAuthenticated() || p.Role != domain.RoleGuest {
+	if !p.IsAuthenticated() {
 		return errVerifyEmailToBook
 	}
 	me, err := a.auth.Me(r.Context(), p.UserID)
@@ -56,7 +57,7 @@ func (a *API) createBooking(w http.ResponseWriter, r *http.Request) error {
 var errVerifyEmailToBook = apperr.New(apperr.CodeUnauthenticated, "Confirm your email with the code we send you, then you can pay.")
 
 // getBooking: GET /v1/bookings/{ref}. Visible to the browser that made it (hold token),
-// the signed-in guest it belongs to, and staff. Anyone else gets "not found".
+// the signed-in person it was booked for, and staff who can read bookings. Anyone else gets "not found".
 func (a *API) getBooking(w http.ResponseWriter, r *http.Request) error {
 	b, err := a.bookings.ByRef(r.Context(), r.PathValue("ref"))
 	if err != nil {
@@ -74,7 +75,7 @@ func (a *API) canSeeBooking(r *http.Request, b booking.Booking) bool {
 	if a.can(r, auth.PermBookingsRead) {
 		return true
 	}
-	if p.IsAuthenticated() && p.Role == domain.RoleGuest {
+	if p.IsAuthenticated() { // the person it was booked for, guest or staff
 		if u, err := a.auth.Me(r.Context(), p.UserID); err == nil && strings.EqualFold(u.Email, b.Guest.Email) {
 			return true
 		}

@@ -118,8 +118,17 @@ func TestOTPCannotGrantStaffAccess(t *testing.T) {
 	s := apitest.New(t)
 	s.Do(http.MethodPost, "/v1/auth/otp/request", api.OTPRequest{Email: "gm@kaapiestate.test"}, nil)
 	code := emailedCode(t, s, domain.OutboxOTP, "gm@kaapiestate.test")
-	if e := s.Do(http.MethodPost, "/v1/auth/otp/verify", api.OTPVerifyRequest{Email: "gm@kaapiestate.test", Code: code}, nil).Error(t); e.Code != apperr.CodeUnauthenticated {
-		t.Fatalf("a staff email signed in with a code: %s", e.Code)
+	// A correct code still never signs into a staff account; the answer says why, plainly.
+	res := s.Do(http.MethodPost, "/v1/auth/otp/verify", api.OTPVerifyRequest{Email: "gm@kaapiestate.test", Code: code}, nil)
+	if e := res.Error(t); e.Code != apperr.CodeForbidden || !strings.Contains(e.Message, "staff account") {
+		t.Fatalf("a staff email signed in with a code: %s %s", e.Code, e.Message)
+	}
+	if e := s.Do(http.MethodGet, "/v1/me", nil, nil).Error(t); e.Code != apperr.CodeUnauthenticated {
+		t.Fatalf("no session may exist after that: %s", e.Code)
+	}
+	// A wrong code for the same email gives nothing away.
+	if e := s.Do(http.MethodPost, "/v1/auth/otp/verify", api.OTPVerifyRequest{Email: "gm@kaapiestate.test", Code: "000000"}, nil).Error(t); e.Code != apperr.CodeUnauthenticated {
+		t.Fatalf("wrong code: %s", e.Code)
 	}
 }
 

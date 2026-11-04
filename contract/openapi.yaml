@@ -216,6 +216,7 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/SignedIn" }
         "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" } # a correct code for a staff account's email
         "422": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
   /v1/auth/refresh:

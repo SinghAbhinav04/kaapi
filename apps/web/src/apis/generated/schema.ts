@@ -568,6 +568,7 @@ export interface paths {
             responses: {
                 200: components["responses"]["SignedIn"];
                 401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
                 422: components["responses"]["Error"];
                 429: components["responses"]["Error"];
             };
