@@ -3,7 +3,6 @@ package db
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -11,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver for goose
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
 	"kaapi/api/migrations"
@@ -39,10 +38,13 @@ func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
 
 // Migrate applies every pending embedded migration.
 func Migrate(ctx context.Context, url string) error {
-	sqlDB, err := sql.Open("pgx", url)
+	// Parse as the pool does, so pool settings in the URL (pool_max_conns) are taken out
+	// instead of reaching Postgres as unknown parameters.
+	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
-		return fmt.Errorf("open migration connection: %w", err)
+		return fmt.Errorf("parse database url: %w", err)
 	}
+	sqlDB := stdlib.OpenDB(*cfg.ConnConfig)
 	defer sqlDB.Close()
 
 	goose.SetBaseFS(migrations.FS)
