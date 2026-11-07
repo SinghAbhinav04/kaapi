@@ -1,0 +1,6 @@
+# Keep secrets, local data and test-only code out of the build context.
+.env
+.env.*
+.devdata
+bin
+tests
