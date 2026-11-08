@@ -54,7 +54,8 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]Summary, error) {
 				WHERE %[1]s AND NOT (e.priority = 'HIGH' AND e.status = 'NEW') ORDER BY e.received_at DESC LIMIT $%[3]d))
 		SELECT e.ref, e.channel, e.sender_name, left(e.raw_text, %[4]d), e.received_at, e.category, e.confidence::float8, e.lane,
 			e.status, e.priority, e.ai_status, e.category = 'ROOM' AND (e.extracted->>'check_in' IS NULL),
-			e.confidence < $%[2]d, EXISTS (SELECT 1 FROM enquiry_drafts d WHERE d.enquiry_id = e.id)
+			e.confidence < $%[2]d, EXISTS (SELECT 1 FROM enquiry_drafts d WHERE d.enquiry_id = e.id),
+			(SELECT count(*) FROM enquiry_messages m WHERE m.enquiry_id = e.id)
 		FROM picked p JOIN enquiries e ON e.id = p.id
 		ORDER BY p.urgent DESC, p.received_at DESC LIMIT $%[3]d`,
 		cond, len(args)-1, len(args), snippetSourceChars)
@@ -67,15 +68,16 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]Summary, error) {
 		var text string
 		var noDates, unsure *bool
 		err := r.Scan(&x.Ref, &x.Channel, pii.IntoNull(&x.SenderName), &text, &x.ReceivedAt, &x.Category, &x.Confidence, &x.Lane,
-			&x.Status, &x.Priority, &x.AIStatus, &noDates, &unsure, &x.HasDraft)
+			&x.Status, &x.Priority, &x.AIStatus, &noDates, &unsure, &x.HasDraft, &x.FollowUps)
 		x.Snippet = snippet(text)
 		x.NeedsCheck = (noDates != nil && *noDates) || (unsure != nil && *unsure)
 		return x, err
 	})
 }
 
-// Get returns one enquiry with its latest draft and history.
-func (s *Service) Get(ctx context.Context, ref string) (Enquiry, error) {
+// Get returns one enquiry with its latest draft and history, as viewer sees it: an unsent
+// draft shows the viewer's own sign-off, which Send adds if they send it.
+func (s *Service) Get(ctx context.Context, ref string, viewer uuid.UUID) (Enquiry, error) {
 	var e Enquiry
 	var extracted []byte
 	var assignedID *uuid.UUID
@@ -101,13 +103,31 @@ func (s *Service) Get(ctx context.Context, ref string) (Enquiry, error) {
 
 	var d Draft
 	var quote []byte
-	err = s.pool.QueryRow(ctx, `SELECT version, body_rendered, body_template, author, flagged_reason, quote, created_at, sent_at
+	var signer *uuid.UUID
+	err = s.pool.QueryRow(ctx, `SELECT version, body_rendered, body_template, author, flagged_reason, quote, created_at, sent_at, sent_by
 		FROM enquiry_drafts WHERE enquiry_id = $1 ORDER BY version DESC LIMIT 1`, e.ID).
-		Scan(&d.Version, &d.Body, &d.Template, &d.Author, &d.FlaggedReason, &quote, &d.CreatedAt, &d.SentAt)
+		Scan(&d.Version, &d.Body, &d.Template, &d.Author, &d.FlaggedReason, &quote, &d.CreatedAt, &d.SentAt, &signer)
 	if err == nil {
 		d.QuoteFilled = quote != nil
+		if signer == nil || d.SentAt == nil {
+			signer = &viewer
+		}
+		if d.SignOff, err = signOffFor(ctx, s.pool, *signer); err != nil {
+			return e, err
+		}
 		e.Draft = &d
 	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return e, err
+	}
+
+	msgs, err := s.pool.Query(ctx, `SELECT body, received_at FROM enquiry_messages WHERE enquiry_id = $1 ORDER BY received_at`, e.ID)
+	if err != nil {
+		return e, err
+	}
+	if e.FollowUps, err = pgx.CollectRows(msgs, func(r pgx.CollectableRow) (FollowUp, error) {
+		var f FollowUp
+		return f, r.Scan(&f.Text, &f.ReceivedAt)
+	}); err != nil {
 		return e, err
 	}
 
@@ -166,7 +186,7 @@ func (s *Service) Reroute(ctx context.Context, ref string, actor uuid.UUID, lane
 	recategorised := category != nil && (oldCat == nil || *oldCat != *category)
 	var p prose
 	if recategorised { // the new draft's wording is written before the transaction opens
-		if p, err = s.writeProse(ctx, s.pool, text, deref(sender), *category, fromStored(extracted), owner); err != nil {
+		if p, err = s.writeProse(ctx, s.pool, text, deref(sender), *category, fromStored(extracted), lane); err != nil {
 			return err
 		}
 	}
@@ -216,9 +236,8 @@ func (s *Service) Correct(ctx context.Context, ref string, actor uuid.UUID, c Co
 		var text string
 		var sender *string
 		var cat *domain.Category
-		var owner *uuid.UUID
-		err := tx.QueryRow(ctx, `SELECT id, extracted, raw_text, sender_name, category, assigned_user_id FROM enquiries WHERE ref = $1 FOR UPDATE`,
-			strings.ToUpper(ref)).Scan(&id, &raw, &text, pii.IntoNull(&sender), &cat, &owner)
+		err := tx.QueryRow(ctx, `SELECT id, extracted, raw_text, sender_name, category FROM enquiries WHERE ref = $1 FOR UPDATE`,
+			strings.ToUpper(ref)).Scan(&id, &raw, &text, pii.IntoNull(&sender), &cat)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -263,23 +282,21 @@ func (s *Service) Correct(ctx context.Context, ref string, actor uuid.UUID, c Co
 		var template, author string
 		var version int
 		var sent *time.Time
-		err = tx.QueryRow(ctx, `SELECT body_template, author, version, sent_at FROM enquiry_drafts WHERE enquiry_id = $1 ORDER BY version DESC LIMIT 1`, id).
-			Scan(&template, &author, &version, &sent)
+		var flag *string
+		err = tx.QueryRow(ctx, `SELECT body_template, author, version, sent_at, flagged_reason FROM enquiry_drafts
+			WHERE enquiry_id = $1 ORDER BY version DESC LIMIT 1`, id).Scan(&template, &author, &version, &sent, &flag)
 		if errors.Is(err, pgx.ErrNoRows) || sent != nil || cat == nil || author == "USER" {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		staff, err := staffFor(ctx, tx, owner)
+		rendered, quote, err := s.render(ctx, tx, template, text, deref(sender), *cat, after)
 		if err != nil {
 			return err
 		}
-		rendered, quote, err := s.render(ctx, tx, template, text, deref(sender), *cat, after, staff)
-		if err != nil {
-			return err
-		}
-		return s.saveDraft(ctx, tx, id, version+1, template, rendered, quote, "AI", nil, "")
+		// The wording is unchanged, so whatever the system flagged about it still applies.
+		return s.saveDraft(ctx, tx, id, version+1, template, rendered, quote, "AI", nil, deref(flag))
 	})
 }
 
@@ -317,6 +334,9 @@ func (s *Service) Send(ctx context.Context, ref string, actor uuid.UUID) error {
 		if p, err = loadSendPlan(ctx, tx, ref); err != nil {
 			return err
 		}
+		if p.signOff, err = signOffFor(ctx, tx, actor); err != nil {
+			return err
+		}
 		if !useMail || p.channel != domain.OutboxEmail {
 			p.simulated = true
 			return p.record(ctx, tx, actor, domain.OutboxSimulated, domain.SentMail{})
@@ -335,8 +355,9 @@ func (s *Service) Send(ctx context.Context, ref string, actor uuid.UUID) error {
 		return err
 	}
 
-	html := emailtpl.Render(domain.OutboxEnquiryReply, p.subject, p.body, s.links).HTML
-	sent, err := s.mailer.Send(ctx, domain.Mail{To: p.recipient, Subject: p.subject, Body: p.body, HTML: html, InReplyTo: p.inReplyTo, ThreadID: p.threadID})
+	mail := emailtpl.Reply(p.subject, p.body, p.signOff, s.links)
+	sent, err := s.mailer.Send(ctx, domain.Mail{To: p.recipient, Subject: p.subject, Body: mail.Text, HTML: mail.HTML,
+		InReplyTo: p.inReplyTo, ThreadID: p.threadID})
 	if err != nil {
 		// Detached context: release the claim even if the request was cancelled.
 		_, _ = s.pool.Exec(context.WithoutCancel(ctx), `UPDATE enquiry_drafts SET sending_at = NULL WHERE id = $1`, p.draftID)
@@ -355,6 +376,7 @@ type sendPlan struct {
 	version                  int
 	channel                  domain.OutboxChannel
 	recipient, subject, body string
+	signOff                  string // the sender's, added below the draft
 	inReplyTo, threadID      string
 	simulated                bool
 }
@@ -414,7 +436,8 @@ func (p sendPlan) record(ctx context.Context, tx pgx.Tx, actor uuid.UUID, status
 		return ErrAlreadySent
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, recipient, subject, body, enquiry_id, sent_by, status, external_id)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, idgen.New(), p.channel, domain.OutboxEnquiryReply, pii.Text(p.recipient), p.subject, pii.Text(p.body),
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, idgen.New(), p.channel, domain.OutboxEnquiryReply, pii.Text(p.recipient), p.subject,
+		pii.Text(emailtpl.Signed(p.body, p.signOff)),
 		p.enquiryID, actor, status, nilIfEmpty(sent.MessageID)); err != nil {
 		return err
 	}
@@ -538,6 +561,17 @@ func (s *Service) Stats(ctx context.Context) (Stats, error) {
 }
 
 // ---- helpers
+
+// signOffFor is how a staff member signs a reply: first name and team.
+func signOffFor(ctx context.Context, q querier, user uuid.UUID) (string, error) {
+	var name string
+	var role domain.Role
+	err := q.QueryRow(ctx, `SELECT name, role FROM users WHERE id = $1`, user).Scan(pii.Into(&name), &role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return emailtpl.SignOff("", ""), nil
+	}
+	return emailtpl.SignOff(name, role), err
+}
 
 func lockByRef(ctx context.Context, tx pgx.Tx, ref string) (uuid.UUID, error) {
 	var id uuid.UUID

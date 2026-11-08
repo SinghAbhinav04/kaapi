@@ -7,6 +7,7 @@ import { analyticsKeys } from '@/apis/analytics';
 import { bookingKeys } from '@/apis/booking';
 import { enquiryKeys } from '@/apis/enquiries';
 import { BROWSER_BASE_URL } from '@/apis/http';
+import { notificationKeys } from '@/apis/notifications';
 import { offersKeys } from '@/apis/offers';
 import { operationsKeys } from '@/apis/operations';
 import { ratesKeys } from '@/apis/rates';
@@ -20,6 +21,7 @@ const AFFECTED: Record<Exclude<ChangeTopic, '*'>, readonly QueryKey[]> = {
   bookings: [analyticsKeys.all, bookingKeys.all, operationsKeys.dashboard()],
   offers: [offersKeys.all],
   enquiries: [analyticsKeys.all, operationsKeys.dashboard(), enquiryKeys.counts()],
+  notifications: [notificationKeys.all],
 };
 
 /**

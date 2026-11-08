@@ -6,7 +6,7 @@ import { useEditDraft, useSendReply, type Enquiry } from '@/apis/enquiries';
 import { formatTimestamp } from '@/shared/lib/dates';
 import { Button, Pill, TextAreaField } from '@/shared/ui';
 
-import { SEND_LABEL } from '../const';
+import { SEND_LABEL, SIGN_OFF_COPY } from '../const';
 import { parseDraft } from '../lib';
 import styles from './Inbox.module.css';
 
@@ -27,7 +27,13 @@ export function DraftPanel({ enquiry, canSend }: { enquiry: Enquiry; canSend: bo
 
   const editor = (
     <div className={styles.editor}>
-      <TextAreaField label={draft && !sent ? 'Edit the reply' : 'Write your reply'} value={text} onChange={(e) => setText(e.target.value)} rows={12} />
+      <TextAreaField
+        label={draft && !sent ? 'Edit the reply' : 'Write your reply'}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={12}
+        hint={SIGN_OFF_COPY.editHint}
+      />
       {save.isError && (
         <p className={styles.error} role="alert">
           {save.error.message}
@@ -115,6 +121,12 @@ export function DraftPanel({ enquiry, canSend }: { enquiry: Enquiry; canSend: bo
                 {block.head && <p className={styles.quoteFoot}>{block.head.replace(/^For /, '').replace(/, totals including GST:$/, '')} · totals include GST</p>}
               </div>
             ),
+          )}
+          {draft.sign_off && (
+            <p className={styles.signOff}>
+              {draft.sign_off.split('\n').map((line, i) => (i === 0 ? <strong key={i}>{line}</strong> : <span key={i}>{line}</span>))}
+              <em>{sent ? SIGN_OFF_COPY.sent : SIGN_OFF_COPY.unsent}</em>
+            </p>
           )}
         </div>
       )}

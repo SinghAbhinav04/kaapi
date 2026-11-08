@@ -46,6 +46,7 @@ export function parseDraft(body: string): DraftBlock[] {
 export function itemBadge(e: EnquirySummary): ItemBadge | null {
   if (e.category === 'COMPLAINT' && e.status === 'NEW') return { label: 'Complaint · GM alerted', tone: 'alert' };
   if (e.ai_status === 'PENDING') return { label: 'AI reading…', tone: 'neutral' };
+  if (e.follow_ups > 0 && e.status === 'NEW') return { label: 'Guest replied', tone: 'estate' };
   if (e.status === 'REPLIED') return { label: 'Replied', tone: 'neutral' };
   if (e.needs_check) return { label: 'AI unsure · check details', tone: 'amber' };
   if (e.has_draft && e.status !== 'CLOSED') return { label: 'Draft ready', tone: 'estate' };

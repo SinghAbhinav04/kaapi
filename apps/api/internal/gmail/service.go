@@ -261,7 +261,12 @@ func (s *Service) Poll(ctx context.Context) (int, error) {
 	defer s.mu.Unlock()
 	n, err := s.poll(ctx)
 	if err != nil && !errors.Is(err, ErrNotConnected) {
-		s.store.setError(ctx, s.pool, truncate(err.Error(), maxErrorRunes))
+		// Staff read this in the inbox: a known failure's own message, not its cause chain.
+		msg := err.Error()
+		if ae := (*apperr.Error)(nil); errors.As(err, &ae) {
+			msg = ae.Message
+		}
+		s.store.setError(ctx, s.pool, truncate(msg, maxErrorRunes))
 	}
 	return n, err
 }
@@ -425,7 +430,9 @@ func (s *Service) tokenLocked(ctx context.Context, row stored) (string, string, 
 	}
 	tok, err := s.g.refresh(ctx, string(refresh))
 	if isStatus(err, http.StatusBadRequest) || isStatus(err, http.StatusUnauthorized) {
-		return "", "", apperr.Wrap(err, apperr.CodeConflict, "Google no longer accepts the connection. Reconnect Gmail from the inbox.")
+		// In Google's Testing mode a refresh token lasts 7 days; a revoked one ends the same way.
+		return "", "", apperr.Wrap(err, apperr.CodeConflict,
+			"Google no longer accepts the mailbox connection, so no email is going out or coming in. An administrator needs to reconnect Gmail (go run ./cmd/gmail-auth).")
 	}
 	if err != nil {
 		return "", "", err

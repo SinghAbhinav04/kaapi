@@ -2,6 +2,7 @@ package outbox
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,6 +31,17 @@ func (store) insertStaffMessage(ctx context.Context, q db.Querier, actor uuid.UU
 	return scanMessage(q.QueryRow(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body, sent_by, external_id)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING `+messageColumns,
 		idgen.New(), domain.OutboxEmail, domain.OutboxStaffMessage, status, pii.Text(c.To), c.Subject, pii.Text(c.Body), actor, externalID))
+}
+
+// signer is who sends a staff message: their name and team, for the sign-off.
+func (store) signer(ctx context.Context, q db.Querier, user uuid.UUID) (string, domain.Role, error) {
+	var name string
+	var role domain.Role
+	err := q.QueryRow(ctx, `SELECT name, role FROM users WHERE id = $1`, user).Scan(pii.Into(&name), &role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", nil
+	}
+	return name, role, err
 }
 
 func scanMessage(r pgx.Row) (Message, error) {

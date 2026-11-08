@@ -75,18 +75,14 @@ type prose struct {
 	template string
 	author   string // AI or TEMPLATE
 	flag     string
-	staff    Staff
 }
 
 // writeProse asks the model for the wording (or picks a template) and guards it. It makes
-// a network call, so callers run it before opening a transaction, never inside one.
+// a network call, so callers run it before opening a transaction, never inside one. The
+// model writes as the lane's team: who sends the reply, and so signs it, isn't known yet.
 func (s *Service) writeProse(ctx context.Context, q querier, message, senderName string, category domain.Category,
-	ex ai.Extracted, owner *uuid.UUID) (prose, error) {
-	staff, err := staffFor(ctx, q, owner)
-	if err != nil {
-		return prose{}, err
-	}
-	p := prose{staff: staff, author: "AI"}
+	ex ai.Extracted, lane domain.Lane) (prose, error) {
+	p := prose{author: "AI"}
 	if s.provider != nil {
 		facts, err := factsFor(ctx, q)
 		if err != nil {
@@ -101,7 +97,7 @@ func (s *Service) writeProse(ctx context.Context, q querier, message, senderName
 			return prose{}, err
 		}
 		text, derr := s.provider.Draft(ctx, ai.DraftInput{Message: ai.Redact(message, senderName), Category: category,
-			Extracted: ex, Facts: facts, Rooms: rooms, Offers: offers, StaffName: staffLabel(staff), Today: s.today()})
+			Extracted: ex, Facts: facts, Rooms: rooms, Offers: offers, StaffName: voiceFor(lane), Today: s.today()})
 		if derr == nil {
 			p.template, p.flag = ai.Guard(text)
 		} else if errors.Is(derr, context.Canceled) {
@@ -120,16 +116,17 @@ func (s *Service) writeProse(ctx context.Context, q querier, message, senderName
 // storeDraft fills the placeholders from live data and saves the next draft version.
 func (s *Service) storeDraft(ctx context.Context, tx pgx.Tx, enquiryID uuid.UUID, version int, p prose, message, senderName string,
 	category domain.Category, ex ai.Extracted) error {
-	rendered, quote, err := s.render(ctx, tx, p.template, message, senderName, category, ex, p.staff)
+	rendered, quote, err := s.render(ctx, tx, p.template, message, senderName, category, ex)
 	if err != nil {
 		return err
 	}
 	return s.saveDraft(ctx, tx, enquiryID, version, p.template, rendered, quote, p.author, nil, p.flag)
 }
 
-// render replaces the placeholders. Prices and availability come only from here.
+// render replaces the placeholders. Prices and availability come only from here. The
+// signature is left out: Send adds the sign-off of whoever presses it.
 func (s *Service) render(ctx context.Context, tx pgx.Tx, template, message, senderName string, category domain.Category,
-	ex ai.Extracted, staff Staff) (string, []byte, error) {
+	ex ai.Extracted) (string, []byte, error) {
 	quoteText, quote := "", []byte(nil)
 	if strings.Contains(template, ai.PlaceholderQuote) && category == domain.CategoryRoom {
 		quoteText, quote = s.quote(ctx, message, ex)
@@ -147,7 +144,7 @@ func (s *Service) render(ctx context.Context, tx pgx.Tx, template, message, send
 		ai.PlaceholderGuestName, greetingName(senderName),
 		ai.PlaceholderQuote, quoteText,
 		ai.PlaceholderEventTeam, eventTeam,
-		ai.PlaceholderSignature, signature(staff),
+		ai.PlaceholderSignature, "",
 	)
 	return strings.TrimSpace(r.Replace(template)), quote, nil
 }
@@ -175,6 +172,7 @@ func (s *Service) quote(ctx context.Context, message string, ex ai.Extracted) (s
 	}
 	wantsVilla := strings.Contains(strings.ToLower(message), "villa")
 	var lines []string
+	opts = pickQuoted(opts, wantsVilla)
 	type quoted struct {
 		Room           string `json:"room"`
 		RoomOnlyPaise  int64  `json:"room_only_paise"`
@@ -183,9 +181,6 @@ func (s *Service) quote(ctx context.Context, message string, ex ai.Extracted) (s
 	}
 	var data []quoted
 	for _, o := range opts {
-		if o.Status != inventory.Available || len(o.Plans) == 0 || (wantsVilla && !strings.Contains(o.Slug, "villa")) {
-			continue
-		}
 		q := quoted{Room: o.Name, RoomOnlyPaise: o.Plans[0].Quote.TotalPaise, Left: o.Left}
 		line := fmt.Sprintf("- %s: %s room only", o.Name, money.FormatINR(q.RoomOnlyPaise))
 		for _, p := range o.Plans {
@@ -199,16 +194,21 @@ func (s *Service) quote(ctx context.Context, message string, ex ai.Extracted) (s
 		}
 		lines = append(lines, line)
 		data = append(data, q)
-		if len(lines) == maxQuoteOptions {
-			break
-		}
 	}
 	who := fmt.Sprintf("%d adult%s", party.Adults, plural(party.Adults))
 	if party.Children > 0 {
 		who += fmt.Sprintf(", %d child%s", party.Children, map[bool]string{true: "ren", false: ""}[party.Children > 1])
 	}
+	if party.Rooms > 1 {
+		who += fmt.Sprintf(", %d rooms", party.Rooms)
+	}
 	head := fmt.Sprintf("For %s to %s (%d night%s, %s), totals including GST:",
 		stay.CheckIn.Format("Mon 2 Jan"), stay.CheckOut.Format("Mon 2 Jan"), stay.Nights(), plural(stay.Nights()), who)
+	if ex.Adults == nil {
+		// The guest didn't say who's coming: say what the prices assume rather than look exact.
+		head = fmt.Sprintf("For %s to %s (%d night%s), priced for %s (tell us if that's different), totals including GST:",
+			stay.CheckIn.Format("Mon 2 Jan"), stay.CheckOut.Format("Mon 2 Jan"), stay.Nights(), plural(stay.Nights()), who)
+	}
 	if len(lines) == 0 {
 		raw, _ := json.Marshal(map[string]any{"available": false})
 		return fmt.Sprintf("We're fully booked online for %s to %s, I'm sorry. Reply and we'll suggest the nearest dates that work.",
@@ -217,6 +217,28 @@ func (s *Service) quote(ctx context.Context, message string, ex ai.Extracted) (s
 	raw, _ := json.Marshal(map[string]any{"check_in": stay.CheckIn.Format(time.DateOnly), "check_out": stay.CheckOut.Format(time.DateOnly),
 		"party": party, "options": data, "priced_at": s.now().UTC()})
 	return head + "\n" + strings.Join(lines, "\n"), raw
+}
+
+// pickQuoted chooses the options a quote shows: the first that are bookable, in the site's
+// order, keeping a place for the first villa so a guest weighing a villa sees its price (the
+// draft often recommends one). A guest who asked about villas sees only villas.
+func pickQuoted(opts []inventory.Option, villasOnly bool) []inventory.Option {
+	var rooms, villas []inventory.Option
+	for _, o := range opts {
+		if o.Status != inventory.Available || len(o.Plans) == 0 {
+			continue
+		}
+		if strings.Contains(o.Slug, "villa") {
+			villas = append(villas, o)
+		} else if !villasOnly {
+			rooms = append(rooms, o)
+		}
+	}
+	if villasOnly || len(villas) == 0 {
+		return append(villas, rooms...)[:min(maxQuoteOptions, len(villas)+len(rooms))]
+	}
+	picked := rooms[:min(maxQuoteOptions-1, len(rooms))]
+	return append(picked, villas[:min(maxQuoteOptions-len(picked), len(villas))]...)
 }
 
 func (s *Service) saveDraft(ctx context.Context, tx pgx.Tx, enquiryID uuid.UUID, version int, template, rendered string,
@@ -242,18 +264,6 @@ func draftAuthorColumn(author string) string {
 		return "USER"
 	}
 	return "AI"
-}
-
-func staffFor(ctx context.Context, tx querier, owner *uuid.UUID) (Staff, error) {
-	st := Staff{Name: "The Kaapi Estate team"}
-	if owner == nil {
-		return st, nil
-	}
-	err := tx.QueryRow(ctx, `SELECT id, name, role FROM users WHERE id = $1`, *owner).Scan(&st.ID, pii.Into(&st.Name), &st.Role)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Staff{Name: "The Kaapi Estate team"}, nil
-	}
-	return st, err
 }
 
 func factsFor(ctx context.Context, tx querier) ([]ai.Fact, error) {
@@ -313,7 +323,7 @@ func offersFor(ctx context.Context, q querier, today time.Time) ([]ai.OfferFact,
 		if err := r.Scan(&o.Code, &kind, &value, &stayFrom, &stayTo, &bookTo, &minNights, &rooms); err != nil {
 			return o, err
 		}
-		o.Summary = "money off the stay"
+		o.Summary = "a fixed amount off the stay (shown at checkout)"
 		if kind == offerPercent {
 			o.Summary = fmt.Sprintf("%d%% off", value/bpsPerPercent)
 		}
@@ -331,23 +341,15 @@ func offersFor(ctx context.Context, q querier, today time.Time) ([]ai.OfferFact,
 	})
 }
 
-var roleTitle = map[domain.Role]string{
-	domain.RoleReservations: "Reservations", domain.RoleSales: "Events & Sales", domain.RoleGM: "General Manager",
-}
-
-func signature(st Staff) string {
-	if st.ID == uuid.Nil {
-		return st.Name + "\nKaapi Estate"
+// voiceFor is who the model writes as, e.g. "the Reservations team". Complaints and the
+// Unsorted lane belong to the General Manager.
+func voiceFor(lane domain.Lane) string {
+	if role := laneRole[lane]; role == domain.RoleGM {
+		return "the General Manager"
+	} else if title := role.Title(); title != "" {
+		return "the " + title + " team"
 	}
-	return fmt.Sprintf("%s\n%s, Kaapi Estate", firstName(st.Name), roleTitle[st.Role])
-}
-
-// staffLabel tells the model who it writes as, e.g. "Anitha Gowda (General Manager)".
-func staffLabel(st Staff) string {
-	if title, ok := roleTitle[st.Role]; ok {
-		return st.Name + " (" + title + ")"
-	}
-	return st.Name
+	return "the Kaapi Estate team"
 }
 
 func greetingName(sender string) string {

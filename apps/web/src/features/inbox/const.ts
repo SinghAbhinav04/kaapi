@@ -51,5 +51,15 @@ export const CATEGORY_LANE: Record<Category, Lane> = {
 export const INBOX_LIMIT = 300;
 
 /** The server writes quote lines like "- Coffee Villa: ₹44,368 room only, ₹47,200 with breakfast (1 left)". */
+/** Above a later message from the guest in the same email thread. */
+export const FOLLOW_UP_LABEL = 'The guest replied';
+
+/** Replies are signed by whoever sends them; the API adds the sign-off at send time. */
+export const SIGN_OFF_COPY = {
+  unsent: 'Your sign-off, added when you send',
+  sent: 'Signed by the sender',
+  editHint: "Don't sign it: your name and team are added below when you send.",
+} as const;
+
 export const QUOTE_LINE = /^- (.+?): (₹[\d,]+) room only(?:, (₹[\d,]+) with breakfast)?(?: \((\d+) left\))?$/;
 export const QUOTE_HEAD = /^For .+totals including GST:$/;

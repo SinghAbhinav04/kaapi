@@ -265,6 +265,42 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
 
         "429": { $ref: "#/components/responses/Error" }
+  /v1/staff/notifications:
+    get:
+      tags: [staff]
+      summary: The newest alerts for the caller's team (complaints, enquiries to sort, refunds needed); administrators see all.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/NotificationsResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/staff/notifications/read:
+    post:
+      tags: [staff]
+      summary: Mark every alert the caller can see as read. Alerts belong to a team, so this clears them for the team.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "204": { description: Marked read. }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/staff/notifications/{id}/read:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+    post:
+      tags: [staff]
+      summary: Mark one alert as read.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "204": { description: Marked read. }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /v1/bookings:
     post:
       tags: [booking]
@@ -563,9 +599,9 @@ paths:
       description: >
         One "change" event per topic whenever the data behind it changes, from any process:
         bookings, inventory (prices, allotment, restrictions, sold, holds), offers, enquiries,
-        or * after the API reconnected to the database (treat everything as changed). Consoles
-        refetch what the topic affects instead of polling. Needs rates:read, analytics:read,
-        promos:write or enquiries:read.
+        notifications, or * after the API reconnected to the database (treat everything as changed).
+        Consoles refetch what the topic affects instead of polling. Any staff member may listen:
+        topics name what changed, never the data.
       security: [{ cookieAuth: [] }, { bearerAuth: [] }]
       responses:
         "200":
@@ -1360,6 +1396,25 @@ components:
       required: [messages]
       properties: { messages: { type: array, items: { $ref: "#/components/schemas/OutboxMessage" } } }
 
+    Notification:
+      type: object
+      required: [id, type, body, enquiry_ref, booking_ref, created_at, read_at]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [COMPLAINT_ALERT, UNSORTED, BOOKING, REFUND_NEEDED, GUEST_REPLY] }
+        body: { type: string }
+        enquiry_ref: { type: string, nullable: true }
+        booking_ref: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        read_at: { type: string, format: date-time, nullable: true }
+
+    NotificationsResponse:
+      type: object
+      required: [notifications, unread]
+      properties:
+        notifications: { type: array, items: { $ref: "#/components/schemas/Notification" } }
+        unread: { type: integer, minimum: 0 }
+
     Guest:
       type: object
       required: [name, email, phone, country]
@@ -1577,7 +1632,7 @@ components:
     EnquirySummary:
       type: object
       required: [ref, channel, sender_name, snippet, received_at, category, confidence, lane, status, priority, ai_status,
-        needs_check, has_draft]
+        needs_check, has_draft, follow_ups]
       properties:
         ref: { type: string }
         channel: { $ref: "#/components/schemas/Channel" }
@@ -1592,6 +1647,7 @@ components:
         ai_status: { $ref: "#/components/schemas/AIStatus" }
         needs_check: { type: boolean, description: "The AI is unsure, or a stay enquiry has no dates." }
         has_draft: { type: boolean }
+        follow_ups: { type: integer, minimum: 0, description: "How many times the guest has written again in the enquiry's thread." }
 
     EnquiriesResponse:
       type: object
@@ -1615,15 +1671,18 @@ components:
 
     Draft:
       type: object
-      required: [version, body, author, flagged_reason, quote_filled, created_at, sent_at]
+      required: [version, body, author, flagged_reason, quote_filled, created_at, sent_at, sign_off]
       properties:
         version: { type: integer, minimum: 1 }
-        body: { type: string, description: "Exactly what will be sent. Prices in it come from the rate table." }
+        body: { type: string, description: "The reply above the sign-off. Prices in it come from the rate table." }
         author: { type: string, enum: [AI, USER] }
         flagged_reason: { type: string, nullable: true, description: "Why the system changed the AI's text, e.g. it wrote a price itself." }
         quote_filled: { type: boolean, description: "True when the body contains a live quote." }
         created_at: { type: string, format: date-time }
         sent_at: { type: string, format: date-time, nullable: true }
+        sign_off:
+          type: string
+          description: "Name and team below the body, one per line. Unsent: the caller's, added when they send. Sent: the sender's."
 
     EnquiryEvent:
       type: object
@@ -1642,7 +1701,7 @@ components:
       type: object
       required: [ref, channel, sender_name, sender_email, sender_phone, subject, text, received_at, language, category,
         secondary_category, confidence, ai_reason, summary, extracted, lane, assigned_to, priority, status, ai_status,
-        ai_model, first_reply_at, draft, events]
+        ai_model, first_reply_at, draft, follow_ups, events]
       properties:
         ref: { type: string }
         channel: { $ref: "#/components/schemas/Channel" }
@@ -1673,7 +1732,7 @@ components:
         draft:
           nullable: true
           type: object
-          required: [version, body, author, flagged_reason, quote_filled, created_at, sent_at]
+          required: [version, body, author, flagged_reason, quote_filled, created_at, sent_at, sign_off]
           properties:
             version: { type: integer, minimum: 1 }
             body: { type: string }
@@ -1682,6 +1741,16 @@ components:
             quote_filled: { type: boolean }
             created_at: { type: string, format: date-time }
             sent_at: { type: string, format: date-time, nullable: true }
+            sign_off: { type: string, description: "Name and team below the body. Unsent: the caller's, added when they send. Sent: the sender's." }
+        follow_ups:
+          type: array
+          description: The guest's later messages in the enquiry's email thread, oldest first. Each reopens the enquiry.
+          items:
+            type: object
+            required: [text, received_at]
+            properties:
+              text: { type: string }
+              received_at: { type: string, format: date-time }
         events: { type: array, items: { $ref: "#/components/schemas/EnquiryEvent" } }
 
     EnquiryResponse:

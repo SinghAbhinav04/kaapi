@@ -4,9 +4,10 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import type { ReactNode } from 'react';
 
-import { hasPermission, useLogout, type Permission, type User } from '@/apis/auth';
+import { hasPermission, useLogout, type User } from '@/apis/auth';
 import { useDataChanges } from '@/apis/changes';
 import { useInboxCounts } from '@/apis/enquiries';
+import { AlertsBell } from '@/features/alerts';
 import { ROUTES } from '@/shared/const';
 import { cx } from '@/shared/lib/cx';
 import { initials } from '@/shared/lib/text';
@@ -17,13 +18,10 @@ import { useStaffGuard } from '../hooks';
 import { NavIcon } from './NavIcon';
 import styles from './StaffShell.module.css';
 
-/** Permissions whose pages react to the live change stream. */
-const WATCHED: readonly Permission[] = ['rates:read', 'analytics:read', 'promos:write', 'enquiries:read'];
-
 export function StaffShell({ children }: { children: ReactNode }) {
   const { me, user, isStaff } = useStaffGuard();
-  // One live stream per tab, for whoever looks at rates, analytics or offers.
-  useDataChanges(!!user && isStaff && WATCHED.some((p) => hasPermission(user, p)));
+  // One live stream per tab: every staff member has alerts, and whatever pages they can open.
+  useDataChanges(!!user && isStaff);
 
   if (me.isError) {
     return (
@@ -74,9 +72,12 @@ function Sidebar({ user }: { user: User }) {
 
   return (
     <aside aria-label="Staff navigation" className={styles.sidebar}>
-      <Link href={ROUTES.staff.inbox} className={styles.brand}>
-        KAAPI ESTATE
-      </Link>
+      <div className={styles.top}>
+        <Link href={ROUTES.staff.inbox} className={styles.brand}>
+          KAAPI ESTATE
+        </Link>
+        <AlertsBell />
+      </div>
       <nav className={styles.nav}>
         {STAFF_NAV.filter((item) => hasPermission(user, item.permission)).map((item) => {
           const active = pathname.startsWith(item.href);

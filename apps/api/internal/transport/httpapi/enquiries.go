@@ -154,7 +154,7 @@ func (a *API) getEnquiry(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) visibleEnquiry(r *http.Request) (enquiry.Enquiry, error) {
-	e, err := a.enquiries.Get(r.Context(), r.PathValue("ref"))
+	e, err := a.enquiries.Get(r.Context(), r.PathValue("ref"), principal(r.Context()).UserID)
 	if err != nil {
 		return e, err
 	}
@@ -303,7 +303,7 @@ func (a *API) inboxCounts(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) writeEnquiry(w http.ResponseWriter, r *http.Request) error {
-	e, err := a.enquiries.Get(r.Context(), r.PathValue("ref"))
+	e, err := a.enquiries.Get(r.Context(), r.PathValue("ref"), principal(r.Context()).UserID)
 	if err != nil {
 		return err
 	}

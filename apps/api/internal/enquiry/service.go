@@ -75,14 +75,29 @@ func (s *Service) Intake(ctx context.Context, in IntakeInput) (string, error) {
 	}
 	hash := DedupeHash(in.Text)
 	var ref string
+	var followUp bool
 	var ext External
 	if in.External != nil {
 		ext = *in.External
 	}
 	err := db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		if ext.ID != "" { // the same email polled twice is the same enquiry
-			err := tx.QueryRow(ctx, `SELECT ref FROM enquiries WHERE external_id = $1`, ext.ID).Scan(&ref)
+			err := tx.QueryRow(ctx, `SELECT e.ref FROM enquiries e WHERE e.external_id = $1
+				UNION ALL SELECT e.ref FROM enquiry_messages m JOIN enquiries e ON e.id = m.enquiry_id WHERE m.external_id = $1
+				LIMIT 1`, ext.ID).Scan(&ref)
 			if err == nil || !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+		}
+		if ext.ThreadID != "" { // a reply in a thread we know joins its enquiry
+			var id uuid.UUID
+			err := tx.QueryRow(ctx, `SELECT id, ref FROM enquiries WHERE thread_id = $1 ORDER BY received_at LIMIT 1 FOR UPDATE`,
+				ext.ThreadID).Scan(&id, &ref)
+			if err == nil {
+				followUp = true
+				return addFollowUp(ctx, tx, id, ref, in, ext)
+			}
+			if !errors.Is(err, pgx.ErrNoRows) {
 				return err
 			}
 		}
@@ -127,14 +142,44 @@ func (s *Service) Intake(ctx context.Context, in IntakeInput) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	s.Wake()
+	if !followUp { // a follow-up is for staff to answer; the AI already read the enquiry
+		s.Wake()
+	}
 	return ref, nil
 }
 
-// HasExternal reports whether a provider's message (a Gmail id) is already an enquiry.
+// addFollowUp stores a guest's reply on an existing enquiry and reopens it: the next reply
+// threads under this message, and the lane's team gets an alert.
+func addFollowUp(ctx context.Context, tx pgx.Tx, id uuid.UUID, ref string, in IntakeInput, ext External) error {
+	if _, err := tx.Exec(ctx, `INSERT INTO enquiry_messages (id, enquiry_id, body, external_id, rfc_message_id) VALUES ($1,$2,$3,$4,$5)`,
+		idgen.New(), id, in.Text, nilIfEmpty(ext.ID), nilIfEmpty(ext.RFCMessageID)); err != nil {
+		return err
+	}
+	var lane *domain.Lane
+	if err := tx.QueryRow(ctx, `UPDATE enquiries SET status = CASE WHEN status = $2 THEN status ELSE $3 END,
+			rfc_message_id = coalesce($4, rfc_message_id), updated_at = now()
+		WHERE id = $1 RETURNING lane`, id, domain.EnquirySpam, domain.EnquiryNew, nilIfEmpty(ext.RFCMessageID)).Scan(&lane); err != nil {
+		return err
+	}
+	team := domain.RoleGM
+	if lane != nil {
+		if r, ok := laneRole[*lane]; ok {
+			team = r
+		}
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO notifications (id, recipient_role, type, enquiry_id, body) VALUES ($1,$2,$3,$4,$5)`,
+		idgen.New(), team, domain.NotifyGuestReply, id, fmt.Sprintf("%s: the guest replied: %s", ref, snippet(in.Text))); err != nil {
+		return err
+	}
+	return addEvent(ctx, tx, id, domain.EventReceived, domain.ActorSystem, nil, nil, map[string]any{"channel": in.Channel, "follow_up": true})
+}
+
+// HasExternal reports whether a provider's message (a Gmail id) is already stored, as an
+// enquiry or as a follow-up on one.
 func (s *Service) HasExternal(ctx context.Context, externalID string) (bool, error) {
 	var ok bool
-	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM enquiries WHERE external_id = $1)`, externalID).Scan(&ok)
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM enquiries WHERE external_id = $1)
+		OR EXISTS (SELECT 1 FROM enquiry_messages WHERE external_id = $1)`, externalID).Scan(&ok)
 	return ok, err
 }
 
@@ -213,7 +258,7 @@ func (s *Service) processOne(ctx context.Context) (bool, error) {
 	wantsDraft := status == domain.EnquiryNew || status == domain.EnquiryInProgress
 	var p prose
 	if wantsDraft {
-		if p, err = s.writeProse(ctx, s.pool, text, deref(senderName.Text), res.Category, res.Extracted, owner); err != nil {
+		if p, err = s.writeProse(ctx, s.pool, text, deref(senderName.Text), res.Category, res.Extracted, lane); err != nil {
 			return true, err
 		}
 	}
@@ -326,25 +371,50 @@ func ownerFor(ctx context.Context, tx querier, lane domain.Lane) (*uuid.UUID, er
 
 func (s *Service) alerts(ctx context.Context, tx pgx.Tx, id uuid.UUID, r ai.Result, lane domain.Lane) error {
 	var ref, snippet string
-	if err := tx.QueryRow(ctx, `SELECT ref, left(raw_text, 120) FROM enquiries WHERE id = $1`, id).Scan(&ref, &snippet); err != nil {
+	var fresh, complaintAlerted, unsortedAlerted bool
+	if err := tx.QueryRow(ctx, `SELECT ref, left(raw_text, 120), received_at > now() - make_interval(secs => $2),
+			EXISTS (SELECT 1 FROM notifications WHERE enquiry_id = $1 AND type = $3),
+			EXISTS (SELECT 1 FROM notifications WHERE enquiry_id = $1 AND type = $4)
+		FROM enquiries WHERE id = $1`, id, alertEmailWindow.Seconds(), domain.NotifyComplaintAlert, domain.NotifyUnsorted).
+		Scan(&ref, &snippet, &fresh, &complaintAlerted, &unsortedAlerted); err != nil {
 		return err
 	}
 	switch {
 	case r.ComplaintHit:
+		if complaintAlerted { // asking the AI again doesn't alert twice
+			return nil
+		}
 		if _, err := tx.Exec(ctx, `INSERT INTO notifications (id, recipient_role, type, enquiry_id, body) VALUES ($1,$2,$3,$4,$5)`,
 			idgen.New(), domain.RoleGM, domain.NotifyComplaintAlert, id, fmt.Sprintf("Complaint %s: %s", ref, snippet)); err != nil {
 			return err
 		}
-		// The GM's email is copied as stored: it is already ciphertext under the same key.
-		if _, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, recipient, subject, body, enquiry_id)
-			SELECT $1, $2, $3, email, $4, $5, $6 FROM users WHERE role = $7 AND is_active ORDER BY created_at LIMIT 1`,
-			idgen.New(), domain.OutboxEmail, domain.OutboxAlert, "Complaint needs you: "+ref,
-			pii.Text(fmt.Sprintf("A guest complaint arrived and is waiting in your lane.\n\n%s\n\nOpen the inbox to reply.", snippet)),
-			id, domain.RoleGM); err != nil {
+		if !fresh {
+			// A complaint that arrived long ago (a backlog after an outage, seeded data) is in
+			// the console's alerts, but emailing people about it now would be noise.
+			return addEvent(ctx, tx, id, domain.EventAlerted, domain.ActorSystem, nil, nil, map[string]any{"to": domain.RoleGM, "emailed": 0})
+		}
+		// Every active GM and administrator is emailed, queued for the worker to deliver (a
+		// reserved test address is recorded as simulated there; before, the copy was never
+		// queued, so no alert email was ever sent). Addresses are copied as stored: they are
+		// already ciphertext under the same key.
+		rows, err := tx.Query(ctx, `SELECT id FROM users WHERE role = ANY($1) AND is_active ORDER BY created_at`, alertRoles)
+		if err != nil {
 			return err
 		}
-		return addEvent(ctx, tx, id, domain.EventAlerted, domain.ActorSystem, nil, nil, map[string]any{"to": domain.RoleGM})
-	case lane == domain.LaneUnsorted:
+		recipients, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+		if err != nil {
+			return err
+		}
+		body := pii.Text(fmt.Sprintf("A guest complaint arrived and is waiting in the GM lane:\n\n\"%s\"\n\nOpen it in the inbox to reply.", snippet))
+		for _, user := range recipients {
+			if _, err := tx.Exec(ctx, `INSERT INTO outbox_messages (id, channel, kind, status, recipient, subject, body, enquiry_id)
+				SELECT $1, $2, $3, $4, email, $5, $6, $7 FROM users WHERE id = $8`,
+				idgen.New(), domain.OutboxEmail, domain.OutboxAlert, domain.OutboxQueued, "Complaint needs you: "+ref, body, id, user); err != nil {
+				return err
+			}
+		}
+		return addEvent(ctx, tx, id, domain.EventAlerted, domain.ActorSystem, nil, nil, map[string]any{"to": alertRoles, "emailed": len(recipients)})
+	case lane == domain.LaneUnsorted && !unsortedAlerted:
 		_, err := tx.Exec(ctx, `INSERT INTO notifications (id, recipient_role, type, enquiry_id, body) VALUES ($1,$2,$3,$4,$5)`,
 			idgen.New(), domain.RoleGM, domain.NotifyUnsorted, id, fmt.Sprintf("%s needs sorting: %s", ref, snippet))
 		return err

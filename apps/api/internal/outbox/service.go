@@ -44,10 +44,16 @@ func (s *Service) Send(ctx context.Context, actor uuid.UUID, c Compose) (Message
 	if err != nil {
 		return Message{}, err
 	}
+	name, team, err := s.store.signer(ctx, s.pool, actor)
+	if err != nil {
+		return Message{}, err
+	}
+	// Signed by the sender, like a reply; the stored copy is exactly what was sent.
+	e := emailtpl.Reply(c.Subject, c.Body, emailtpl.SignOff(name, team), s.links)
+	c.Body = e.Text
 	status, sent := domain.OutboxSimulated, domain.SentMail{}
 	if s.mailer != nil && s.mailer.Connected(ctx) {
-		e := emailtpl.Render(domain.OutboxStaffMessage, c.Subject, c.Body, s.links)
-		if sent, err = s.mailer.Send(ctx, domain.Mail{To: c.To, Subject: c.Subject, Body: c.Body, HTML: e.HTML}); err != nil {
+		if sent, err = s.mailer.Send(ctx, domain.Mail{To: c.To, Subject: c.Subject, Body: e.Text, HTML: e.HTML}); err != nil {
 			return Message{}, err
 		}
 		status = domain.OutboxSent

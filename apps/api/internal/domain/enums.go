@@ -24,6 +24,20 @@ var Roles = []Role{RoleGuest, RoleReservations, RoleSales, RoleGM, RoleAdmin}
 func (r Role) Valid() bool   { return valid(r, Roles) }
 func (r Role) IsStaff() bool { return r.Valid() && r != RoleGuest }
 
+// Title is the team's name in sign-offs; administrators and guests have none.
+func (r Role) Title() string {
+	switch r {
+	case RoleReservations:
+		return "Reservations"
+	case RoleSales:
+		return "Events & Sales"
+	case RoleGM:
+		return "General Manager"
+	default:
+		return ""
+	}
+}
+
 type RoomKind string
 
 const (
@@ -238,6 +252,7 @@ const (
 	NotifyUnsorted       NotificationType = "UNSORTED"
 	NotifyBooking        NotificationType = "BOOKING"
 	NotifyRefundNeeded   NotificationType = "REFUND_NEEDED"
+	NotifyGuestReply     NotificationType = "GUEST_REPLY"
 )
 
 type OTPPurpose string

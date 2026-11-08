@@ -41,7 +41,7 @@ labelled in the TDD, and only facts from the problem statement may be used.
 2. **Prices come from the rate table, never the AI.** The server fills `{{QUOTE}}`, and any money the model writes is stripped and flagged.
 3. **Drafts are never auto-sent.** Only `POST /v1/staff/enquiries/{ref}/send`, pressed by a person, sends anything.
 4. **Low-confidence enquiries go to the Unsorted lane** (the GM sees it). **Re-routing is one click.**
-5. **Complaints always alert the GM.** If either the model or the keyword rules sees a complaint, the GM is alerted.
+5. **Complaints always alert the GM.** If either the model or the keyword rules sees a complaint, the GM is alerted: an alert in the console's bell, and an email to every active GM and administrator when the complaint is fresh (received within 24 h; older ones, e.g. a backlog or seeded data, are console-only). Never twice for one enquiry.
 6. **GST shown at the tariff's rate:** per night, 5% up to ₹7,500, 18% above, on the price after discount. This is a labelled assumption.
 7. **DPDP:** consent at checkout, minimal fields, no passport details online, personal data redacted before any AI call, personal data **encrypted at rest** (`platform/pii`: never store a guest's name, email or phone except through `pii.Text`), and the retention rules in `internal/retention` (the privacy page states the same).
 8. **The booking flow is 3 steps or fewer.** It must be fast on slow mobile networks.
@@ -98,6 +98,7 @@ internal/
   enquiry/    intake, worker, routing rules, drafts, inbox ops, stats
   ai/         redaction, keyword classifier, Gemini + Groq clients, model chain, prompts
   outbox/     every sent message (simulated or delivered) + staff-composed messages; never sends to reserved test domains
+  notify/     the console's alerts (notifications table): list and mark read, per team; administrators see all
   campaign/   offer and festive emails to opted-in guests: watches published offers, fans out, unsubscribes
   gmail/      OAuth connect, encrypted token store, inbox polling, threaded sending (plain net/http)
   retention/  archive / anonymise / purge sweep (batched, SKIP LOCKED, audit-logged)
@@ -120,7 +121,9 @@ migrations/   0001_init.sql (24 tables), 0002_lock_down_data_api.sql (RLS on eve
               0013_data_changes.sql (change-capture triggers),
               0014_data_changes_rows.sql (notify only when rows changed), 0015_reminders_and_staff_codes.sql
               (booking_reminders, STAFF_2FA codes), 0016_marketing.sql (opt-in on users, campaigns,
-              campaign_recipients). New tables must ENABLE RLS. Two branches must never
+              campaign_recipients), 0017_sign_on_send_and_alerts.sql (strips old baked-in signatures from unsent
+              drafts; live alerts topic), 0018_guest_replies.sql (enquiry_messages, GUEST_REPLY alerts),
+              0019_enquiry_thread_index.sql. New tables must ENABLE RLS. Two branches must never
               add the same migration number: goose records versions, so the second 0005 is silently skipped.
 seed/data/    JSON fixtures: property, room_types, rate_plans, rates_rules, promos,
               users, enquiries (60, labelled), bookings (40)
@@ -171,8 +174,10 @@ Tests prove it: 25 goroutines race for the last pool villa and exactly 1 wins. O
    - confidence < 0.6 → Unsorted
    - ROOM → Reservations
    - WEDDING or OFFSITE → Sales
-7. **Drafts:** the model writes wording only, using the placeholders `{{GUEST_NAME}} {{QUOTE}} {{EVENT_TEAM_CONTACT}} {{SIGNATURE}}`. `ai.Guard` deletes any line where the model wrote money. The server fills `{{QUOTE}}` from `inventory.Search`, which gives the same numbers as the website.
-8. **Evaluation:** `go run ./cmd/eval` (with keys set) writes `docs/ai-eval-report.md`. The live result was 59/60 correct, 0 sent to the wrong team, and 11/11 complaints reached the GM. A keyword-based confidence blend was *removed* because the evaluation showed it changed nothing. Keep decisions data-driven like this.
+7. **Drafts:** the model writes wording only, using the placeholders `{{GUEST_NAME}} {{QUOTE}} {{EVENT_TEAM_CONTACT}} {{SIGNATURE}}`. `ai.Guard` deletes any line where the model wrote money. The server fills `{{QUOTE}}` from `inventory.Search`, which gives the same numbers as the website; when the guest didn't say who's coming, the quote says what it assumed, and it keeps a place for a villa.
+8. **Signed by the sender:** `{{SIGNATURE}}` renders empty and the model writes as the lane's team ("the Reservations team"), because who sends isn't known yet. `enquiry.Send` and `outbox.Send` add the sign-off of the person who pressed Send (`emailtpl.SignOff`: first name, then their team's `Role.Title()`; administrators sign "Kaapi Estate"). The API returns it as `draft.sign_off` (the viewer's while unsent, the sender's once sent); the console shows it under the draft. Never write a staff name into a draft.
+9. **Guest replies:** an imported email in a Gmail thread that already belongs to an enquiry is stored in `enquiry_messages` (not a new enquiry), reopens it (status NEW), alerts the lane's team (`GUEST_REPLY`) and moves `rfc_message_id`, so the next reply threads under it. The AI isn't re-run.
+10. **Evaluation:** `go run ./cmd/eval` (with keys set) writes `docs/ai-eval-report.md`. The live result was 59/60 correct, 0 sent to the wrong team, and 11/11 complaints reached the GM. A keyword-based confidence blend was *removed* because the evaluation showed it changed nothing. Keep decisions data-driven like this.
 
 ### How retention works (`retention/`)
 Runs at start-up and every 6 h (`SweepRetention`), and on demand via `POST /v1/staff/retention/run` (admin). Every step is idempotent.
@@ -229,7 +234,8 @@ The gateway is a layer in the API process, not a separate service (decision: one
 ### Guest emails (`outbox/`, migration 0010)
 - Sign-in codes, the welcome on a guest's first sign-in (registration), booking confirmations and refund notices are inserted as **QUEUED in the same transaction** as what caused them, so none is lost or sent for something that rolled back.
 - The worker's `Outbox.Deliver` runs every 2 s: claim a batch (`SKIP LOCKED`), send through the connected Gmail with no transaction open, then record `SENT` with Gmail's id. Failures retry at 30 s, 1, 2, 4 min and become `FAILED` after 5 tries, with `last_error` kept. A claim older than 2 min is freed (the worker died mid-send). No mailbox connected: `SIMULATED`, as before.
-- Staff-written messages and enquiry replies still send straight from the request (a person is waiting); both record what happened in the outbox.
+- Staff-written messages and enquiry replies still send straight from the request (a person is waiting); both record what happened in the outbox, with the sender's sign-off.
+- **Layout (`platform/emailtpl`):** system emails get an eyebrow and headline; replies and staff messages (`emailtpl.Reply`) read as a letter with no headline, closed by a sign-off block. Bodies are plain text: a lead line followed by `- ` lines becomes a sentence and a list; a run where every bullet has a ₹ price becomes a price list, any other a bulleted list. Complaint alerts carry an "Open it in the inbox" button.
 
 ### Reminders (`booking/reminders.go`, migration 0015)
 - Four per booking, each **exactly once** (`booking_reminders` primary key): `CHECKIN_SOON` (check-in 1–3 days away), `CHECKIN_TODAY` (from 8 am IST that day), `CHECKOUT_SOON` (two days before check-out, once arrived), `CHECKOUT_TODAY` (7–11 am IST on check-out day). The worker only *checks* every 15 min. Timings are labelled assumptions.
@@ -424,7 +430,7 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 
 ---
 
-## 7. Status and what's next (as of 4 Nov 2026)
+## 7. Status and what's next (as of 8 Nov 2026)
 
 **Done:**
 - Backend core slice, AI chain with an evaluation, full guest flow and staff console, RLS lock-down.
@@ -439,18 +445,19 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 - Fixed: web token refresh never worked through the `/api` proxy (refresh cookie path), and parallel tabs could revoke each other's sessions.
 - On `dev` (not yet on `main`), 4 Nov: verified-email booking, staff two-step sign-in, branded HTML emails, the four stay reminders, payment options with a UPI QR, offer and festive emails with opt-in and unsubscribe, reserved-domain and bounce guards; the store.go split for gmail, auth, booking and inventory. Earlier on `dev`: gateway policies (CORS and rate limits per group, live-session tokens, trusted client IP); real guest emails through the outbox; automatic offers with the console's Offers page; personal data encrypted at rest; `DOTENV_FILE` for dev/production settings; batched guest search; change capture with the analytics cache and live staff consoles; Server-Timing.
 
+- Deployed 8 Nov: API on Railway (Dockerfile in `apps/api`), web on Vercel (`kaapi-estate.vercel.app`), Supabase at migration 16.
+- On `dev`, 8 Nov: replies signed by whoever sends them; reply emails laid out as letters with real lists; complaint alert emails actually delivered (they were stored as simulated) to GMs and administrators; the console's alerts bell (`/v1/staff/notifications`); guest replies in a thread join their enquiry; quotes state their assumptions and include a villa; no staff link in the guest footer, `robots.txt` keeps crawlers out of `/staff`.
+
 **State of the two databases:**
-- Local Postgres (127.0.0.1:5432/kaapi): on `dev`, migrations 1–16, freshly reseeded on 4 Nov, plus one test booking KS-7VT6VT (smoke.guest@example.test, opted in to offers).
-- Supabase (production): migrations 1–9 from `main`. 10–16 and the encryption backfill run when `dev` is promoted and the API starts with `.env.production` (whose `PII_KEY` must be kept safe from then on).
+- Local devdb (`localhost:54329/kaapi`): on `dev`, migrations 1–19, reseeded on 8 Nov. Its Gmail is the real resorts.kaapi mailbox: anything sent to a non-reserved address is really delivered.
+- Supabase (production): migrations 1–16 from `main`. The only real administrator is heysinghabhinav@gmail.com; the seeded staff are fictional.
 
 **To do, in order:**
 1. Promote `dev` to `main` once the owner has tested it (§ 6 Branches), then bring Supabase up to migration 14.
 2. After deploying, read real latency from `Server-Timing` and decide whether Redis is needed (several instances).
 3. A visual pass in a browser at 1440 px and 390 px against the approved canvas (Claude Design artifact "Kaapi Estate — Direct Booking"), including the currency switcher in the header and the Offers page.
 4. Small API gaps:
-   - `GET /v1/staff/notifications`: GM alerts are stored but nothing reads them.
    - Delete-my-data requests from guests (OTP-verified, staff queue, export), see `docs/notes/data-retention.md`.
-   - Inbound replies on an existing Gmail thread become a new enquiry; linking them to the original is a next step.
    - Sessions slide forever: each refresh grants 30 more days, with no absolute cap. Consider one (e.g. 12 h for ADMIN).
    - Login is limited per IP only; a per-account limit (credential stuffing from many IPs) needs the email, which the gateway doesn't read.
    - Drafts (`enquiry_drafts`) can contain the guest's name and aren't encrypted yet.

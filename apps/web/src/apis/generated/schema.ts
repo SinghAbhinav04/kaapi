@@ -733,6 +733,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/staff/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The newest alerts for the caller's team (complaints, enquiries to sort, refunds needed); administrators see all. */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationsResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark every alert the caller can see as read. Alerts belong to a team, so this clears them for the team. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Marked read. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/notifications/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark one alert as read. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Marked read. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/bookings": {
         parameters: {
             query?: never;
@@ -1512,7 +1632,7 @@ export interface paths {
         };
         /**
          * Live data changes (server-sent events) for staff consoles.
-         * @description One "change" event per topic whenever the data behind it changes, from any process: bookings, inventory (prices, allotment, restrictions, sold, holds), offers, enquiries, or * after the API reconnected to the database (treat everything as changed). Consoles refetch what the topic affects instead of polling. Needs rates:read, analytics:read, promos:write or enquiries:read.
+         * @description One "change" event per topic whenever the data behind it changes, from any process: bookings, inventory (prices, allotment, restrictions, sold, holds), offers, enquiries, notifications, or * after the API reconnected to the database (treat everything as changed). Consoles refetch what the topic affects instead of polling. Any staff member may listen: topics name what changed, never the data.
          */
         get: {
             parameters: {
@@ -2949,6 +3069,23 @@ export interface components {
         OutboxResponse: {
             messages: components["schemas"]["OutboxMessage"][];
         };
+        Notification: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            type: "COMPLAINT_ALERT" | "UNSORTED" | "BOOKING" | "REFUND_NEEDED" | "GUEST_REPLY";
+            body: string;
+            enquiry_ref: string | null;
+            booking_ref: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            read_at: string | null;
+        };
+        NotificationsResponse: {
+            notifications: components["schemas"]["Notification"][];
+            unread: number;
+        };
         Guest: {
             name: string;
             email: string;
@@ -3152,6 +3289,8 @@ export interface components {
             /** @description The AI is unsure, or a stay enquiry has no dates. */
             needs_check: boolean;
             has_draft: boolean;
+            /** @description How many times the guest has written again in the enquiry's thread. */
+            follow_ups: number;
         };
         EnquiriesResponse: {
             enquiries: components["schemas"]["EnquirySummary"][];
@@ -3174,7 +3313,7 @@ export interface components {
         };
         Draft: {
             version: number;
-            /** @description Exactly what will be sent. Prices in it come from the rate table. */
+            /** @description The reply above the sign-off. Prices in it come from the rate table. */
             body: string;
             /** @enum {string} */
             author: "AI" | "USER";
@@ -3186,6 +3325,8 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             sent_at: string | null;
+            /** @description Name and team below the body, one per line. Unsent: the caller's, added when they send. Sent: the sender's. */
+            sign_off: string;
         };
         EnquiryEvent: {
             /** @enum {string} */
@@ -3247,7 +3388,15 @@ export interface components {
                 created_at: string;
                 /** Format: date-time */
                 sent_at: string | null;
+                /** @description Name and team below the body. Unsent: the caller's, added when they send. Sent: the sender's. */
+                sign_off: string;
             } | null;
+            /** @description The guest's later messages in the enquiry's email thread, oldest first. Each reopens the enquiry. */
+            follow_ups: {
+                text: string;
+                /** Format: date-time */
+                received_at: string;
+            }[];
             events: components["schemas"]["EnquiryEvent"][];
         };
         EnquiryResponse: {
@@ -3577,6 +3726,8 @@ export type OtpVerifyRequest = components['schemas']['OTPVerifyRequest'];
 export type RefreshRequest = components['schemas']['RefreshRequest'];
 export type OutboxMessage = components['schemas']['OutboxMessage'];
 export type OutboxResponse = components['schemas']['OutboxResponse'];
+export type Notification = components['schemas']['Notification'];
+export type NotificationsResponse = components['schemas']['NotificationsResponse'];
 export type Guest = components['schemas']['Guest'];
 export type CreateBookingRequest = components['schemas']['CreateBookingRequest'];
 export type Payment = components['schemas']['Payment'];

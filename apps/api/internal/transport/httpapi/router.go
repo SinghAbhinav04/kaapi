@@ -24,6 +24,7 @@ import (
 	"kaapi/api/internal/fx"
 	"kaapi/api/internal/gmail"
 	"kaapi/api/internal/inventory"
+	"kaapi/api/internal/notify"
 	"kaapi/api/internal/outbox"
 	"kaapi/api/internal/platform/changes"
 	"kaapi/api/internal/platform/config"
@@ -48,6 +49,7 @@ type API struct {
 	fx        *fx.Service
 	gmail     *gmail.Service
 	inventory *inventory.Service
+	notify    *notify.Service
 	outbox    *outbox.Service
 	retention *retention.Service
 	hub       *hub
@@ -59,7 +61,7 @@ type API struct {
 func New(a *app.App) *API {
 	return &API{cfg: a.Config, log: a.Log, pool: a.Pool, access: a.Access, admin: a.Admin, analytics: a.Analytics, auth: a.Auth,
 		bookings: a.Bookings, campaigns: a.Campaigns, catalog: a.Catalog, enquiries: a.Enquiries, fx: a.FX, gmail: a.Gmail, inventory: a.Inventory,
-		outbox: a.Outbox, retention: a.Retention, hub: newHub(a.Pool, a.Log), changes: a.Changes,
+		notify: a.Notify, outbox: a.Outbox, retention: a.Retention, hub: newHub(a.Pool, a.Log), changes: a.Changes,
 		limits: ratelimit.New(a.Pool, a.Config.JWESecret, time.Now)}
 }
 
@@ -134,6 +136,13 @@ func (a *API) Router() http.Handler {
 			r.With(a.requirePermission(auth.PermRatesRead)).Put("/rates", h(a.updateRates)) // the handler checks write permissions per field
 			r.With(a.requirePermission(auth.PermDashboardRead)).Get("/dashboard", h(a.dashboard))
 			r.With(a.requireAuth).Get("/changes/stream", h(a.changesStream)) // the handler checks the permissions
+			// Alerts are addressed to a team, not a permission: every staff member sees their team's.
+			r.Group(func(r chi.Router) {
+				r.Use(a.requireAuth)
+				r.Get("/notifications", h(a.listNotifications))
+				r.Post("/notifications/read", h(a.readAllNotifications))
+				r.Post("/notifications/{id}/read", h(a.readNotification))
+			})
 			r.Group(func(r chi.Router) {
 				r.Use(a.requirePermission(auth.PermPromosWrite))
 				r.Get("/offers", h(a.listOffers))

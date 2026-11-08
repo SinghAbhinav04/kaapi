@@ -231,6 +231,21 @@ type OutboxMessageDTO struct {
 	CreatedAt time.Time            `json:"created_at"`
 }
 
+type NotificationDTO struct {
+	ID         uuid.UUID               `json:"id"`
+	Type       domain.NotificationType `json:"type"`
+	Body       string                  `json:"body"`
+	EnquiryRef *string                 `json:"enquiry_ref"`
+	BookingRef *string                 `json:"booking_ref"`
+	CreatedAt  time.Time               `json:"created_at"`
+	ReadAt     *time.Time              `json:"read_at"`
+}
+
+type NotificationsResponse struct {
+	Notifications []NotificationDTO `json:"notifications"`
+	Unread        int               `json:"unread"`
+}
+
 type OutboxResponse struct {
 	Messages []OutboxMessageDTO `json:"messages"`
 }
@@ -412,6 +427,7 @@ type EnquirySummaryDTO struct {
 	AIStatus   domain.AIStatus      `json:"ai_status"`
 	NeedsCheck bool                 `json:"needs_check"`
 	HasDraft   bool                 `json:"has_draft"`
+	FollowUps  int                  `json:"follow_ups"`
 }
 
 type EnquiriesResponse struct {
@@ -445,6 +461,12 @@ type DraftDTO struct {
 	QuoteFilled   bool       `json:"quote_filled"`
 	CreatedAt     time.Time  `json:"created_at"`
 	SentAt        *time.Time `json:"sent_at"`
+	SignOff       string     `json:"sign_off"`
+}
+
+type FollowUpDTO struct {
+	Text       string    `json:"text"`
+	ReceivedAt time.Time `json:"received_at"`
 }
 
 type EnquiryEventDTO struct {
@@ -480,6 +502,7 @@ type EnquiryDTO struct {
 	AIModel           *string              `json:"ai_model"`
 	FirstReplyAt      *time.Time           `json:"first_reply_at"`
 	Draft             *DraftDTO            `json:"draft"`
+	FollowUps         []FollowUpDTO        `json:"follow_ups"`
 	Events            []EnquiryEventDTO    `json:"events"`
 }
 
@@ -631,7 +654,7 @@ func ratesGridDTO(g admin.Grid) RatesGridResponse {
 func enquirySummaryDTO(e enquiry.Summary) EnquirySummaryDTO {
 	return EnquirySummaryDTO{Ref: e.Ref, Channel: e.Channel, SenderName: e.SenderName, Snippet: e.Snippet, ReceivedAt: e.ReceivedAt,
 		Category: e.Category, Confidence: e.Confidence, Lane: e.Lane, Status: e.Status, Priority: e.Priority, AIStatus: e.AIStatus,
-		NeedsCheck: e.NeedsCheck, HasDraft: e.HasDraft}
+		NeedsCheck: e.NeedsCheck, HasDraft: e.HasDraft, FollowUps: e.FollowUps}
 }
 
 func enquiryDTO(e enquiry.Enquiry) EnquiryDTO {
@@ -667,7 +690,11 @@ func enquiryDTO(e enquiry.Enquiry) EnquiryDTO {
 	}
 	if d := e.Draft; d != nil {
 		out.Draft = &DraftDTO{Version: d.Version, Body: d.Body, Author: d.Author, FlaggedReason: d.FlaggedReason,
-			QuoteFilled: d.QuoteFilled, CreatedAt: d.CreatedAt, SentAt: d.SentAt}
+			QuoteFilled: d.QuoteFilled, CreatedAt: d.CreatedAt, SentAt: d.SentAt, SignOff: d.SignOff}
+	}
+	out.FollowUps = make([]FollowUpDTO, len(e.FollowUps))
+	for i, f := range e.FollowUps {
+		out.FollowUps[i] = FollowUpDTO{Text: f.Text, ReceivedAt: f.ReceivedAt}
 	}
 	for i, ev := range e.Events {
 		out.Events[i] = EnquiryEventDTO{Type: ev.Type, Actor: ev.Actor, ActorName: ev.ActorName, From: ev.From, To: ev.To, CreatedAt: ev.CreatedAt}

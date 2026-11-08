@@ -152,10 +152,14 @@ func TestModelDraftGetsLivePricesAndNeverItsOwn(t *testing.T) {
 		t.Fatalf("draft %+v", d)
 	}
 	// Coffee Villa 14–16 Nov: ₹20,100 + ₹17,500 room only, 18% GST = ₹44,368; with breakfast ₹47,200.
-	for _, want := range []string{"Hi Arjun,", "Coffee Villa: ₹44,368 room only, ₹47,200 with breakfast (1 left)", "Rohan"} {
+	for _, want := range []string{"Hi Arjun,", "Coffee Villa: ₹44,368 room only, ₹47,200 with breakfast (1 left)"} {
 		if !strings.Contains(d.Body, want) {
 			t.Errorf("draft lacks %q:\n%s", want, d.Body)
 		}
+	}
+	// Nobody is signed into the draft: whoever sends it signs it, and the viewer sees theirs.
+	if strings.Contains(d.Body, "Rohan") || d.SignOff != "Rohan\nReservations, Kaapi Estate" {
+		t.Errorf("sign-off belongs to the sender, shown apart: %q\n%s", d.SignOff, d.Body)
 	}
 	if strings.Contains(d.Body, "15,000") || strings.Contains(d.Body, "{{") {
 		t.Errorf("model's own price or a placeholder survived:\n%s", d.Body)
@@ -179,9 +183,58 @@ func TestComplaintSeenByEitherClassifierAlertsTheGM(t *testing.T) {
 		WHERE e.ref = 'ENQ-4420' AND n.type = 'COMPLAINT_ALERT' AND n.recipient_role = 'GM'`).Scan(&alerts); err != nil || alerts != 1 {
 		t.Fatalf("alerts %d %v", alerts, err)
 	}
-	if len(outboxTo(t, s, domain.OutboxAlert, "gm@kaapiestate.test")) == 0 {
-		t.Fatal("GM got no alert email")
+	// The seeded complaints arrived days ago: they're alerted in the console, not by email.
+	if got := outboxTo(t, s, domain.OutboxAlert, "admin@kaapiestate.test"); len(got) != 0 {
+		t.Fatalf("an old complaint emailed people: %+v", got)
 	}
+	// A complaint arriving now is emailed to the GM and the administrator, queued so the
+	// worker really sends it; asking the AI again doesn't alert twice.
+	var fresh api.EnquiryCreatedResponse
+	s.Do(http.MethodPost, "/v1/enquiries", api.CreateEnquiryRequest{Name: "Nisha K", Email: "nisha@example.test",
+		Message: "Very disappointed: the room was dirty and nobody answered reception. I want a refund."}, nil).JSON(t, &fresh)
+	process(t, s)
+	if r := s.Do(http.MethodPost, "/v1/staff/enquiries/"+fresh.Ref+"/retry-ai", nil, nil); r.Status != http.StatusOK {
+		t.Fatalf("retry: %d %s", r.Status, r.Body)
+	}
+	process(t, s)
+	for _, to := range []string{"gm@kaapiestate.test", "admin@kaapiestate.test"} {
+		if got := outboxTo(t, s, domain.OutboxAlert, to); len(got) != 1 || got[0].Status != domain.OutboxQueued {
+			t.Fatalf("alert email to %s: %+v", to, got)
+		}
+	}
+
+	// The console's alerts: the GM's team sees it, Reservations doesn't, and reading clears it.
+	var alertsPage api.NotificationsResponse
+	s.Do(http.MethodGet, "/v1/staff/notifications?limit=100", nil, nil).JSON(t, &alertsPage)
+	var complaint *api.NotificationDTO
+	for i, n := range alertsPage.Notifications {
+		if n.Type == domain.NotifyComplaintAlert && n.EnquiryRef != nil && *n.EnquiryRef == "ENQ-4420" {
+			complaint = &alertsPage.Notifications[i]
+		}
+	}
+	if complaint == nil || complaint.ReadAt != nil || alertsPage.Unread == 0 {
+		t.Fatalf("GM's alerts: %+v", alertsPage)
+	}
+	if r := s.Do(http.MethodPost, "/v1/staff/notifications/"+complaint.ID.String()+"/read", nil, nil); r.Status != http.StatusNoContent {
+		t.Fatalf("read: %d %s", r.Status, r.Body)
+	}
+	var after api.NotificationsResponse
+	s.Do(http.MethodGet, "/v1/staff/notifications", nil, nil).JSON(t, &after)
+	if after.Unread != alertsPage.Unread-1 {
+		t.Fatalf("unread %d after reading one of %d", after.Unread, alertsPage.Unread)
+	}
+	staffLogin(t, s, "reservations@kaapiestate.test", nil)
+	if r := s.Do(http.MethodPost, "/v1/staff/notifications/"+complaint.ID.String()+"/read", nil, nil); r.Status != http.StatusNotFound {
+		t.Fatalf("another team's alert must not exist for them: %d", r.Status)
+	}
+	var theirs api.NotificationsResponse
+	s.Do(http.MethodGet, "/v1/staff/notifications", nil, nil).JSON(t, &theirs)
+	for _, n := range theirs.Notifications {
+		if n.Type == domain.NotifyComplaintAlert {
+			t.Fatalf("Reservations sees the GM's alerts: %+v", n)
+		}
+	}
+	staffLogin(t, s, "gm@kaapiestate.test", nil)
 	// The GM's queue puts unanswered complaints first.
 	if list := listLane(t, s, "lane=GM"); len(list) == 0 || list[0].Priority != domain.PriorityHigh {
 		t.Fatalf("complaints should lead: %+v", list)
@@ -345,11 +398,32 @@ func TestEnquiryToReply(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("reply copies: %d", len(replies))
 	}
-	if body := replies[0].Body; body != edited {
+	// Exactly the staff's edit, signed by the person who pressed Send.
+	if body := replies[0].Body; body != edited+"\n\nRohan\nReservations, Kaapi Estate" {
 		t.Fatalf("sent text differs from the staff's edit:\n%s", body)
+	}
+	if sent.Enquiry.Draft.SignOff != "Rohan\nReservations, Kaapi Estate" {
+		t.Fatalf("a sent draft shows its sender: %q", sent.Enquiry.Draft.SignOff)
 	}
 	if r := s.Do(http.MethodPost, "/v1/staff/enquiries/"+created.Ref+"/send", nil, nil); r.Status != http.StatusConflict {
 		t.Fatalf("double send: %d", r.Status)
+	}
+}
+
+func TestAdministratorSignsTheReplyTheySend(t *testing.T) {
+	s, _ := withGemini(t)
+	process(t, s)
+	staffLogin(t, s, "admin@kaapiestate.test", nil)
+	e := getEnquiry(t, s, "ENQ-4411")
+	if e.Draft == nil || e.Draft.SignOff != "System\nKaapi Estate" {
+		t.Fatalf("the viewer's own sign-off: %+v", e.Draft)
+	}
+	if r := s.Do(http.MethodPost, "/v1/staff/enquiries/ENQ-4411/send", nil, nil); r.Status != http.StatusOK {
+		t.Fatalf("%d %s", r.Status, r.Body)
+	}
+	replies := outboxTo(t, s, domain.OutboxEnquiryReply, "+91 90000 10002")
+	if len(replies) != 1 || !strings.HasSuffix(replies[0].Body, "System\nKaapi Estate") || strings.Contains(replies[0].Body, "Rohan") {
+		t.Fatalf("signed by the sender only: %+v", replies)
 	}
 }
 

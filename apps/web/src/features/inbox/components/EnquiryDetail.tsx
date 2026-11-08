@@ -6,7 +6,7 @@ import { formatTimestamp } from '@/shared/lib/dates';
 import { initials } from '@/shared/lib/text';
 import { Button, EmptyState, ErrorState, Pill, Skeleton } from '@/shared/ui';
 
-import { CATEGORY_LABEL, CATEGORY_TONE, CHANNEL_LABEL, LANE_LABEL } from '../const';
+import { CATEGORY_LABEL, CATEGORY_TONE, CHANNEL_LABEL, FOLLOW_UP_LABEL, LANE_LABEL } from '../const';
 import { AiUnderstood } from './AiUnderstood';
 import { DraftPanel } from './DraftPanel';
 import styles from './Inbox.module.css';
@@ -83,6 +83,14 @@ function Detail({ enquiry, onMoved }: { enquiry: Enquiry; onMoved: () => void })
           {formatTimestamp(enquiry.received_at)}
           {enquiry.language && enquiry.language !== 'en' ? ` · ${enquiry.language}` : ''}
         </span>
+        {enquiry.follow_ups.map((f) => (
+          <div key={f.received_at} className={styles.followUp}>
+            <span className={styles.followUpLabel}>
+              {FOLLOW_UP_LABEL} · {formatTimestamp(f.received_at)}
+            </span>
+            <p className={styles.bubble}>{f.text}</p>
+          </div>
+        ))}
       </div>
 
       <AiUnderstood enquiry={enquiry} canEdit={canRoute} />

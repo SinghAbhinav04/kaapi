@@ -141,7 +141,8 @@ func (a *API) inboxStream(w http.ResponseWriter, r *http.Request) error {
 // polling (the sidebar's lane counts too, so anyone with an inbox gets it). Only topic names
 // are sent; every refetch goes through the caller's permissions.
 func (a *API) changesStream(w http.ResponseWriter, r *http.Request) error {
-	if !a.can(r, auth.PermRatesRead) && !a.can(r, auth.PermAnalyticsRead) && !a.can(r, auth.PermPromosWrite) && !a.can(r, auth.PermEnquiriesRead) {
+	// Topics name what changed, never the data, and every staff member has alerts to refresh.
+	if !principal(r.Context()).Role.IsStaff() {
 		return auth.ErrForbidden
 	}
 	rc := http.NewResponseController(w)

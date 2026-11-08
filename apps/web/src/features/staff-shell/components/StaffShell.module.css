@@ -30,8 +30,16 @@
   padding: 8px 4px;
 }
 
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 4px 20px 0;
+}
+
 .brand {
-  margin: 4px 12px 24px;
+  margin: 4px 12px;
   font-family: var(--font-display);
   font-size: 22px;
   letter-spacing: 0.02em;
@@ -269,6 +277,10 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
+  }
+
+  .top {
+    margin: 0;
   }
 
   .brand {

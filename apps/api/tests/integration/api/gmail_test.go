@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"kaapi/api/internal/domain"
 	"kaapi/api/internal/gmail"
 	"kaapi/api/internal/platform/config"
 	api "kaapi/api/internal/transport/httpapi"
@@ -25,6 +26,19 @@ type fakeGoogle struct {
 	sent     []map[string]string // decoded raw + threadId of each send
 	failSend bool
 	revoked  bool
+	replied  bool // the guest has answered our reply, in the same thread
+}
+
+// newMail lists the inbox's messages: the guest's email, our own sent copy, a bounce, and
+// once the guest has replied, their answer in the same thread.
+func (f *fakeGoogle) newMail() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ids := []string{"m1", "own", "bounce"}
+	if f.replied {
+		ids = append(ids, "m2")
+	}
+	return ids
 }
 
 func (f *fakeGoogle) handler(t *testing.T) http.Handler {
@@ -55,18 +69,22 @@ func (f *fakeGoogle) handler(t *testing.T) http.Handler {
 			_ = json.NewEncoder(w).Encode(map[string]any{"historyId": "101"})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"historyId": "101", "history": []any{
-			map[string]any{"messagesAdded": []any{map[string]any{"message": map[string]string{"id": "m1"}}}},
-			map[string]any{"messagesAdded": []any{map[string]any{"message": map[string]string{"id": "own"}}}},
-			map[string]any{"messagesAdded": []any{map[string]any{"message": map[string]string{"id": "bounce"}}}},
-		}})
+		var history []any
+		for _, id := range f.newMail() {
+			history = append(history, map[string]any{"messagesAdded": []any{map[string]any{"message": map[string]string{"id": id}}}})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"historyId": "101", "history": history})
 	})
 	// The catch-up search returns the same messages history already delivered: neither may duplicate.
 	mux.HandleFunc("GET /gmail/v1/users/me/messages", func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.URL.Query().Get("q"), "after:") {
 			t.Errorf("catch-up search without a start: %q", r.URL.Query().Get("q"))
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"messages": []map[string]string{{"id": "m1"}, {"id": "own"}, {"id": "bounce"}}})
+		var msgs []map[string]string
+		for _, id := range f.newMail() {
+			msgs = append(msgs, map[string]string{"id": id})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"messages": msgs})
 	})
 	mux.HandleFunc("GET /gmail/v1/users/me/messages/{id}", func(w http.ResponseWriter, r *http.Request) {
 		from, labels := "Asha Rao <asha@example.test>", []string{"INBOX", "UNREAD"}
@@ -79,6 +97,14 @@ func (f *fakeGoogle) handler(t *testing.T) http.Handler {
 					"headers": []map[string]string{{"name": "From", "value": "Mail Delivery Subsystem <mailer-daemon@googlemail.com>"},
 						{"name": "Subject", "value": "Delivery Status Notification (Failure)"}, {"name": "Auto-Submitted", "value": "auto-replied"}},
 					"parts": []any{map[string]any{"mimeType": "text/plain", "body": map[string]string{"data": b64("** Address not found **")}}}}})
+			return
+		}
+		if r.PathValue("id") == "m2" { // the guest answers in the thread of our reply
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "m2", "threadId": "t1", "labelIds": labels,
+				"payload": map[string]any{"mimeType": "text/plain",
+					"headers": []map[string]string{{"name": "From", "value": from}, {"name": "Subject", "value": "Re: Room for 14-16 Nov"},
+						{"name": "Message-ID", "value": "<def@mail.example.test>"}},
+					"body": map[string]string{"data": b64("Thanks! Please hold the Estate View Room for us.")}}})
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": r.PathValue("id"), "threadId": "t1", "labelIds": labels,
@@ -189,12 +215,52 @@ func TestGmailConnectImportReplyAndCompose(t *testing.T) {
 	if err := s.Pool.QueryRow(s.Ctx, `SELECT status FROM outbox_messages WHERE kind = 'ENQUIRY_REPLY' ORDER BY created_at DESC LIMIT 1`).Scan(&status); err != nil || status != "SENT" {
 		t.Fatalf("outbox status %q err %v", status, err)
 	}
+	// Signed by the administrator who pressed Send, in both the text and the HTML part.
+	if !strings.Contains(reply["raw"], "System\r\nKaapi Estate") && !strings.Contains(reply["raw"], "System\nKaapi Estate") ||
+		!strings.Contains(reply["raw"], "<strong>System</strong>") {
+		t.Fatalf("reply not signed by its sender:\n%s", reply["raw"])
+	}
+
+	// The guest answers in the same thread: it joins the enquiry (no new one), reopens it,
+	// alerts the lane, and our next reply threads under the guest's latest message.
+	fake.mu.Lock()
+	fake.replied = true
+	fake.mu.Unlock()
+	for range 2 {
+		if r := s.Do(http.MethodPost, "/v1/staff/integrations/gmail/sync", nil, nil); r.Status != http.StatusOK {
+			t.Fatalf("sync: %d %s", r.Status, r.Body)
+		}
+	}
+	var enquiries int
+	if err := s.Pool.QueryRow(s.Ctx, `SELECT count(*) FROM enquiries WHERE thread_id = 't1' OR external_id = 'm2'`).Scan(&enquiries); err != nil || enquiries != 1 {
+		t.Fatalf("a reply in the thread must not become a new enquiry: %d %v", enquiries, err)
+	}
+	var reopened api.EnquiryResponse
+	s.Do(http.MethodGet, "/v1/staff/enquiries/"+ref, nil, nil).JSON(t, &reopened)
+	if fu := reopened.Enquiry.FollowUps; len(fu) != 1 || !strings.Contains(fu[0].Text, "hold the Estate View Room") ||
+		reopened.Enquiry.Status != domain.EnquiryNew {
+		t.Fatalf("follow-up: %+v status %s", fu, reopened.Enquiry.Status)
+	}
+	var guestReplied int
+	if err := s.Pool.QueryRow(s.Ctx, `SELECT count(*) FROM notifications WHERE type = 'GUEST_REPLY'`).Scan(&guestReplied); err != nil || guestReplied != 1 {
+		t.Fatalf("guest-reply alerts: %d %v", guestReplied, err)
+	}
+	if r := s.Do(http.MethodPut, "/v1/staff/enquiries/"+ref+"/draft", api.EditDraftRequest{Body: "Dear Asha, it's held for you."}, nil); r.Status != http.StatusOK {
+		t.Fatalf("follow-up draft: %d %s", r.Status, r.Body)
+	}
+	if r := s.Do(http.MethodPost, "/v1/staff/enquiries/"+ref+"/send", nil, nil); r.Status != http.StatusOK {
+		t.Fatalf("follow-up send: %d %s", r.Status, r.Body)
+	}
+	if second := fake.sent[len(fake.sent)-1]; second["threadId"] != "t1" || !strings.Contains(second["raw"], "In-Reply-To: <def@mail.example.test>") {
+		t.Fatalf("follow-up not threaded under the guest's latest message:\n%s", second["raw"])
+	}
 
 	// Compose: a new message from scratch.
 	var composed api.OutboxMessageResponse
 	r := s.Do(http.MethodPost, "/v1/staff/messages", api.ComposeRequest{To: "planner@example.test", Subject: "Your wedding dates", Body: "Hello"}, nil)
 	r.JSON(t, &composed)
-	if r.Status != http.StatusCreated || composed.Message.Status != "SENT" || composed.Message.Kind != "STAFF_MESSAGE" || len(fake.sent) != 2 {
+	if r.Status != http.StatusCreated || composed.Message.Status != "SENT" || composed.Message.Kind != "STAFF_MESSAGE" || len(fake.sent) != 3 ||
+		!strings.HasSuffix(composed.Message.Body, "System\nKaapi Estate") {
 		t.Fatalf("compose: %d %+v sends=%d", r.Status, composed.Message, len(fake.sent))
 	}
 	if r := s.Do(http.MethodPost, "/v1/staff/messages", api.ComposeRequest{To: "not an email", Subject: "x", Body: "y"}, nil); r.Status != http.StatusUnprocessableEntity {

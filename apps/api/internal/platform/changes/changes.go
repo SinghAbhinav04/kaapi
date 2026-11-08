@@ -16,10 +16,11 @@ import (
 
 // Topics, as the triggers send them.
 const (
-	Bookings  = "bookings"
-	Inventory = "inventory"
-	Offers    = "offers"
-	Enquiries = "enquiries"
+	Bookings      = "bookings"
+	Inventory     = "inventory"
+	Offers        = "offers"
+	Enquiries     = "enquiries"
+	Notifications = "notifications"
 	// All is sent after (re)connecting: notices may have been missed while disconnected, so
 	// everything is treated as changed.
 	All = "*"

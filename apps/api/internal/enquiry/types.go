@@ -50,6 +50,7 @@ type Summary struct {
 	AIStatus   domain.AIStatus
 	NeedsCheck bool // the AI is unsure, or a stay enquiry has no dates
 	HasDraft   bool
+	FollowUps  int // the guest's later messages in the thread
 }
 
 // Enquiry is the full record for the detail pane.
@@ -78,7 +79,14 @@ type Enquiry struct {
 	AIReason    string
 	FirstReply  *time.Time
 	Draft       *Draft
+	FollowUps   []FollowUp // the guest's later messages in the thread, oldest first
 	Events      []Event
+}
+
+// FollowUp is a later message from the guest on the same enquiry (a reply in its thread).
+type FollowUp struct {
+	Text       string
+	ReceivedAt time.Time
 }
 
 type Staff struct {
@@ -96,6 +104,7 @@ type Draft struct {
 	QuoteFilled   bool
 	CreatedAt     time.Time
 	SentAt        *time.Time
+	SignOff       string // the sender's once sent, else the viewer's: Send adds it below Body
 }
 
 type Event struct {
@@ -157,6 +166,14 @@ const (
 	offerPercent  = "PERCENT"
 	bpsPerPercent = 100
 )
+
+// alertRoles are emailed about every complaint: the GM owns it, and the administrators (the
+// owner) hear of it too, so a complaint reaches a real person even with no GM on the team.
+var alertRoles = []domain.Role{domain.RoleGM, domain.RoleAdmin}
+
+// alertEmailWindow: complaints received longer ago than this are alerted in the console only.
+// Emails are for news; a backlog worked through after an outage, or seeded data, isn't.
+const alertEmailWindow = 24 * time.Hour
 
 // senderIndexKind keeps the sender's blind index apart from other hashed identifiers.
 const senderIndexKind = "sender"

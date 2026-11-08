@@ -24,6 +24,7 @@ import (
 	"kaapi/api/internal/fx"
 	"kaapi/api/internal/gmail"
 	"kaapi/api/internal/inventory"
+	"kaapi/api/internal/notify"
 	"kaapi/api/internal/outbox"
 	"kaapi/api/internal/platform/cache"
 	"kaapi/api/internal/platform/changes"
@@ -59,6 +60,7 @@ type App struct {
 	FX        *fx.Service
 	Gmail     *gmail.Service
 	Inventory *inventory.Service
+	Notify    *notify.Service
 	Outbox    *outbox.Service
 	Retention *retention.Service
 }
@@ -88,6 +90,7 @@ func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() tim
 		Inventory: inv,
 		Enquiries: enquiry.NewService(pool, startAI(cfg.AI, log), inv, now),
 		FX:        fx.NewService(pool, cfg.FXBaseURL),
+		Notify:    notify.NewService(pool),
 		Outbox:    outbox.NewService(pool),
 		Retention: retention.NewService(pool, now),
 		Gmail:     gmail.NewService(pool, cfg.Gmail, cfg.JWESecret, now, log),
