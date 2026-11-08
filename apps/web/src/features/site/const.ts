@@ -7,13 +7,13 @@ export const NAV_LINKS = [
   { href: '/#getting-here', label: 'Getting here' },
 ] as const;
 
-/** Every guest destination, so any page with the footer can reach any other. */
+/** Every guest destination, so any page with the footer can reach any other. Staff sign in at
+ * /staff/login directly: guests have no reason to see it. */
 export const FOOTER_LINKS = [
   ...NAV_LINKS,
   { href: ROUTES.myBookings, label: 'My booking' },
   { href: ROUTES.privacy, label: 'Privacy' },
   { href: ROUTES.enquire, label: 'Contact' },
-  { href: ROUTES.staff.login, label: 'Staff sign-in' },
 ] as const;
 
 /** Honest labelling of the placeholder imagery (see apps/web/assets/source/CREDITS.md). */
