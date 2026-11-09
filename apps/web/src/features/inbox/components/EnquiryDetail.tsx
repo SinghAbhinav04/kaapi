@@ -83,8 +83,8 @@ function Detail({ enquiry, onMoved }: { enquiry: Enquiry; onMoved: () => void })
           {formatTimestamp(enquiry.received_at)}
           {enquiry.language && enquiry.language !== 'en' ? ` · ${enquiry.language}` : ''}
         </span>
-        {enquiry.follow_ups.map((f) => (
-          <div key={f.received_at} className={styles.followUp}>
+        {enquiry.follow_ups.map((f, i) => (
+          <div key={`${f.received_at}-${i}`} className={styles.followUp}>
             <span className={styles.followUpLabel}>
               {FOLLOW_UP_LABEL} · {formatTimestamp(f.received_at)}
             </span>

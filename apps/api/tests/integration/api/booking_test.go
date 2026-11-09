@@ -228,10 +228,20 @@ func TestLatePaymentAfterRoomWasTakenIsRefunded(t *testing.T) {
 	if late.BookingStatus != domain.BookingRefundPending || late.Status != domain.PaymentRefundPending {
 		t.Fatalf("%+v", late)
 	}
-	var alerts int
+	// Later events for the same order change nothing: a decline can't wipe the refund marker
+	// for money already taken, and a second capture can't alert or email again.
+	for _, outcome := range []payment.Outcome{payment.OutcomeFailure, payment.OutcomeSuccess} {
+		if again := pay(t, s, b.Payment.OrderID, outcome); again.BookingStatus != domain.BookingRefundPending || again.Status != domain.PaymentRefundPending {
+			t.Fatalf("after a later %s event: %+v", outcome, again)
+		}
+	}
+	var alerts, emails int
 	if err := s.Pool.QueryRow(s.Ctx, `SELECT count(*) FROM notifications WHERE type = $1 AND recipient_role = $2`,
 		domain.NotifyRefundNeeded, domain.RoleGM).Scan(&alerts); err != nil || alerts != 1 {
 		t.Fatalf("GM refund alerts: %d %v", alerts, err)
+	}
+	if err := s.Pool.QueryRow(s.Ctx, `SELECT count(*) FROM outbox_messages WHERE kind = $1`, domain.OutboxRefundNotice).Scan(&emails); err != nil || emails != 1 {
+		t.Fatalf("refund emails: %d %v", emails, err)
 	}
 }
 

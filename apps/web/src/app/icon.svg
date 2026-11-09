@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#3f6b4a"/>
+  <!-- A coffee bean: an oval with its centre crease. -->
+  <ellipse cx="32" cy="32" rx="15" ry="21" fill="#f5f1ea" transform="rotate(-24 32 32)"/>
+  <path d="M27 14c8 7 2 15 7 20s3 12 3 16" fill="none" stroke="#3f6b4a" stroke-width="4" stroke-linecap="round"/>
+</svg>

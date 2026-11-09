@@ -32,6 +32,12 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) ([]Option, erro
 	if err != nil {
 		return nil, err
 	}
+	// The check-out day isn't a night of the stay, but the hold refuses it when closed to
+	// departure, so the search must too.
+	noDeparture, err := store{}.departuresClosed(ctx, s.pool, req.CheckOut)
+	if err != nil {
+		return nil, err
+	}
 
 	// Everything the prices need, loaded once for every room type and plan: a handful of
 	// queries per search however many rooms and plans there are (it was 3-4 per plan).
@@ -44,7 +50,7 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) ([]Option, erro
 	nights := req.Nights()
 	out := make([]Option, 0, len(rooms))
 	for _, rt := range rooms {
-		opt := Option{RoomTypeID: rt.id, Slug: rt.slug, Name: rt.name, Status: Available}
+		opt := Option{RoomTypeID: rt.id, Slug: rt.slug, Name: rt.name, Kind: rt.kind, Status: Available}
 		ns := avail[rt.id]
 		switch {
 		case len(ns) != nights:
@@ -66,6 +72,8 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) ([]Option, erro
 				opt.Status, opt.Reason = Restricted, "Not available on these dates"
 			case ns[0].cta:
 				opt.Status, opt.Reason = Restricted, "No arrivals on this date"
+			case noDeparture[rt.id]:
+				opt.Status, opt.Reason = Restricted, "No departures on this date"
 			case nights < ns[0].minStay:
 				opt.Status, opt.Reason = Restricted, "Minimum stay applies"
 			case len(opt.SoldOutNights) > 0:
@@ -151,7 +159,8 @@ func (s *Service) Alternatives(ctx context.Context, roomTypeID uuid.UUID, checkI
 	if from.Before(today) {
 		from = today
 	}
-	all, err := store{}.nightsByRoom(ctx, s.pool, from, checkIn.AddDate(0, 0, alternativesWindowDays+nights))
+	// One day past the last stay, so the last candidate's check-out day is loaded too.
+	all, err := store{}.nightsByRoom(ctx, s.pool, from, checkIn.AddDate(0, 0, alternativesWindowDays+nights+1))
 	if err != nil {
 		return nil, err
 	}
@@ -163,6 +172,9 @@ func (s *Service) Alternatives(ctx context.Context, roomTypeID uuid.UUID, checkI
 	ok := func(start time.Time) bool {
 		first, found := byDate[start.Format(time.DateOnly)]
 		if !found || first.cta || nights < first.minStay {
+			return false
+		}
+		if out, found := byDate[start.AddDate(0, 0, nights).Format(time.DateOnly)]; found && out.ctd {
 			return false
 		}
 		for i := 0; i < nights; i++ {

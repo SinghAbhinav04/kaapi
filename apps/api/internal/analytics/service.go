@@ -5,6 +5,7 @@ package analytics
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,6 +16,11 @@ type Service struct {
 	store store
 	now   func() time.Time
 	cache reportCache // nil: every request computes
+
+	// gen counts invalidations. A report computed across one is already stale, so it isn't
+	// stored; mu makes "check gen, then store" and "bump gen, then clear" atomic.
+	mu  sync.Mutex
+	gen uint64
 }
 
 // reportCache keeps finished reports for the next request (package cache in memory; a
@@ -32,7 +38,10 @@ func (s *Service) SetCache(c reportCache) { s.cache = c }
 // Invalidate drops every cached report. The change feed calls it.
 func (s *Service) Invalidate() {
 	if s.cache != nil {
+		s.mu.Lock()
+		s.gen++
 		s.cache.Clear()
+		s.mu.Unlock()
 	}
 }
 
@@ -53,9 +62,16 @@ func (s *Service) Report(ctx context.Context, from, to time.Time) (Report, error
 	if r, ok := s.cache.Get(key); ok {
 		return r, nil
 	}
+	s.mu.Lock()
+	gen := s.gen
+	s.mu.Unlock()
 	r, err := s.report(ctx, from, to)
 	if err == nil {
-		s.cache.Set(key, r)
+		s.mu.Lock()
+		if s.gen == gen {
+			s.cache.Set(key, r)
+		}
+		s.mu.Unlock()
 	}
 	return r, err
 }

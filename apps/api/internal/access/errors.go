@@ -11,5 +11,7 @@ var (
 	ErrEmailTaken     = apperr.New(apperr.CodeConflict, "Someone already uses that email address.")
 	ErrLastAdmin      = apperr.New(apperr.CodeConflict, "At least one active Administrator must remain.")
 	ErrSelfLockout    = apperr.New(apperr.CodeConflict, "You can't deactivate yourself or remove your own Administrator role.")
+	ErrAdminOnly      = apperr.New(apperr.CodeForbidden, "Only an Administrator can give the Administrator role or change an Administrator's account.")
+	ErrGrantBeyondOwn = apperr.New(apperr.CodeForbidden, "You can only give permissions you hold yourself.")
 	ErrGuestRole      = apperr.New(apperr.CodeValidation, "Guest accounts are created by signing in on the website, not here.")
 )

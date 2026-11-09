@@ -198,6 +198,21 @@ func (store) adminRoleID(ctx context.Context, q db.Querier) (uuid.UUID, error) {
 	return id, err
 }
 
+// isAdmin reports whether the user holds the Administrator role.
+func (store) isAdmin(ctx context.Context, q db.Querier, userID uuid.UUID) (bool, error) {
+	var ok bool
+	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1 AND r.key = $2)`,
+		userID, adminRoleKey).Scan(&ok)
+	return ok, err
+}
+
+// revokeRoleSessions signs out everyone with a role (their tokens carry the old team).
+func (store) revokeRoleSessions(ctx context.Context, q db.Querier, roleID uuid.UUID) error {
+	_, err := q.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE revoked_at IS NULL
+		AND user_id IN (SELECT id FROM users WHERE role_id = $1)`, roleID)
+	return err
+}
+
 // revokeSessions signs a person out everywhere.
 func (store) revokeSessions(ctx context.Context, q db.Querier, userID uuid.UUID) error {
 	_, err := q.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, userID)

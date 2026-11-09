@@ -20,17 +20,23 @@ const config: NextConfig = {
   poweredByHeader: false,
   agentRules: false,
   images: {
-    formats: ['image/avif', 'image/webp'],
-    // Next 16 only serves listed qualities; 60 for large photography, 75 for the rest.
+    // Sizes are pre-built AVIF files (scripts/build-images.py); the loader picks one per
+    // device instead of asking Vercel's optimizer, which passed AVIF through at full size.
+    loader: 'custom',
+    loaderFile: './src/shared/lib/image-loader.ts',
+    // Next 16 only accepts listed qualities; 60 for large photography, 75 for the rest.
     qualities: [60, 75],
     deviceSizes: [390, 640, 828, 1080, 1440, 1920, 2400],
-    minimumCacheTTL: 60 * 60 * 24 * 30,
   },
   async rewrites() {
     return [{ source: '/api/:path*', destination: `${apiOrigin}/:path*` }];
   },
   async headers() {
-    return [{ source: '/:path*', headers: securityHeaders }];
+    return [
+      { source: '/:path*', headers: securityHeaders },
+      // Photos are rebuilt rarely; let browsers and the CDN keep them for a month.
+      { source: '/images/:path*', headers: [{ key: 'Cache-Control', value: 'public, max-age=2592000, stale-while-revalidate=86400' }] },
+    ];
   },
 };
 

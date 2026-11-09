@@ -9,7 +9,7 @@ export const STAFF_NAV: readonly { href: string; label: string; icon: NavIcon; p
   { href: ROUTES.staff.rates, label: 'Rates & allotment', icon: 'rates', permission: 'rates:read' },
   { href: ROUTES.staff.bookings, label: 'Bookings', icon: 'bookings', permission: 'bookings:read' },
   { href: ROUTES.staff.outbox, label: 'Outbox', icon: 'outbox', permission: 'outbox:read' },
-  { href: ROUTES.staff.dashboard, label: 'Dashboard', icon: 'dashboard', permission: 'dashboard:read' },
+  { href: ROUTES.staff.dashboard, label: 'Today', icon: 'dashboard', permission: 'dashboard:read' },
   { href: ROUTES.staff.analytics, label: 'Analytics', icon: 'analytics', permission: 'analytics:read' },
   { href: ROUTES.staff.offers, label: 'Offers', icon: 'offers', permission: 'promos:write' },
   { href: ROUTES.staff.team, label: 'Team & access', icon: 'team', permission: 'users:manage' },

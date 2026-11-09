@@ -99,6 +99,12 @@ var PaymentStatuses = []PaymentStatus{PaymentCreated, PaymentCaptured, PaymentFa
 
 func (s PaymentStatus) Valid() bool { return valid(s, PaymentStatuses) }
 
+// Settled reports whether the money has been taken (and possibly is being returned), so no
+// later provider event may change the payment.
+func (s PaymentStatus) Settled() bool {
+	return s == PaymentCaptured || s == PaymentRefundPending || s == PaymentRefunded
+}
+
 type PaymentProvider string
 
 const PaymentProviderMock PaymentProvider = "MOCK"

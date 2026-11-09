@@ -54,6 +54,7 @@ const (
 type Option struct {
 	RoomTypeID    uuid.UUID
 	Slug, Name    string
+	Kind          domain.RoomKind
 	Status        Status
 	Left          int // fewest rooms free on any night of the stay, website allotment only
 	Reason        string
@@ -103,6 +104,7 @@ type nightAvail struct {
 	date          time.Time
 	left, minStay int
 	stopSell, cta bool
+	ctd           bool // closed to departure: nobody may check out this morning
 }
 
 const (

@@ -205,6 +205,7 @@ Each run writes one `audit_logs` row with the counts.
 - Administrator and Guest are system roles (fixed). The Administrator holds every permission in code, including future ones. Built-in GM / Reservations / Sales roles start with the grants the code used to hard-code and are editable.
 - Every request checks `access.Service.Can` (30 s cache per process, cleared at once by the process making a change). Deactivating someone cuts access immediately even with a live token; role changes, deactivation and password resets also revoke their sessions. The last active Administrator can't be removed and nobody can lock themselves out.
 - Console: `/staff/team` (permission `users:manage`). A test keeps the permissions table and `auth.KnownPermissions()` identical.
+- **No escalation:** only an Administrator may give the Administrator role or change an Administrator's account; anyone else may only grant permissions they hold themselves (`mayAssign`/`mayGrant`). Changing a role's team signs its members out (tokens carry the team).
 
 ### Live inbox
 - Migration 0006: a trigger sends the enquiry's ref with `pg_notify('inbox_changes', …)` on every enquiry or draft change, from any process. The API holds one LISTEN connection while any inbox page is open and streams refs as server-sent events (`GET /v1/staff/inbox/stream`); the page refetches. Streams bypass the request timeout and clear the write deadline.
@@ -237,6 +238,9 @@ The gateway is a layer in the API process, not a separate service (decision: one
 - Staff-written messages and enquiry replies still send straight from the request (a person is waiting); both record what happened in the outbox, with the sender's sign-off.
 - **Layout (`platform/emailtpl`):** system emails get an eyebrow and headline; replies and staff messages (`emailtpl.Reply`) read as a letter with no headline, closed by a sign-off block. Bodies are plain text: a lead line followed by `- ` lines becomes a sentence and a list; a run where every bullet has a ₹ price becomes a price list, any other a bulleted list. Complaint alerts carry an "Open it in the inbox" button.
 
+### Today page (`/staff/dashboard`, `GET /v1/staff/dashboard`)
+- The desk's sheet, not a report (Analytics is the report): enquiries owed a first reply past 30 min (urgent first, `enquiry.Stats.Overdue`), open complaints, refunds to make, tonight's website occupancy, confirmed arrivals and departures for today and the next six days (`booking.Desk`), and the week's goals. The resort's date comes from `domain.ResortToday`.
+
 ### Reminders (`booking/reminders.go`, migration 0015)
 - Four per booking, each **exactly once** (`booking_reminders` primary key): `CHECKIN_SOON` (check-in 1–3 days away), `CHECKIN_TODAY` (from 8 am IST that day), `CHECKOUT_SOON` (two days before check-out, once arrived), `CHECKOUT_TODAY` (7–11 am IST on check-out day). The worker only *checks* every 15 min. Timings are labelled assumptions.
 
@@ -244,7 +248,7 @@ The gateway is a layer in the API process, not a separate service (decision: one
 - The checkout's "send me offers" box records `users.marketing_opt_in` and an unsubscribe token (through `booking.Consents`).
 - **Observer:** `admin.Service` announces published offers to its `OfferObserver`s inside the offer's transaction; `campaign.Service` is one (wired in `app`). Saving an active offer with `announce: true` creates its campaign, once per offer (unique index), however often it's edited later. Staff also write FESTIVE / ANNOUNCEMENT campaigns (`/v1/staff/campaigns`, `promos:write`).
 - `campaign.Dispatch` (worker, every minute) fans each due campaign out into QUEUED outbox rows (`PROMOTION`) in batches of 200; `campaign_recipients` means each guest gets each campaign at most once. Every email ends with a one-click unsubscribe link (`/unsubscribe?token=`, which asks for the click, since mail scanners open links; `POST /v1/marketing/unsubscribe`).
-- **Reserved domains:** the outbox records mail to `.test`, `.example`, `.invalid`, `.localhost` and example.com/net/org as SIMULATED, never Gmail (the seed uses `@example.test`; bounces would land in the inbox). Use a real-looking domain in tests that expect delivery through the fake Gmail.
+- **Reserved domains:** every send path (queued guest emails, staff messages, enquiry replies) records mail to `.test`, `.example`, `.invalid`, `.localhost` and example.com/net/org as SIMULATED, never Gmail (`domain.ReservedAddress`; the seed uses `@example.test`; bounces would land in the inbox). Use a real-looking domain in tests that expect delivery through the fake Gmail.
 - **The Gmail poller skips bounces and auto-replies** (multipart/report, mailer-daemon/postmaster, `Auto-Submitted`, `X-Autoreply`).
 
 ### Payment page (`features/payment`)
@@ -268,8 +272,8 @@ The gateway is a layer in the API process, not a separate service (decision: one
 - **Analytics cache:** `analytics.Service` keeps computed reports (`platform/cache`, in memory, behind the consumer's `reportCache` interface, so Redis can replace it when instances must share). Key: range + today. The feed clears it on `bookings`, `inventory`, `enquiries` or `*`; `ANALYTICS_CACHE_SECONDS` (default 600, 0 = off, the tests' default) is only the safety net. Measured: 13 queries on a miss, 0 on a hit.
 - **Never cache what decides a booking:** availability, holds and the hold's price always read the database (overbooking guard, prices from the rate table).
 - **Staff consoles:** `GET /v1/staff/changes/stream` (SSE; rates:read, analytics:read, promos:write or enquiries:read) sends each topic; `apis/changes` `useDataChanges` (mounted once in `StaffShell`) invalidates what the topic affects. The rates grid, analytics, the dashboard and the sidebar's counts use `staleTime: Infinity` and don't poll. The sidebar reads `GET /v1/staff/inbox/counts` (lane counts for the caller's lanes, plus the week's median reply when they have dashboard:read) instead of the whole inbox; the inbox and change streams refresh it. Measured on a production build: the rates page makes 5 API calls, each once, and none while idle. In `next dev` you will see requests twice, the first cancelled: that is React Strict Mode mounting twice, not a bug. A rate save applies at once with `setQueryData` (`apis/rates/optimistic.ts`), rolls back on error and reconciles on settle.
-- **Guest search batching:** availability loads plans, nightly rates, the typed code and live offers in four queries and prices in memory through `priceStay`, the same pure function the hold uses (`TestSearchQuotesMatchWhatAHoldFreezes` keeps them equal). Six queries per search, down from about fifty.
-- **Server-Timing:** every response carries `db;dur=…;desc="N queries", app;dur=…` (a pgx query tracer, `db.Tracer()`, counts per request), so production latency is read in the browser's network panel, not guessed.
+- **Guest search batching:** availability loads plans, nightly rates, the typed code and live offers in four queries and prices in memory through `priceStay`, the same pure function the hold uses (`TestSearchQuotesMatchWhatAHoldFreezes` keeps them equal). Seven queries per search (the seventh: rooms closed to departure on the check-out day), down from about fifty.
+- **Server-Timing:** every response except `/v1/auth/*` (a login's query count would reveal which emails have accounts) carries `db;dur=…;desc="N queries", app;dur=…` (a pgx query tracer, `db.Tracer()`, counts per request), so production latency is read in the browser's network panel, not guessed.
 - Other per-process caches with short TTLs: permissions (`access`, 30 s), live sessions (`auth.SessionLive`, 30 s), in-memory rate-limit counters. Shared state lives in Postgres: `rate_limit_buckets`, `pg_notify`. There is no Redis yet; add it (Memorystore or Upstash) when several API instances must share the analytics cache and rate limits.
 
 ## 4. Frontend: `apps/web` (Next.js 16.4, React 19.3, TypeScript 5.9)
@@ -346,7 +350,7 @@ Segmented, Stepper, Skeleton, EmptyState/ErrorState and Logo.
 - **Scroll performance (don't regress):** nothing may repaint per scroll frame. No SVG `filter` on anything that moves (the hero mist is CSS gradients). TrailSpine paints its path once and reveals it with two counter-translated layers; its dot is a gradient div moved by `transform`. Images that appear mid-scroll load eagerly.
 - **Charts** (analytics): hand-rolled HTML/CSS, one series colour `--viz-1: #2f7a4b` (brand green fails the chroma floor as a data colour), hover/focus tooltips, a "Show as table" view on each chart, no dual axes.
 - **Navigation:** every guest page can reach every other: the footer is a full sitemap, the room page header is sticky with "All stays", breadcrumbs link back with the stay search kept (`ROUTES.staysWith`).
-- **Images:** originals in `apps/web/assets/source` (credits in CREDITS.md). `python scripts/build-images.py` writes AVIF into `public/images`. Room photos must show only that room, with honest alt text.
+- **Images:** originals in `apps/web/assets/source` (credits in CREDITS.md). `python scripts/build-images.py` writes AVIF into `public/images`, plus `-480/-960/-1600` copies; `shared/lib/image-loader.ts` (the `next/image` custom loader) picks one per device. Don't go back to Vercel's optimizer: it passed AVIF through at full size (phones got 2400 px photos) and has a monthly quota. Room photos must show only that room, with honest alt text.
 - **Accessibility:** 44 px tap targets, labelled controls, error text linked with `aria-describedby`, `role="alert"` and `role="status"` used correctly.
 
 ### Next 16 gotchas (already handled; don't regress)
@@ -451,6 +455,8 @@ npx tsc --noEmit && npx eslint src --max-warnings=0 && npx next build
 **State of the two databases:**
 - Local devdb (`localhost:54329/kaapi`): on `dev`, migrations 1–19, reseeded on 8 Nov. Its Gmail is the real resorts.kaapi mailbox: anything sent to a non-reserved address is really delivered.
 - Supabase (production): migrations 1–16 from `main`. The only real administrator is heysinghabhinav@gmail.com; the seeded staff are fictional.
+
+- On `dev`, 9 Nov: three review passes and a browser/performance pass, findings and their status in `docs/notes/code-review-2026-11-09.md` (refund events, complaint and redaction gaps, admin escalation, Gmail poll stall, reserved-domain sends, live-stream staleness, pre-built image sizes, the Today page).
 
 **To do, in order:**
 1. Promote `dev` to `main` once the owner has tested it (§ 6 Branches), then bring Supabase up to migration 14.

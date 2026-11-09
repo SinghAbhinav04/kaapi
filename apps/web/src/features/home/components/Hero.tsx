@@ -41,8 +41,19 @@ export function Hero() {
 
         <div className={styles.rows}>
           <div className={styles.cam2}>
-            {/* Eager: it fades in mid-scroll, and a first decode at that moment drops frames. */}
-            <Image src={HERO_IMAGES.rows} alt="" fill sizes="100vw" quality={60} loading="eager" className={styles.photo} style={{ objectPosition: '50% 55%' }} />
+            {/* Eager: it fades in mid-scroll, and a first decode at that moment drops frames. Low
+                priority: it must not hold up the photo the guest sees first. */}
+            <Image
+              src={HERO_IMAGES.rows}
+              alt=""
+              fill
+              sizes="100vw"
+              quality={60}
+              loading="eager"
+              fetchPriority="low"
+              className={styles.photo}
+              style={{ objectPosition: '50% 55%' }}
+            />
           </div>
         </div>
 

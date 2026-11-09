@@ -35,12 +35,8 @@ const (
 
 // QueueReminders queues every reminder that's due now and returns how many.
 func (s *Service) QueueReminders(ctx context.Context) (int, error) {
-	loc, err := time.LoadLocation("Asia/Kolkata")
-	if err != nil {
-		loc = time.FixedZone("IST", 5*3600+1800)
-	}
-	now := s.now().In(loc)
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	now := s.now().In(domain.ResortZone())
+	today := domain.ResortToday(now)
 	hour := now.Hour()
 
 	due := []struct {

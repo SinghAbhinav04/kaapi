@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -82,7 +83,7 @@ type prose struct {
 // model writes as the lane's team: who sends the reply, and so signs it, isn't known yet.
 func (s *Service) writeProse(ctx context.Context, q querier, message, senderName string, category domain.Category,
 	ex ai.Extracted, lane domain.Lane) (prose, error) {
-	p := prose{author: "AI"}
+	p := prose{author: draftAuthorAI}
 	if s.provider != nil {
 		facts, err := factsFor(ctx, q)
 		if err != nil {
@@ -105,7 +106,7 @@ func (s *Service) writeProse(ctx context.Context, q querier, message, senderName
 		}
 	}
 	if p.template == "" || !strings.Contains(p.template, ai.PlaceholderSignature) {
-		p.template, p.author = templates[category], "TEMPLATE"
+		p.template, p.author = templates[category], draftAuthorTemplate
 		if s.provider != nil {
 			p.flag = "AI draft unavailable or off-format, so this is a template"
 		}
@@ -181,13 +182,18 @@ func (s *Service) quote(ctx context.Context, message string, ex ai.Extracted) (s
 	}
 	var data []quoted
 	for _, o := range opts {
-		q := quoted{Room: o.Name, RoomOnlyPaise: o.Plans[0].Quote.TotalPaise, Left: o.Left}
-		line := fmt.Sprintf("- %s: %s room only", o.Name, money.FormatINR(q.RoomOnlyPaise))
-		for _, p := range o.Plans {
-			if p.Code == "BB-FLEX" {
-				q.BreakfastPaise = p.Quote.TotalPaise
-				line += fmt.Sprintf(", %s with breakfast", money.FormatINR(p.Quote.TotalPaise))
-			}
+		q := quoted{Room: o.Name, Left: o.Left}
+		var line string
+		if ro, ok := planByCode(o.Plans, roomOnlyPlan); ok {
+			q.RoomOnlyPaise = ro.Quote.TotalPaise
+			line = fmt.Sprintf("- %s: %s room only", o.Name, money.FormatINR(ro.Quote.TotalPaise))
+		} else {
+			// No room-only plan on sale: name the plan rather than call it room only.
+			line = fmt.Sprintf("- %s: %s, %s", o.Name, money.FormatINR(o.Plans[0].Quote.TotalPaise), o.Plans[0].Name)
+		}
+		if bb, ok := planByCode(o.Plans, breakfastPlan); ok && (q.RoomOnlyPaise > 0 || o.Plans[0].Code != breakfastPlan) {
+			q.BreakfastPaise = bb.Quote.TotalPaise
+			line += fmt.Sprintf(", %s with breakfast", money.FormatINR(bb.Quote.TotalPaise))
 		}
 		if o.Left <= 2 {
 			line += fmt.Sprintf(" (%d left)", o.Left)
@@ -221,20 +227,21 @@ func (s *Service) quote(ctx context.Context, message string, ex ai.Extracted) (s
 
 // pickQuoted chooses the options a quote shows: the first that are bookable, in the site's
 // order, keeping a place for the first villa so a guest weighing a villa sees its price (the
-// draft often recommends one). A guest who asked about villas sees only villas.
-func pickQuoted(opts []inventory.Option, villasOnly bool) []inventory.Option {
+// draft often recommends one). A guest who mentioned villas sees villas first, then rooms, so
+// sold-out villas never turn into "we're fully booked".
+func pickQuoted(opts []inventory.Option, villasFirst bool) []inventory.Option {
 	var rooms, villas []inventory.Option
 	for _, o := range opts {
 		if o.Status != inventory.Available || len(o.Plans) == 0 {
 			continue
 		}
-		if strings.Contains(o.Slug, "villa") {
+		if o.Kind == domain.RoomKindVilla {
 			villas = append(villas, o)
-		} else if !villasOnly {
+		} else {
 			rooms = append(rooms, o)
 		}
 	}
-	if villasOnly || len(villas) == 0 {
+	if villasFirst || len(villas) == 0 {
 		return append(villas, rooms...)[:min(maxQuoteOptions, len(villas)+len(rooms))]
 	}
 	picked := rooms[:min(maxQuoteOptions-1, len(rooms))]
@@ -249,9 +256,9 @@ func (s *Service) saveDraft(ctx context.Context, tx pgx.Tx, enquiryID uuid.UUID,
 		return err
 	}
 	actor, typ := domain.ActorAI, domain.EventDraftCreated
-	if author == "USER" {
+	if author == draftAuthorUser {
 		actor, typ = domain.ActorUser, domain.EventDraftEdited
-	} else if author == "TEMPLATE" {
+	} else if author == draftAuthorTemplate {
 		actor = domain.ActorSystem
 	}
 	return addEvent(ctx, tx, enquiryID, typ, actor, authorID, nil, map[string]any{"version": version, "source": author})
@@ -260,10 +267,10 @@ func (s *Service) saveDraft(ctx context.Context, tx pgx.Tx, enquiryID uuid.UUID,
 // draftAuthorColumn maps our three sources onto the table's AI/USER check: templates are
 // system-written, so they're stored as AI drafts and the event records the real source.
 func draftAuthorColumn(author string) string {
-	if author == "USER" {
-		return "USER"
+	if author == draftAuthorUser {
+		return draftAuthorUser
 	}
-	return "AI"
+	return draftAuthorAI
 }
 
 func factsFor(ctx context.Context, tx querier) ([]ai.Fact, error) {
@@ -315,7 +322,7 @@ func offersFor(ctx context.Context, q querier, today time.Time) ([]ai.OfferFact,
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ai.OfferFact, error) {
 		var o ai.OfferFact
-		var kind string
+		var kind domain.PromoType
 		var value int64
 		var stayFrom, stayTo, bookTo time.Time
 		var minNights int
@@ -324,8 +331,8 @@ func offersFor(ctx context.Context, q querier, today time.Time) ([]ai.OfferFact,
 			return o, err
 		}
 		o.Summary = "a fixed amount off the stay (shown at checkout)"
-		if kind == offerPercent {
-			o.Summary = fmt.Sprintf("%d%% off", value/bpsPerPercent)
+		if kind == domain.PromoPercent {
+			o.Summary = percentOff(value)
 		}
 		cond := fmt.Sprintf("Stays %s to %s, book by %s", stayFrom.Format("2 Jan 2006"), stayTo.Format("2 Jan 2006"), bookTo.Format("2 Jan 2006"))
 		if minNights > 1 {
@@ -409,4 +416,18 @@ func fromStored(raw []byte) ai.Extracted {
 	}
 	return ai.Extracted{CheckIn: day(s.CheckIn), CheckOut: day(s.CheckOut), Adults: s.Adults, Children: s.Children,
 		Rooms: s.Rooms, GuestCount: s.GuestCount, BudgetINR: s.BudgetINR, BudgetBasis: s.BudgetBasis, EventMonth: s.EventMonth}
+}
+
+func planByCode(plans []inventory.PlanQuote, code string) (inventory.PlanQuote, bool) {
+	for _, p := range plans {
+		if p.Code == code {
+			return p, true
+		}
+	}
+	return inventory.PlanQuote{}, false
+}
+
+// percentOff writes basis points as a percentage without losing a fraction: 1250 is "12.5% off".
+func percentOff(bps int64) string {
+	return strconv.FormatFloat(float64(bps)/bpsPerPercent, 'f', -1, 64) + "% off"
 }

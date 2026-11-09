@@ -19,7 +19,11 @@ export const REFRESH_PATH = '/v1/auth/refresh';
 export const NO_REFRESH_PATHS: readonly string[] = [
   REFRESH_PATH,
   '/v1/auth/staff/login',
+  '/v1/auth/staff/verify',
   '/v1/auth/otp/request',
   '/v1/auth/otp/verify',
   '/v1/auth/logout',
 ];
+
+/** How long a closed event stream waits before reconnecting. */
+export const STREAM_RETRY_MS = 5_000;

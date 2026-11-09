@@ -56,6 +56,17 @@
   overflow: hidden;
 }
 
+/* On a phone the bell sits mid-bar, so a panel hung from it would run off the screen. */
+@media (max-width: 600px) {
+  .panel {
+    position: fixed;
+    top: 64px;
+    left: 16px;
+    right: 16px;
+    width: auto;
+  }
+}
+
 .head {
   display: flex;
   align-items: center;

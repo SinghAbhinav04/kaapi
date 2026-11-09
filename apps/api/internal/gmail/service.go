@@ -27,7 +27,7 @@ import (
 // message is tried again next time (return nil to skip a message for good).
 type Inbox interface {
 	Has(ctx context.Context, messageID string) (bool, error)
-	Deliver(ctx context.Context, in Inbound) error
+	Deliver(ctx context.Context, in Inbound) (stored bool, err error)
 }
 
 type Service struct {
@@ -41,7 +41,8 @@ type Service struct {
 	inbox    Inbox
 	store    store
 
-	mu        sync.Mutex // guards the cached access token and serialises polls
+	mu        sync.Mutex // guards the cached access token; held only while refreshing it
+	pollMu    sync.Mutex // one poll or catch-up at a time (the ticker and "Sync mail" can overlap)
 	access    string
 	accessExp time.Time
 }
@@ -257,8 +258,8 @@ func (s *Service) Poll(ctx context.Context) (int, error) {
 	if !s.Configured() || s.inbox == nil {
 		return 0, nil
 	}
-	s.mu.Lock() // one poll at a time: the ticker and a "sync now" press can overlap
-	defer s.mu.Unlock()
+	s.pollMu.Lock()
+	defer s.pollMu.Unlock()
 	n, err := s.poll(ctx)
 	if err != nil && !errors.Is(err, ErrNotConnected) {
 		// Staff read this in the inbox: a known failure's own message, not its cause chain.
@@ -276,7 +277,7 @@ func (s *Service) poll(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	access, account, err := s.tokenLocked(ctx, row)
+	access, account, err := s.tokenFor(ctx, row)
 	if err != nil {
 		return 0, err
 	}
@@ -292,20 +293,13 @@ func (s *Service) poll(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	ids = uniq(ids)
-	advance := true
-	if len(ids) > maxPerPoll { // the rest come next poll; don't move past them
-		ids, advance = ids[:maxPerPoll], false
-	}
-	imported, err := s.importIDs(ctx, access, account, ids)
+	// Every message is handled before the position moves. (An earlier cap of 50 per poll left
+	// the position behind, so the next poll replayed the same 50 and never got further.)
+	imported, err := s.importIDs(ctx, access, account, uniq(ids))
 	if err != nil {
 		return imported, err
 	}
-	var next *string
-	if advance {
-		next = &latest
-	}
-	return imported, s.store.synced(ctx, s.pool, s.now(), next)
+	return imported, s.store.synced(ctx, s.pool, s.now(), &latest)
 }
 
 // CatchUp imports everything that reached the inbox since the last successful sync, however
@@ -324,9 +318,9 @@ func (s *Service) CatchUp(ctx context.Context) (int, error) {
 	if err != nil {
 		return n, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	access, account, err := s.tokenLocked(ctx, row)
+	s.pollMu.Lock()
+	defer s.pollMu.Unlock()
+	access, account, err := s.tokenFor(ctx, row)
 	if err != nil {
 		return n, err
 	}
@@ -361,10 +355,13 @@ func (s *Service) importIDs(ctx context.Context, access, account string, ids []s
 		if in.FromEmail == "" || in.FromEmail == account || in.Text == "" || in.Automated {
 			continue // our own sent copies, bounces and auto-replies, empty mail
 		}
-		if err := s.inbox.Deliver(ctx, in); err != nil {
+		stored, err := s.inbox.Deliver(ctx, in)
+		if err != nil {
 			return imported, fmt.Errorf("gmail: deliver %s: %w", id, err)
 		}
-		imported++
+		if stored {
+			imported++
+		}
 	}
 	return imported, nil
 }
@@ -414,6 +411,11 @@ func (s *Service) token(ctx context.Context) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+	return s.tokenFor(ctx, row)
+}
+
+// tokenFor is tokenLocked under the lock, for callers that already loaded the row.
+func (s *Service) tokenFor(ctx context.Context, row stored) (string, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.tokenLocked(ctx, row)

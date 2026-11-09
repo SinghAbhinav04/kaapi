@@ -1,5 +1,9 @@
 .group {
   display: inline-flex;
+  /* On a phone a long set of options scrolls sideways inside the control, not the page. */
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
   padding: 4px;
   border-radius: var(--radius-md);
   background: var(--console-panel);
@@ -10,6 +14,8 @@
 }
 
 .option {
+  flex: none;
+  white-space: nowrap;
   min-height: 34px;
   padding: 0 14px;
   border: 0;

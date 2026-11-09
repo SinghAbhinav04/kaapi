@@ -15,7 +15,6 @@ const (
 	stateTTL     = 10 * time.Minute // how long the consent screen may take
 	httpTimeout  = 20 * time.Second
 	tokenSkew    = time.Minute // refresh the access token this long before Google says it expires
-	maxPerPoll   = 50          // messages imported per poll; the rest wait for the next
 	maxCatchUp   = 2000        // a catch-up's ceiling, so one sync can't run unbounded
 	listPageSize = 100
 	// catchUpMargin re-reads a little before the last sync: Gmail's "after:" is coarse, and

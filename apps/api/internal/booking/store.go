@@ -75,6 +75,29 @@ func (store) one(ctx context.Context, q db.Querier, where string, arg any) (Book
 	return b, err
 }
 
+// deskStays lists confirmed stays that arrive or leave in [from, to).
+func (store) deskStays(ctx context.Context, q db.Querier, from, to time.Time, limit int) ([]DeskStay, error) {
+	rows, err := q.Query(ctx, `SELECT b.ref, b.guest_name, rt.name, b.check_in, b.check_out, b.rooms, b.adults, b.children
+		FROM bookings b JOIN room_types rt ON rt.id = b.room_type_id
+		WHERE b.status = $3 AND ((b.check_in >= $1 AND b.check_in < $2) OR (b.check_out >= $1 AND b.check_out < $2))
+		ORDER BY b.check_in, b.ref LIMIT $4`, from, to, domain.BookingConfirmed, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (DeskStay, error) {
+		var d DeskStay
+		return d, r.Scan(&d.Ref, pii.Into(&d.GuestName), &d.RoomType, &d.CheckIn, &d.CheckOut, &d.Rooms, &d.Adults, &d.Children)
+	})
+}
+
+// deskCounts fills tonight's website occupancy and the refunds still owed.
+func (store) deskCounts(ctx context.Context, q db.Querier, today time.Time, d *Desk) error {
+	return q.QueryRow(ctx, `SELECT coalesce(sum(sold), 0)::int, coalesce(sum(allotment), 0)::int,
+		(SELECT count(*) FROM bookings WHERE status = $2)::int
+		FROM night_inventory WHERE date = $1`, today, domain.BookingRefundPending).
+		Scan(&d.SoldTonight, &d.AllotmentTonight, &d.RefundsPending)
+}
+
 func (store) many(ctx context.Context, q db.Querier, sql string, args ...any) ([]Booking, error) {
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {

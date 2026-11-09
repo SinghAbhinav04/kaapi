@@ -544,10 +544,37 @@ type DashboardResponse struct {
 	DirectBookingsThisWeek  int                 `json:"direct_bookings_this_week"`
 	DirectRevenueThisWeek   int64               `json:"direct_revenue_this_week_paise"`
 	Overbookings            int                 `json:"overbookings"`
+	Today                   string              `json:"today"`
+	Overdue                 []WaitingDTO        `json:"overdue"`
+	OverdueCount            int                 `json:"overdue_count"`
+	Stays                   []DeskStayDTO       `json:"stays"`
+	SoldTonight             int                 `json:"sold_tonight"`
+	AllotmentTonight        int                 `json:"allotment_tonight"`
+	RefundsPending          int                 `json:"refunds_pending"`
+}
+
+type WaitingDTO struct {
+	Ref        string           `json:"ref"`
+	Lane       *domain.Lane     `json:"lane"`
+	Category   *domain.Category `json:"category"`
+	Priority   domain.Priority  `json:"priority"`
+	ReceivedAt time.Time        `json:"received_at"`
+	Snippet    string           `json:"snippet"`
+}
+
+type DeskStayDTO struct {
+	Ref       string `json:"ref"`
+	GuestName string `json:"guest_name"`
+	RoomType  string `json:"room_type"`
+	CheckIn   string `json:"check_in"`
+	CheckOut  string `json:"check_out"`
+	Rooms     int    `json:"rooms"`
+	Adults    int    `json:"adults"`
+	Children  int    `json:"children"`
 }
 
 // firstReplyTargetMinutes is the brief's success measure for enquiries.
-const firstReplyTargetMinutes = 30
+var firstReplyTargetMinutes = int(enquiry.FirstReplyTarget.Minutes())
 
 // ---- mappers
 
@@ -702,11 +729,24 @@ func enquiryDTO(e enquiry.Enquiry) EnquiryDTO {
 	return out
 }
 
-func dashboardDTO(s enquiry.Stats, aiEnabled bool) DashboardResponse {
-	return DashboardResponse{AIEnabled: aiEnabled, MedianFirstReplyMinutes: s.MedianFirstReplyMinutes,
+func dashboardDTO(s enquiry.Stats, d booking.Desk, aiEnabled bool) DashboardResponse {
+	r := DashboardResponse{AIEnabled: aiEnabled, MedianFirstReplyMinutes: s.MedianFirstReplyMinutes,
 		FirstReplyTargetMinutes: firstReplyTargetMinutes, RepliedThisWeek: s.RepliedThisWeek, OpenByLane: s.OpenByLane,
 		OpenComplaints: s.OpenComplaints, AwaitingAI: s.AwaitingAI, AICorrectionRate: s.AICorrectionRate,
-		DirectBookingsThisWeek: s.DirectBookingsThisWeek, DirectRevenueThisWeek: s.DirectRevenueThisWeek, Overbookings: s.Overbookings}
+		DirectBookingsThisWeek: s.DirectBookingsThisWeek, DirectRevenueThisWeek: s.DirectRevenueThisWeek, Overbookings: s.Overbookings,
+		Today: d.Today.Format(time.DateOnly), Overdue: make([]WaitingDTO, 0, len(s.Overdue)), OverdueCount: s.OverdueCount,
+		Stays: make([]DeskStayDTO, 0, len(d.Stays)), SoldTonight: d.SoldTonight, AllotmentTonight: d.AllotmentTonight,
+		RefundsPending: d.RefundsPending}
+	for _, w := range s.Overdue {
+		r.Overdue = append(r.Overdue, WaitingDTO{Ref: w.Ref, Lane: w.Lane, Category: w.Category, Priority: w.Priority,
+			ReceivedAt: w.ReceivedAt, Snippet: w.Snippet})
+	}
+	for _, st := range d.Stays {
+		r.Stays = append(r.Stays, DeskStayDTO{Ref: st.Ref, GuestName: st.GuestName, RoomType: st.RoomType,
+			CheckIn: st.CheckIn.Format(time.DateOnly), CheckOut: st.CheckOut.Format(time.DateOnly),
+			Rooms: st.Rooms, Adults: st.Adults, Children: st.Children})
+	}
+	return r
 }
 
 // RetentionResponse reports one retention sweep.

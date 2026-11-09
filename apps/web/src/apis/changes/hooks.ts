@@ -1,18 +1,17 @@
 'use client';
 
 import { useQueryClient, type QueryKey } from '@tanstack/react-query';
-import { useEffect } from 'react';
 
 import { analyticsKeys } from '@/apis/analytics';
 import { bookingKeys } from '@/apis/booking';
 import { enquiryKeys } from '@/apis/enquiries';
-import { BROWSER_BASE_URL } from '@/apis/http';
+import { useEventStream } from '@/apis/http';
 import { notificationKeys } from '@/apis/notifications';
 import { offersKeys } from '@/apis/offers';
 import { operationsKeys } from '@/apis/operations';
 import { ratesKeys } from '@/apis/rates';
 
-import { CHANGES_PATHS, CHANGES_RETRY_MS } from './const';
+import { CHANGES_PATHS } from './const';
 import type { ChangeTopic } from './types';
 
 /** What each topic makes stale in the staff console. */
@@ -31,25 +30,9 @@ const AFFECTED: Record<Exclude<ChangeTopic, '*'>, readonly QueryKey[]> = {
  */
 export function useDataChanges(enabled: boolean) {
   const queryClient = useQueryClient();
-  useEffect(() => {
-    if (!enabled) return;
-    let source: EventSource | null = null;
-    let retry = 0;
-    const refetch = (topic: string) => {
-      const keys = topic === '*' ? Object.values(AFFECTED).flat() : (AFFECTED[topic as keyof typeof AFFECTED] ?? []);
-      for (const queryKey of keys) void queryClient.invalidateQueries({ queryKey });
-    };
-    const open = () => {
-      source = new EventSource(`${BROWSER_BASE_URL}${CHANGES_PATHS.stream}`);
-      source.addEventListener('change', (e) => refetch((e as MessageEvent<string>).data));
-      source.onerror = () => {
-        if (source?.readyState === EventSource.CLOSED) retry = window.setTimeout(open, CHANGES_RETRY_MS);
-      };
-    };
-    open();
-    return () => {
-      window.clearTimeout(retry);
-      source?.close();
-    };
-  }, [enabled, queryClient]);
+  const refetch = (topic: string) => {
+    const keys = topic === '*' ? Object.values(AFFECTED).flat() : (AFFECTED[topic as keyof typeof AFFECTED] ?? []);
+    for (const queryKey of keys) void queryClient.invalidateQueries({ queryKey });
+  };
+  useEventStream(CHANGES_PATHS.stream, { change: refetch }, () => refetch('*'), enabled);
 }

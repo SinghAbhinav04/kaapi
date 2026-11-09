@@ -5,6 +5,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"kaapi/api/internal/auth"
 	"kaapi/api/internal/domain"
 	api "kaapi/api/internal/transport/httpapi"
@@ -125,6 +127,50 @@ func TestAdminManagesRolesAndPeople(t *testing.T) {
 	staffLogin(t, gm, "gm@kaapiestate.test", nil)
 	if r := gm.Do(http.MethodGet, "/v1/staff/access", nil, nil); r.Status != http.StatusForbidden {
 		t.Fatalf("gm on access console: %d, want 403", r.Status)
+	}
+}
+
+// users:manage lets someone run the team, not promote themselves: the Administrator role and
+// administrators' accounts stay with administrators, and nobody hands out more than they hold.
+func TestManagingPeopleIsNotAWayToAdmin(t *testing.T) {
+	s := apitest.New(t)
+	staffLogin(t, s, "admin@kaapiestate.test", nil)
+	var lead api.RoleResponse
+	s.Do(http.MethodPost, "/v1/staff/roles", api.RoleRequest{Name: "People lead", Team: "GM",
+		Permissions: []auth.Permission{auth.PermUsersManage, auth.PermEnquiriesRead}}, nil).JSON(t, &lead)
+	var member api.MemberResponse
+	s.Do(http.MethodPost, "/v1/staff/users", api.CreateMemberRequest{Email: "lead@kaapiestate.test", Name: "Lead",
+		RoleID: lead.Role.ID, Password: "people-lead-pass-1"}, nil).JSON(t, &member)
+	var overview api.AccessResponse
+	s.Do(http.MethodGet, "/v1/staff/access", nil, nil).JSON(t, &overview)
+	var adminRole uuid.UUID
+	for _, r := range overview.Roles {
+		if r.Key == "ADMIN" {
+			adminRole = r.ID
+		}
+	}
+	var people api.MembersResponse
+	s.Do(http.MethodGet, "/v1/staff/users", nil, nil).JSON(t, &people)
+	var adminID uuid.UUID
+	for _, m := range people.Members {
+		if m.Email == "admin@kaapiestate.test" {
+			adminID = m.ID
+		}
+	}
+
+	l := s.NewSession()
+	staffSignIn(t, l, "lead@kaapiestate.test", "people-lead-pass-1", nil)
+	pw := "taken-over-pass-1"
+	for name, r := range map[string]apitest.Response{
+		"promote self":       l.Do(http.MethodPatch, "/v1/staff/users/"+member.Member.ID.String(), api.UpdateMemberRequest{RoleID: &adminRole}, nil),
+		"create an admin":    l.Do(http.MethodPost, "/v1/staff/users", api.CreateMemberRequest{Email: "x@kaapiestate.test", Name: "Xavier", RoleID: adminRole, Password: pw}, nil),
+		"reset admin's pass": l.Do(http.MethodPatch, "/v1/staff/users/"+adminID.String(), api.UpdateMemberRequest{Password: &pw}, nil),
+		"grant beyond own": l.Do(http.MethodPut, "/v1/staff/roles/"+lead.Role.ID.String(), api.RoleRequest{Name: "People lead", Team: "GM",
+			Permissions: []auth.Permission{auth.PermUsersManage, auth.PermEnquiriesRead, auth.PermRatesWrite}}, nil),
+	} {
+		if r.Status != http.StatusForbidden {
+			t.Errorf("%s: %d, want 403", name, r.Status)
+		}
 	}
 }
 

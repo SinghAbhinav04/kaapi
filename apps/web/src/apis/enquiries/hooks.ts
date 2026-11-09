@@ -1,11 +1,9 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { http, useEventStream } from '@/apis/http';
 
-import { BROWSER_BASE_URL, http } from '@/apis/http';
-
-import { ENQUIRY_PATHS, enquiryKeys, STREAM_RETRY_MS } from './const';
+import { ENQUIRY_PATHS, enquiryKeys } from './const';
 import { enquiriesApi } from './enquiries.api';
 import { enquiryQueries } from './queries';
 import type {
@@ -92,28 +90,20 @@ export const useRetryAi = (ref: string) => useEnquiryAction(ref, () => enquiries
  */
 export function useInboxStream() {
   const queryClient = useQueryClient();
-  useEffect(() => {
-    let source: EventSource | null = null;
-    let retry = 0;
-    const open = () => {
-      source = new EventSource(`${BROWSER_BASE_URL}${ENQUIRY_PATHS.stream}`);
-      source.addEventListener('inbox', (e) => {
-        void queryClient.invalidateQueries({ queryKey: enquiryKeys.lists() });
-        void queryClient.invalidateQueries({ queryKey: enquiryKeys.counts() });
-        void queryClient.invalidateQueries({ queryKey: enquiryKeys.detail((e as MessageEvent<string>).data) });
-      });
-      source.onerror = () => {
-        if (source?.readyState === EventSource.CLOSED) {
-          retry = window.setTimeout(open, STREAM_RETRY_MS);
-        }
-      };
-    };
-    open();
-    return () => {
-      window.clearTimeout(retry);
-      source?.close();
-    };
-  }, [queryClient]);
+  const refreshLists = () => {
+    void queryClient.invalidateQueries({ queryKey: enquiryKeys.lists() });
+    void queryClient.invalidateQueries({ queryKey: enquiryKeys.counts() });
+  };
+  useEventStream(
+    ENQUIRY_PATHS.stream,
+    {
+      inbox: (ref) => {
+        refreshLists();
+        void queryClient.invalidateQueries({ queryKey: enquiryKeys.detail(ref) });
+      },
+    },
+    () => void queryClient.invalidateQueries({ queryKey: enquiryKeys.all }),
+  );
 }
 
 /** Imports everything that reached the mailbox since the last sync (after downtime too). */

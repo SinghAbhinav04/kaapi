@@ -111,6 +111,16 @@ func (f *Feed) publish(topic string) {
 		select {
 		case ch <- topic:
 		default:
+			// A slow subscriber's buffer is full. Dropping this topic would leave whatever it
+			// covers stale, so swap the oldest queued one for "*": refetch everything.
+			select {
+			case <-ch:
+			default:
+			}
+			select {
+			case ch <- All:
+			default:
+			}
 		}
 	}
 	f.mu.Unlock()

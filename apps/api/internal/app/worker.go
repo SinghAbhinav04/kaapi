@@ -143,9 +143,10 @@ func (m mailInbox) Has(ctx context.Context, messageID string) (bool, error) {
 	return m.Enquiries.HasExternal(ctx, messageID)
 }
 
-// Deliver turns an imported email into an enquiry. A message the inbox refuses for a reason
-// that won't change on retry (no text, bad channel) is skipped, not retried forever.
-func (m mailInbox) Deliver(ctx context.Context, in gmail.Inbound) error {
+// Deliver turns an imported email into an enquiry and reports whether it was stored. A
+// message the inbox refuses for a reason that won't change on retry (no text, bad channel)
+// is skipped, not retried forever.
+func (m mailInbox) Deliver(ctx context.Context, in gmail.Inbound) (bool, error) {
 	a := m.App
 	_, err := a.Enquiries.Intake(ctx, enquiry.IntakeInput{Channel: domain.ChannelEmail, SenderName: in.FromName,
 		SenderEmail: in.FromEmail, Subject: in.Subject, Text: in.Text,
@@ -153,7 +154,7 @@ func (m mailInbox) Deliver(ctx context.Context, in gmail.Inbound) error {
 	var ae *apperr.Error
 	if errors.As(err, &ae) && ae.Status() < http.StatusInternalServerError {
 		a.Log.Warn("gmail message skipped", "id", in.MessageID, "reason", ae.Message)
-		return nil
+		return false, nil
 	}
-	return err
+	return err == nil, err
 }

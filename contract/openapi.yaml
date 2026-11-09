@@ -14,7 +14,7 @@ info:
       for `/v1/staff`; the web app and native shells elsewhere) and a rate limit, counted per
       signed-in account or per client IP. Over the limit: `429 RATE_LIMITED` with `Retry-After`
       (seconds) and `details.retry_after_seconds`.
-    - Every response carries `Server-Timing: db;dur=…;desc="N queries", app;dur=…` (milliseconds).
+    - Every response except `/v1/auth/*` carries `Server-Timing: db;dur=…;desc="N queries", app;dur=…` (milliseconds); sign-in routes omit it so their database work can't reveal which emails have accounts.
     - A token is accepted only while its session is live: logging out, a refresh rotating it,
       or the account being deactivated ends it at once.
 
@@ -732,7 +732,7 @@ paths:
   /v1/staff/dashboard:
     get:
       tags: [staff]
-      summary: The numbers behind the brief's success measures.
+      summary: The Today page. What needs a reply now, who arrives and leaves this week, tonight's occupancy, and the brief's weekly goals.
       security: [{ cookieAuth: [] }, { bearerAuth: [] }]
       responses:
         "200":
@@ -2059,7 +2059,8 @@ components:
     DashboardResponse:
       type: object
       required: [ai_enabled, median_first_reply_minutes, first_reply_target_minutes, replied_this_week, open_by_lane,
-        open_complaints, awaiting_ai, ai_correction_rate, direct_bookings_this_week, direct_revenue_this_week_paise, overbookings]
+        open_complaints, awaiting_ai, ai_correction_rate, direct_bookings_this_week, direct_revenue_this_week_paise, overbookings,
+        today, overdue, overdue_count, stays, sold_tonight, allotment_tonight, refunds_pending]
       properties:
         ai_enabled: { type: boolean }
         median_first_reply_minutes: { type: number, nullable: true }
@@ -2072,3 +2073,36 @@ components:
         direct_bookings_this_week: { type: integer }
         direct_revenue_this_week_paise: { $ref: "#/components/schemas/Paise" }
         overbookings: { type: integer, description: "Nights where sold exceeds allotment. The database makes this impossible." }
+        today: { type: string, format: date, description: "The estate's calendar date (IST)." }
+        overdue:
+          type: array
+          description: Open enquiries with no reply past the first-reply target, urgent first, then longest waiting (at most 6).
+          items:
+            type: object
+            required: [ref, lane, category, priority, received_at, snippet]
+            properties:
+              ref: { type: string }
+              lane: { type: string, enum: [RESERVATIONS, SALES, GM, UNSORTED], nullable: true }
+              category: { type: string, enum: [ROOM, WEDDING, OFFSITE, COMPLAINT, OTHER], nullable: true }
+              priority: { type: string, enum: [NORMAL, HIGH] }
+              received_at: { type: string, format: date-time }
+              snippet: { type: string }
+        overdue_count: { type: integer }
+        stays:
+          type: array
+          description: Confirmed stays arriving or leaving today and the next six days, by check-in.
+          items:
+            type: object
+            required: [ref, guest_name, room_type, check_in, check_out, rooms, adults, children]
+            properties:
+              ref: { type: string }
+              guest_name: { type: string }
+              room_type: { type: string }
+              check_in: { type: string, format: date }
+              check_out: { type: string, format: date }
+              rooms: { type: integer }
+              adults: { type: integer }
+              children: { type: integer }
+        sold_tonight: { type: integer, description: "Website rooms sold for tonight." }
+        allotment_tonight: { type: integer }
+        refunds_pending: { type: integer }

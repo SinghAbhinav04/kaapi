@@ -70,8 +70,8 @@ func (s *Service) Intake(ctx context.Context, in IntakeInput) (string, error) {
 	case !in.Channel.Valid():
 		return "", ErrBadChannel
 	}
-	if len([]rune(in.Text)) > 5000 {
-		in.Text = string([]rune(in.Text)[:5000])
+	if len([]rune(in.Text)) > maxIntakeRunes {
+		in.Text = string([]rune(in.Text)[:maxIntakeRunes])
 	}
 	hash := DedupeHash(in.Text)
 	var ref string
@@ -113,7 +113,7 @@ func (s *Service) Intake(ctx context.Context, in IntakeInput) (string, error) {
 		}
 		var recent int
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM enquiries WHERE sender_hash = $1
-			AND received_at > now() - interval '1 hour'`, sender).Scan(&recent); err != nil {
+			AND received_at > now() - make_interval(secs => $2)`, sender, intakeWindow.Seconds()).Scan(&recent); err != nil {
 			return err
 		}
 		// Imported mail already passed the mailbox's spam filter, and refusing it would lose it.
@@ -156,10 +156,15 @@ func addFollowUp(ctx context.Context, tx pgx.Tx, id uuid.UUID, ref string, in In
 		return err
 	}
 	var lane *domain.Lane
+	var spam bool
 	if err := tx.QueryRow(ctx, `UPDATE enquiries SET status = CASE WHEN status = $2 THEN status ELSE $3 END,
 			rfc_message_id = coalesce($4, rfc_message_id), updated_at = now()
-		WHERE id = $1 RETURNING lane`, id, domain.EnquirySpam, domain.EnquiryNew, nilIfEmpty(ext.RFCMessageID)).Scan(&lane); err != nil {
+		WHERE id = $1 RETURNING lane, status = $2`, id, domain.EnquirySpam, domain.EnquiryNew, nilIfEmpty(ext.RFCMessageID)).Scan(&lane, &spam); err != nil {
 		return err
+	}
+	if spam {
+		// Kept for the record, but nobody is alerted about spam.
+		return addEvent(ctx, tx, id, domain.EventReceived, domain.ActorSystem, nil, nil, map[string]any{"channel": in.Channel, "follow_up": true})
 	}
 	team := domain.RoleGM
 	if lane != nil {
@@ -210,7 +215,8 @@ func (s *Service) Run(ctx context.Context, tick time.Duration, onError func(erro
 }
 
 // ProcessPending classifies, routes and drafts up to limit queued enquiries, oldest first.
-// Each one is claimed with FOR UPDATE SKIP LOCKED, so several workers never collide.
+// Within a process one runs at a time; across processes the write re-checks the enquiry is
+// still queued, so a duplicate pick costs one model call, never a double write.
 func (s *Service) ProcessPending(ctx context.Context, limit int) (int, error) {
 	done := 0
 	for done < limit {
@@ -237,9 +243,11 @@ func (s *Service) processOne(ctx context.Context) (bool, error) {
 		text       string
 		senderName pii.NullText
 		status     domain.EnquiryStatus
+		routed     *domain.Lane // the lane a person chose, if anyone did
 	)
-	err := s.pool.QueryRow(ctx, `SELECT id, raw_text, sender_name, status FROM enquiries WHERE ai_status = $1
-		ORDER BY received_at LIMIT 1`, domain.AIPending).Scan(&id, &text, &senderName, &status)
+	err := s.pool.QueryRow(ctx, `SELECT id, raw_text, sender_name, status, CASE WHEN routed_by = $2 THEN lane END
+		FROM enquiries WHERE ai_status = $1 ORDER BY received_at LIMIT 1`, domain.AIPending, domain.RoutedByHuman).
+		Scan(&id, &text, &senderName, &status, &routed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -251,15 +259,18 @@ func (s *Service) processOne(ctx context.Context) (bool, error) {
 		return true, err
 	}
 	lane, priority := Route(res)
+	if routed != nil {
+		lane = *routed // a person already chose the lane; a retry must not undo it
+	}
 	owner, err := ownerFor(ctx, s.pool, lane)
 	if err != nil {
-		return true, err
+		return true, s.park(ctx, id, err)
 	}
 	wantsDraft := status == domain.EnquiryNew || status == domain.EnquiryInProgress
 	var p prose
 	if wantsDraft {
 		if p, err = s.writeProse(ctx, s.pool, text, deref(senderName.Text), res.Category, res.Extracted, lane); err != nil {
-			return true, err
+			return true, s.park(ctx, id, err)
 		}
 	}
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -272,11 +283,17 @@ func (s *Service) processOne(ctx context.Context) (bool, error) {
 			return err
 		}
 		extracted, _ := json.Marshal(toStored(res.Extracted))
+		// A person's routing (lane, owner, priority) survives a retry; the AI's reading is refreshed.
 		if _, err := tx.Exec(ctx, `UPDATE enquiries SET language = $2, category = $3, secondary_category = $4, confidence = $5,
-			extracted = $6, summary = $7, lane = $8, assigned_user_id = $9, priority = $10, routed_by = $11, ai_status = $12,
-			ai_model = $13, prompt_version = $14, ai_latency_ms = $15, updated_at = now() WHERE id = $1`,
+			extracted = $6, summary = $7, ai_status = $12, ai_model = $13, prompt_version = $14, ai_latency_ms = $15, updated_at = now(),
+			lane = CASE WHEN routed_by = $16 THEN lane ELSE $8 END,
+			assigned_user_id = CASE WHEN routed_by = $16 THEN assigned_user_id ELSE $9 END,
+			priority = CASE WHEN routed_by = $16 THEN priority ELSE $10 END,
+			routed_by = CASE WHEN routed_by = $16 THEN routed_by ELSE $11 END
+			WHERE id = $1`,
 			id, nilIfEmpty(res.Language), res.Category, res.Secondary, round3(res.Confidence), extracted, nilIfEmpty(res.Summary),
-			lane, owner, priority, domain.RoutedByRule, res.Status, nilIfEmpty(res.Model), ai.PromptVersion, res.LatencyMS); err != nil {
+			lane, owner, priority, domain.RoutedByRule, res.Status, nilIfEmpty(res.Model), ai.PromptVersion, res.LatencyMS,
+			domain.RoutedByHuman); err != nil {
 			return err
 		}
 		actor := domain.ActorAI
@@ -295,15 +312,8 @@ func (s *Service) processOne(ctx context.Context) (bool, error) {
 			return nil
 		}
 		// On a retry, don't bury a staff member's edit or a reply already sent.
-		var author *string
-		var sent *time.Time
-		err = tx.QueryRow(ctx, `SELECT author, sent_at FROM enquiry_drafts WHERE enquiry_id = $1 ORDER BY version DESC LIMIT 1`, id).
-			Scan(&author, &sent)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		if keep, err := keepsLatestDraft(ctx, tx, id); err != nil || keep {
 			return err
-		}
-		if sent != nil || (author != nil && *author == "USER") {
-			return nil
 		}
 		next, err := nextVersion(ctx, tx, id)
 		if err != nil {
@@ -311,13 +321,32 @@ func (s *Service) processOne(ctx context.Context) (bool, error) {
 		}
 		return s.storeDraft(ctx, tx, id, next, p, text, deref(senderName.Text), res.Category, res.Extracted)
 	})
-	if err != nil && ctx.Err() == nil {
-		// Park it as FAILED so one bad message can't block the queue; staff can retry it.
-		if _, ferr := s.pool.Exec(ctx, `UPDATE enquiries SET ai_status = $2, updated_at = now() WHERE id = $1`, id, domain.AIFailed); ferr != nil {
-			return true, errors.Join(err, ferr)
-		}
+	return true, s.park(ctx, id, err)
+}
+
+// keepsLatestDraft reports whether the newest draft must stay on top: a person wrote it, or
+// it was already sent. A fresh AI draft would otherwise replace what staff are about to send.
+func keepsLatestDraft(ctx context.Context, q db.Querier, id uuid.UUID) (bool, error) {
+	var author *string
+	var sent *time.Time
+	err := q.QueryRow(ctx, `SELECT author, sent_at FROM enquiry_drafts WHERE enquiry_id = $1 ORDER BY version DESC LIMIT 1`, id).
+		Scan(&author, &sent)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
 	}
-	return true, err
+	return sent != nil || (author != nil && *author == draftAuthorUser), err
+}
+
+// park marks an enquiry FAILED after err, so one bad message can't block the queue; staff
+// can retry it. A nil err, or a shutdown, leaves it queued.
+func (s *Service) park(ctx context.Context, id uuid.UUID, err error) error {
+	if err == nil || ctx.Err() != nil {
+		return err
+	}
+	if _, ferr := s.pool.Exec(ctx, `UPDATE enquiries SET ai_status = $2, updated_at = now() WHERE id = $1`, id, domain.AIFailed); ferr != nil {
+		return errors.Join(err, ferr)
+	}
+	return err
 }
 
 // Route is a rule table, not a model decision: the category picks the lane, an unsure
@@ -422,14 +451,7 @@ func (s *Service) alerts(ctx context.Context, tx pgx.Tx, id uuid.UUID, r ai.Resu
 	return nil
 }
 
-func (s *Service) today() time.Time {
-	loc, err := time.LoadLocation("Asia/Kolkata")
-	if err != nil {
-		loc = time.FixedZone("IST", 5*3600+1800)
-	}
-	t := s.now().In(loc)
-	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
-}
+func (s *Service) today() time.Time { return domain.ResortToday(s.now()) }
 
 // ---- helpers
 

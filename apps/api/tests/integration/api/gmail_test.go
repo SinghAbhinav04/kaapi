@@ -87,7 +87,7 @@ func (f *fakeGoogle) handler(t *testing.T) http.Handler {
 		_ = json.NewEncoder(w).Encode(map[string]any{"messages": msgs})
 	})
 	mux.HandleFunc("GET /gmail/v1/users/me/messages/{id}", func(w http.ResponseWriter, r *http.Request) {
-		from, labels := "Asha Rao <asha@example.test>", []string{"INBOX", "UNREAD"}
+		from, labels := "Asha Rao <asha@raomail.in>", []string{"INBOX", "UNREAD"}
 		if r.PathValue("id") == "own" { // our own sent copy must never become an enquiry
 			from, labels = "Kaapi <stay@kaapiestate.test>", []string{"SENT"}
 		}
@@ -208,7 +208,7 @@ func TestGmailConnectImportReplyAndCompose(t *testing.T) {
 	}
 	reply := fake.sent[0]
 	if reply["threadId"] != "t1" || !strings.Contains(reply["raw"], "In-Reply-To: <abc@mail.example.test>") ||
-		!strings.Contains(reply["raw"], "To: asha@example.test") || !strings.Contains(reply["raw"], "Subject: Re: Room for 14-16 Nov") {
+		!strings.Contains(reply["raw"], "To: asha@raomail.in") || !strings.Contains(reply["raw"], "Subject: Re: Room for 14-16 Nov") {
 		t.Fatalf("reply not threaded:\n%s", reply["raw"])
 	}
 	var status string
@@ -257,11 +257,17 @@ func TestGmailConnectImportReplyAndCompose(t *testing.T) {
 
 	// Compose: a new message from scratch.
 	var composed api.OutboxMessageResponse
-	r := s.Do(http.MethodPost, "/v1/staff/messages", api.ComposeRequest{To: "planner@example.test", Subject: "Your wedding dates", Body: "Hello"}, nil)
+	r := s.Do(http.MethodPost, "/v1/staff/messages", api.ComposeRequest{To: "planner@weddingco.in", Subject: "Your wedding dates", Body: "Hello"}, nil)
 	r.JSON(t, &composed)
 	if r.Status != http.StatusCreated || composed.Message.Status != "SENT" || composed.Message.Kind != "STAFF_MESSAGE" || len(fake.sent) != 3 ||
 		!strings.HasSuffix(composed.Message.Body, "System\nKaapi Estate") {
 		t.Fatalf("compose: %d %+v sends=%d", r.Status, composed.Message, len(fake.sent))
+	}
+	// A reserved test address can't receive mail: recorded, never handed to Gmail.
+	r = s.Do(http.MethodPost, "/v1/staff/messages", api.ComposeRequest{To: "planner@example.test", Subject: "Dates", Body: "Hello"}, nil)
+	r.JSON(t, &composed)
+	if r.Status != http.StatusCreated || composed.Message.Status != "SIMULATED" || len(fake.sent) != 3 {
+		t.Fatalf("compose to a reserved domain: %d %+v sends=%d", r.Status, composed.Message, len(fake.sent))
 	}
 	if r := s.Do(http.MethodPost, "/v1/staff/messages", api.ComposeRequest{To: "not an email", Subject: "x", Body: "y"}, nil); r.Status != http.StatusUnprocessableEntity {
 		t.Fatalf("bad recipient: %d", r.Status)

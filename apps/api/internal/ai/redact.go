@@ -41,8 +41,16 @@ func Redact(text, senderName string) string {
 		if len([]rune(part)) < 3 {
 			continue
 		}
-		re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(part) + `\b`)
-		out = re.ReplaceAllString(out, tokenName)
+		// Go's \b knows only ASCII letters, so "José" or a Kannada name would never match:
+		// the edges are spelled out with Unicode classes instead.
+		re := regexp.MustCompile(`(?i)(^|` + notWordRune + `)` + regexp.QuoteMeta(part) + `(` + notWordRune + `|$)`)
+		// A match consumes its edge characters, so back-to-back repeats need another pass.
+		for prev := ""; prev != out; {
+			prev, out = out, re.ReplaceAllString(out, "${1}"+tokenName+"${2}")
+		}
 	}
 	return out
 }
+
+// notWordRune is any character that can't be part of a name, in any script.
+const notWordRune = `[^\p{L}\p{M}\p{N}_]`

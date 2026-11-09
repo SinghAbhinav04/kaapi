@@ -54,6 +54,7 @@ type Offer struct {
 	StayTo      time.Time
 	BookTo      time.Time
 	MinNights   int
+	AutoApply   bool // applies by itself at checkout; no code to type
 }
 
 const (

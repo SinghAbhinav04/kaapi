@@ -93,7 +93,13 @@ func (s *Service) VerifyToken(ctx context.Context, holdID uuid.UUID, token strin
 }
 
 // Release gives the rooms back early, for example when the guest leaves checkout.
+// A hold with a booking waiting for its payment is kept: the payment may already be on its
+// way, and releasing the room would send it to a refund. It runs out on its own if unpaid.
 func (s *Service) Release(ctx context.Context, holdID uuid.UUID) error {
+	paying, err := store{}.awaitingPayment(ctx, s.pool, holdID)
+	if err != nil || paying {
+		return err
+	}
 	released, err := store{}.release(ctx, s.pool, holdID)
 	if err != nil {
 		return err

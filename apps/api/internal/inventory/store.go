@@ -34,6 +34,20 @@ func (store) lockNights(ctx context.Context, q db.Querier, roomTypeID uuid.UUID,
 	})
 }
 
+// departuresClosed lists the room types that take no departures on day, for a search.
+func (store) departuresClosed(ctx context.Context, q Querier, day time.Time) (map[uuid.UUID]bool, error) {
+	rows, err := q.Query(ctx, `SELECT room_type_id FROM night_inventory WHERE date = $1 AND closed_to_departure`, day)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	out := make(map[uuid.UUID]bool, len(ids))
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out, err
+}
+
 // closedToDeparture reports the departure-day rule; false when that night isn't loaded.
 func (store) closedToDeparture(ctx context.Context, q db.Querier, roomTypeID uuid.UUID, day time.Time) (bool, error) {
 	var ctd bool
@@ -84,6 +98,14 @@ func (store) release(ctx context.Context, q db.Querier, id uuid.UUID) (bool, err
 	return err == nil && tag.RowsAffected() == 1, err
 }
 
+// awaitingPayment reports whether a booking on this hold is waiting for its payment.
+func (store) awaitingPayment(ctx context.Context, q db.Querier, holdID uuid.UUID) (bool, error) {
+	var ok bool
+	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM bookings WHERE hold_id = $1 AND status = $2)`,
+		holdID, domain.BookingPendingPayment).Scan(&ok)
+	return ok, err
+}
+
 // heldStay is a hold as confirming it needs, locked.
 type heldStay struct {
 	roomTypeID uuid.UUID
@@ -124,17 +146,18 @@ func (store) sellNight(ctx context.Context, q db.Querier, roomTypeID, bookingID 
 type searchRoom struct {
 	id                              uuid.UUID
 	slug, name                      string
+	kind                            domain.RoomKind
 	baseOcc, maxAdults, maxChildren int
 }
 
 func (store) searchRooms(ctx context.Context, q Querier) ([]searchRoom, error) {
-	rows, err := q.Query(ctx, `SELECT id, slug, name, base_occupancy, max_adults, max_children FROM room_types WHERE is_active ORDER BY sort`)
+	rows, err := q.Query(ctx, `SELECT id, slug, name, kind, base_occupancy, max_adults, max_children FROM room_types WHERE is_active ORDER BY sort`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (searchRoom, error) {
 		var x searchRoom
-		return x, r.Scan(&x.id, &x.slug, &x.name, &x.baseOcc, &x.maxAdults, &x.maxChildren)
+		return x, r.Scan(&x.id, &x.slug, &x.name, &x.kind, &x.baseOcc, &x.maxAdults, &x.maxChildren)
 	})
 }
 
@@ -211,7 +234,7 @@ func (store) nightsByRoom(ctx context.Context, q Querier, from, to time.Time) (m
 	rows, err := q.Query(ctx, `
 		SELECT ni.room_type_id, ni.date,
 		       ni.allotment - ni.sold - coalesce(h.held, 0) AS left,
-		       ni.min_stay, ni.stop_sell, ni.closed_to_arrival
+		       ni.min_stay, ni.stop_sell, ni.closed_to_arrival, ni.closed_to_departure
 		FROM night_inventory ni
 		LEFT JOIN LATERAL (
 			SELECT sum(rooms)::int AS held FROM holds
@@ -228,7 +251,7 @@ func (store) nightsByRoom(ctx context.Context, q Querier, from, to time.Time) (m
 	for rows.Next() {
 		var id uuid.UUID
 		var n nightAvail
-		if err := rows.Scan(&id, &n.date, &n.left, &n.minStay, &n.stopSell, &n.cta); err != nil {
+		if err := rows.Scan(&id, &n.date, &n.left, &n.minStay, &n.stopSell, &n.cta, &n.ctd); err != nil {
 			return nil, err
 		}
 		out[id] = append(out[id], n)

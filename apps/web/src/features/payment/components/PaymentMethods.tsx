@@ -42,17 +42,22 @@ function Upi({ amountPaise, bookingRef, busy, onPay }: { amountPaise: number; bo
     };
   }, [link]);
 
-  // Test mode stands in for the bank: a few seconds after the code shows, the "scan" succeeds.
+  // Test mode stands in for the bank: a few seconds after the code shows, the "scan" succeeds,
+  // once. Any other payment attempt (a decline, the UPI ID) ends the countdown for good, and a
+  // failed attempt is never retried by itself.
+  const [stopped, setStopped] = useState(false);
   const paid = useEffectEvent(() => onPay());
   useEffect(() => {
-    if (!qr || busy) return;
-    if (left <= 0) {
-      paid();
-      return;
-    }
-    const t = window.setTimeout(() => setLeft((s) => s - 1), 1000);
+    if (!qr || stopped) return;
+    const t = window.setTimeout(() => {
+      if (busy) setStopped(true);
+      else if (left <= 1) {
+        setStopped(true);
+        paid();
+      } else setLeft((s) => s - 1);
+    }, 1000);
     return () => window.clearTimeout(t);
-  }, [qr, left, busy]);
+  }, [qr, left, busy, stopped]);
 
   return (
     <div className={styles.upi}>
@@ -63,7 +68,7 @@ function Upi({ amountPaise, bookingRef, busy, onPay }: { amountPaise: number; bo
       <p className={styles.detail}>
         Scan with any UPI app (GPay, PhonePe, Paytm, BHIM).
         <br />
-        <span className="mono">{busy ? 'Confirming your payment…' : `Test mode: the scan completes in ${left}s.`}</span>
+        <span className="mono">{busy ? 'Confirming your payment…' : stopped ? 'Test mode: pay with your UPI ID or another way.' : `Test mode: the scan completes in ${left}s.`}</span>
       </p>
       <div className={styles.inline}>
         <TextField label="Or pay with your UPI ID" placeholder="name@bank" value={vpa} onChange={(e) => setVpa(e.target.value)} />

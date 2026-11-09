@@ -154,7 +154,7 @@ type offerWatcher struct{ c *campaign.Service }
 
 func (w offerWatcher) OfferPublished(ctx context.Context, tx pgx.Tx, o admin.Offer, by uuid.UUID) error {
 	return w.c.OfferPublished(ctx, tx, campaign.Offer{ID: o.ID, Code: o.Code, Description: o.Description,
-		StayFrom: o.StayFrom, StayTo: o.StayTo, BookTo: o.BookTo, MinNights: o.MinNights}, by)
+		StayFrom: o.StayFrom, StayTo: o.StayTo, BookTo: o.BookTo, MinNights: o.MinNights, AutoApply: o.AutoApply}, by)
 }
 
 func newAuth(pool *pgxpool.Pool, cfg config.Config, now func() time.Time) *auth.Service {

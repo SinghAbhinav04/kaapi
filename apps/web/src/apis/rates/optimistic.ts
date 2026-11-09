@@ -24,7 +24,7 @@ export function applyRateChange(grid: RatesGridResponse, change: UpdateRatesRequ
     }
     if (change.stop_sell !== undefined) {
       next.stop_sell = change.stop_sell;
-      next.stop_sell_reason = change.stop_sell ? (change.stop_sell_reason ?? n.stop_sell_reason) : null;
+      next.stop_sell_reason = change.stop_sell ? (change.stop_sell_reason ?? null) : null; // as the server stores it
     }
     if (change.min_stay !== undefined) next.min_stay = change.min_stay;
     if (change.no_arrival !== undefined) next.no_arrival = change.no_arrival;

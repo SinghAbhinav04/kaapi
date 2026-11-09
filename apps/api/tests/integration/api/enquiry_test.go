@@ -505,3 +505,35 @@ func TestInboxStreamPushesChanges(t *testing.T) {
 		t.Fatalf("event data %q, want %q", got, created.Ref)
 	}
 }
+
+// The Today page: what's owed a reply (urgent first) and the week's arrivals and departures.
+func TestDashboardShowsToday(t *testing.T) {
+	s := apitest.New(t)
+	staffLogin(t, s, "gm@kaapiestate.test", nil)
+	var dash api.DashboardResponse
+	s.Do(http.MethodGet, "/v1/staff/dashboard", nil, nil).JSON(t, &dash)
+	today, err := time.Parse(time.DateOnly, dash.Today)
+	if err != nil {
+		t.Fatalf("today %q: %v", dash.Today, err)
+	}
+	if len(dash.Stays) == 0 || dash.AllotmentTonight == 0 {
+		t.Fatalf("the seeded week should have stays and inventory: %+v", dash)
+	}
+	week := today.AddDate(0, 0, 7)
+	for _, st := range dash.Stays {
+		in, _ := time.Parse(time.DateOnly, st.CheckIn)
+		out, _ := time.Parse(time.DateOnly, st.CheckOut)
+		arrives, leaves := !in.Before(today) && in.Before(week), !out.Before(today) && out.Before(week)
+		if !arrives && !leaves || st.GuestName == "" {
+			t.Fatalf("stay outside the week or unnamed: %+v", st)
+		}
+	}
+	if dash.OverdueCount < len(dash.Overdue) {
+		t.Fatalf("count %d below the %d listed", dash.OverdueCount, len(dash.Overdue))
+	}
+	for i := 1; i < len(dash.Overdue); i++ {
+		if dash.Overdue[i-1].Priority == domain.PriorityNormal && dash.Overdue[i].Priority == domain.PriorityHigh {
+			t.Fatalf("urgent enquiries must come first: %+v", dash.Overdue)
+		}
+	}
+}

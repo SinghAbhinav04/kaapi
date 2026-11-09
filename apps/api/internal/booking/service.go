@@ -145,8 +145,10 @@ func (s *Service) HandlePaymentEvent(ctx context.Context, e payment.Event) (Book
 		if err != nil {
 			return err
 		}
-		if !fresh || o.status == domain.PaymentCaptured {
-			return nil // already processed, or already paid by an earlier event
+		if !fresh || o.status.Settled() {
+			// Already processed, or money already taken: a later event must not overwrite a
+			// capture or a refund in progress (nor alert and email the guest again).
+			return nil
 		}
 		if e.AmountPaise != o.amount {
 			return ErrAmountMismatch
@@ -206,7 +208,7 @@ func (s *Service) refundPath(ctx context.Context, tx pgx.Tx, o orderRow, e payme
 		return err
 	}
 	return s.store.queueEmail(ctx, tx, domain.OutboxRefundNotice, string(o.guestEmail), "We couldn't complete booking "+o.ref,
-		fmt.Sprintf("We're sorry: your payment of %s reached us after your 10-minute hold ended, and the room had been booked by then. "+
+		fmt.Sprintf("We're sorry: your payment of %s reached us after your room hold ended, and the room had been booked by then. "+
 			"We've started a full refund, and it should reach you in 5 to 7 working days. Our reservations team will also call you with other dates.",
 			money.FormatINR(e.AmountPaise)), o.bookingID)
 }

@@ -39,9 +39,12 @@ func NewService(pool *pgxpool.Pool, now func() time.Time, site string) *Service 
 // in the offer's own transaction so one never exists without the other. Once per offer.
 func (s *Service) OfferPublished(ctx context.Context, tx pgx.Tx, o Offer, by uuid.UUID) error {
 	subject := "A new offer at Kaapi Estate: " + o.Code
-	body := fmt.Sprintf("%s\n\nUse code %s when you book direct on our website.\n\n"+
-		"Stays from %s to %s, book by %s%s.",
-		o.Description, o.Code, o.StayFrom.Format("2 January"), o.StayTo.Format("2 January 2006"), o.BookTo.Format("2 January 2006"),
+	how := fmt.Sprintf("Use code %s when you book direct on our website.", o.Code)
+	if o.AutoApply {
+		how = "It applies by itself when you book direct on our website: no code needed."
+	}
+	body := fmt.Sprintf("%s\n\n%s\n\nStays from %s to %s, book by %s%s.",
+		o.Description, how, o.StayFrom.Format("2 January"), o.StayTo.Format("2 January 2006"), o.BookTo.Format("2 January 2006"),
 		minNights(o.MinNights))
 	return s.store.insertOfferCampaign(ctx, tx, subject, body, o.ID, s.now(), by)
 }

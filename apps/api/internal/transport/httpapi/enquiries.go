@@ -272,7 +272,11 @@ func (a *API) dashboard(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, dashboardDTO(st, a.enquiries.AIEnabled()))
+	desk, err := a.bookings.Desk(r.Context())
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, dashboardDTO(st, desk, a.enquiries.AIEnabled()))
 	return nil
 }
 

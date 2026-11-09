@@ -33,3 +33,21 @@ func FormatDates(ds []time.Time) []string {
 	}
 	return out
 }
+
+// resortZone is the estate's time zone. The property settings carry the same default; this
+// is for code that has no settings at hand (reminders, the AI's dates, the staff's Today page).
+var resortZone = func() *time.Location {
+	if loc, err := time.LoadLocation("Asia/Kolkata"); err == nil {
+		return loc
+	}
+	return time.FixedZone("IST", 5*3600+1800)
+}()
+
+// ResortZone is the estate's time zone.
+func ResortZone() *time.Location { return resortZone }
+
+// ResortToday is the estate's calendar date at t, as a stay date (midnight UTC).
+func ResortToday(t time.Time) time.Time {
+	l := t.In(resortZone)
+	return time.Date(l.Year(), l.Month(), l.Day(), 0, 0, 0, 0, time.UTC)
+}

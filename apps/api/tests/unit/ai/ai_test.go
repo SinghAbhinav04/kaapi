@@ -28,6 +28,27 @@ func TestRedactRemovesContactDetailsButKeepsBookingFacts(t *testing.T) {
 	}
 }
 
+func TestRedactNamesInAnyScript(t *testing.T) {
+	cases := []struct{ text, name string }{
+		{"Thanks, José", "José Zoë"},
+		{"Zoë here, Zoë Zoë again", "José Zoë"},
+		{"नमस्ते, प्रिया बोल रही हूँ", "प्रिया"},
+		{"ಧನ್ಯವಾದ ಕಾವ್ಯಾ", "ಕಾವ್ಯಾ"},
+	}
+	for _, c := range cases {
+		out := ai.Redact(c.text, c.name)
+		for _, part := range strings.Fields(c.name) {
+			if strings.Contains(out, part) {
+				t.Errorf("%q leaked: %s", part, out)
+			}
+		}
+	}
+	// A name inside a longer word is someone else's word, not the sender's name.
+	if out := ai.Redact("Ravindra booked", "Ravi"); out != "Ravindra booked" {
+		t.Errorf("redacted inside a word: %s", out)
+	}
+}
+
 func TestRedactBareIndianMobile(t *testing.T) {
 	if out := ai.Redact("call me on 9845012345 please", ""); strings.Contains(out, "9845012345") {
 		t.Fatal(out)

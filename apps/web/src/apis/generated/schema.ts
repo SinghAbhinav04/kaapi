@@ -2023,7 +2023,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The numbers behind the brief's success measures. */
+        /** The Today page. What needs a reply now, who arrives and leaves this week, tonight's occupancy, and the brief's weekly goals. */
         get: {
             parameters: {
                 query?: never;
@@ -3655,6 +3655,42 @@ export interface components {
             direct_revenue_this_week_paise: components["schemas"]["Paise"];
             /** @description Nights where sold exceeds allotment. The database makes this impossible. */
             overbookings: number;
+            /**
+             * Format: date
+             * @description The estate's calendar date (IST).
+             */
+            today: string;
+            /** @description Open enquiries with no reply past the first-reply target, urgent first, then longest waiting (at most 6). */
+            overdue: {
+                ref: string;
+                /** @enum {string|null} */
+                lane: "RESERVATIONS" | "SALES" | "GM" | "UNSORTED" | null;
+                /** @enum {string|null} */
+                category: "ROOM" | "WEDDING" | "OFFSITE" | "COMPLAINT" | "OTHER" | null;
+                /** @enum {string} */
+                priority: "NORMAL" | "HIGH";
+                /** Format: date-time */
+                received_at: string;
+                snippet: string;
+            }[];
+            overdue_count: number;
+            /** @description Confirmed stays arriving or leaving today and the next six days, by check-in. */
+            stays: {
+                ref: string;
+                guest_name: string;
+                room_type: string;
+                /** Format: date */
+                check_in: string;
+                /** Format: date */
+                check_out: string;
+                rooms: number;
+                adults: number;
+                children: number;
+            }[];
+            /** @description Website rooms sold for tonight. */
+            sold_tonight: number;
+            allotment_tonight: number;
+            refunds_pending: number;
         };
     };
     responses: {

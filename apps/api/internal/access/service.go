@@ -4,6 +4,7 @@
 package access
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -94,6 +95,9 @@ func (s *Service) CreateRole(ctx context.Context, actor uuid.UUID, in RoleInput)
 	}
 	var id uuid.UUID
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		if err := s.mayGrant(ctx, tx, actor, in.Permissions); err != nil {
+			return err
+		}
 		if id, err = s.store.insertRole(ctx, tx, key, in); err != nil {
 			return err
 		}
@@ -124,6 +128,9 @@ func (s *Service) UpdateRole(ctx context.Context, actor, id uuid.UUID, in RoleIn
 		if cur.System {
 			return ErrSystemRole
 		}
+		if err := s.mayGrant(ctx, tx, actor, in.Permissions); err != nil {
+			return err
+		}
 		if err := s.store.updateRole(ctx, tx, id, in); err != nil {
 			return err
 		}
@@ -132,6 +139,10 @@ func (s *Service) UpdateRole(ctx context.Context, actor, id uuid.UUID, in RoleIn
 		}
 		if cur.Team != in.Team {
 			if err := s.store.syncTeam(ctx, tx, id); err != nil {
+				return err
+			}
+			// Tokens carry the team (lanes, alerts), so members sign in again to pick it up.
+			if err := s.store.revokeRoleSessions(ctx, tx, id); err != nil {
 				return err
 			}
 		}
@@ -206,6 +217,9 @@ func (s *Service) CreateMember(ctx context.Context, actor uuid.UUID, m NewMember
 		if role.Key == guestRoleKey {
 			return ErrGuestRole
 		}
+		if err := s.mayAssign(ctx, tx, actor, role); err != nil {
+			return err
+		}
 		if id, err = s.store.insertMember(ctx, tx, m, hash); err != nil {
 			return err
 		}
@@ -250,6 +264,12 @@ func (s *Service) UpdateMember(ctx context.Context, actor, id uuid.UUID, c Membe
 		if err != nil {
 			return err
 		}
+		if cur.RoleID == adminID {
+			// Editing an Administrator (password, role, deactivation) is itself admin-only.
+			if ok, err := s.store.isAdmin(ctx, tx, actor); err != nil || !ok {
+				return cmp.Or[error](err, ErrAdminOnly)
+			}
+		}
 		wasAdmin := cur.RoleID == adminID && cur.Active
 		leavesAdmin := (c.RoleID != nil && *c.RoleID != adminID) || (c.Active != nil && !*c.Active)
 		if leavesAdmin && id == actor {
@@ -274,6 +294,9 @@ func (s *Service) UpdateMember(ctx context.Context, actor, id uuid.UUID, c Membe
 			if role.Key == guestRoleKey {
 				return ErrGuestRole
 			}
+			if err := s.mayAssign(ctx, tx, actor, role); err != nil {
+				return err
+			}
 		}
 		if err := s.store.updateMember(ctx, tx, id, c, hash); err != nil {
 			return err
@@ -291,6 +314,37 @@ func (s *Service) UpdateMember(ctx context.Context, actor, id uuid.UUID, c Membe
 	}
 	s.forget()
 	return s.store.member(ctx, s.pool, id)
+}
+
+// ---- escalation guards: nobody hands out more than they hold
+
+// mayAssign checks the actor may give someone this role: the Administrator role only from an
+// Administrator, any other role only if the actor holds all of its permissions.
+func (s *Service) mayAssign(ctx context.Context, q db.Querier, actor uuid.UUID, role Role) error {
+	if role.Key == adminRoleKey {
+		if ok, err := s.store.isAdmin(ctx, q, actor); err != nil || !ok {
+			return cmp.Or[error](err, ErrAdminOnly)
+		}
+		return nil
+	}
+	return s.mayGrant(ctx, q, actor, role.Permissions)
+}
+
+// mayGrant checks the actor holds every permission they are handing out.
+func (s *Service) mayGrant(ctx context.Context, q db.Querier, actor uuid.UUID, perms []auth.Permission) error {
+	if ok, err := s.store.isAdmin(ctx, q, actor); err != nil || ok {
+		return err
+	}
+	held, err := s.Permissions(ctx, actor)
+	if err != nil {
+		return err
+	}
+	for _, p := range perms {
+		if !slices.Contains(held, p) {
+			return ErrGrantBeyondOwn
+		}
+	}
+	return nil
 }
 
 // ---- validation

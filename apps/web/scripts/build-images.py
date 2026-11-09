@@ -1,8 +1,10 @@
 """Builds the site's images: assets/source/* -> public/images/**.avif.
 
 Originals stay in assets/source (see CREDITS.md). What ships is AVIF, sized for its
-largest use, so pages stay light on slow mobile networks. next/image then serves
-smaller widths per device.
+largest use, plus smaller copies (name-480.avif, -960, -1600) that the image loader
+(src/shared/lib/image-loader.ts) picks per device. The sizes are made here rather than by
+Vercel's optimizer, which passes AVIF sources through untouched (and has a monthly quota),
+so phones were downloading 2400 px photos.
 
     python scripts/build-images.py
 """
@@ -14,6 +16,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "assets" / "source"
 OUT = ROOT / "public" / "images"
 QUALITY = 55
+# Keep in step with VARIANT_WIDTHS in src/shared/lib/image-loader.ts.
+VARIANTS = (480, 960, 1600)
 
 # output path -> (source, max width). Room paths match apps/api/seed/data/room_types.json.
 JOBS = {
@@ -46,6 +50,13 @@ def main() -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
         im.save(dest, "AVIF", quality=QUALITY)
         print(f"{out:36} {im.width}x{im.height}  {dest.stat().st_size // 1024} KB")
+        for w in VARIANTS:
+            # Every variant exists for every image (capped at its own width), so the
+            # loader never has to know an image's size.
+            small = im if im.width <= w else im.resize((w, round(im.height * w / im.width)), Image.LANCZOS)
+            vdest = dest.with_name(f"{dest.stem}-{w}.avif")
+            small.save(vdest, "AVIF", quality=QUALITY)
+            print(f"  -{w:<5} {small.width}x{small.height}  {vdest.stat().st_size // 1024} KB")
 
 
 if __name__ == "__main__":

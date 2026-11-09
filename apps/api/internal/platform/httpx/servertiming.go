@@ -3,18 +3,29 @@ package httpx
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"kaapi/api/internal/platform/db"
 )
 
-const headerServerTiming = "Server-Timing"
+const (
+	headerServerTiming = "Server-Timing"
+	authPathPrefix     = "/v1/auth/"
+)
 
 // ServerTiming reports, on every response, the database work and total time the request took:
 // `Server-Timing: db;dur=3.1;desc="4 queries", app;dur=5.2` (milliseconds). Browsers show it
 // in the network panel, so latency in production is measured rather than guessed.
+//
+// Sign-in routes are left out: how much database work a login did tells an attacker whether
+// the email has an account.
 func ServerTiming(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, authPathPrefix) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		ctx, t := db.WithTiming(r.Context())
 		next.ServeHTTP(&timingWriter{ResponseWriter: w, timing: t, start: time.Now()}, r.WithContext(ctx))
 	})

@@ -64,7 +64,7 @@ func outboxStatus(t *testing.T, s *apitest.Server, kind domain.OutboxKind, to st
 
 func TestGuestEmailsGoOutThroughTheMailbox(t *testing.T) {
 	s, fake := withMailbox(t)
-	// A deliverable-looking address: mail to reserved test domains is never sent (outbox.Reserved).
+	// A deliverable-looking address: mail to reserved test domains is never sent (domain.ReservedAddress).
 	const newGuest = "first.timer@kaapi-guest.in"
 
 	// Sign-in code: queued with the request, delivered by the worker.

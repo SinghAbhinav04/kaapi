@@ -39,7 +39,7 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]Summary, error) {
 	if q := strings.TrimSpace(f.Query); q != "" {
 		// Same expression as enquiries_search_trgm_idx, so the trigram index serves it. Sender
 		// names are encrypted at rest, so search covers the reference and the message.
-		add("(e.ref || ' ' || e.raw_text) ILIKE '%%' || $%d || '%%'", q)
+		add("(e.ref || ' ' || e.raw_text) ILIKE '%%' || $%d || '%%'", likeEscaper.Replace(q))
 	}
 	args = append(args, ai.UnsortedBelow, f.Limit)
 	cond := strings.Join(where, " AND ")
@@ -220,6 +220,9 @@ func (s *Service) Reroute(ctx context.Context, ref string, actor uuid.UUID, lane
 			map[string]any{"category": lockedCat}, map[string]any{"category": category}); err != nil {
 			return err
 		}
+		if keep, err := keepsLatestDraft(ctx, tx, id); err != nil || keep {
+			return err
+		}
 		next, err := nextVersion(ctx, tx, id)
 		if err != nil {
 			return err
@@ -285,7 +288,7 @@ func (s *Service) Correct(ctx context.Context, ref string, actor uuid.UUID, c Co
 		var flag *string
 		err = tx.QueryRow(ctx, `SELECT body_template, author, version, sent_at, flagged_reason FROM enquiry_drafts
 			WHERE enquiry_id = $1 ORDER BY version DESC LIMIT 1`, id).Scan(&template, &author, &version, &sent, &flag)
-		if errors.Is(err, pgx.ErrNoRows) || sent != nil || cat == nil || author == "USER" {
+		if errors.Is(err, pgx.ErrNoRows) || sent != nil || cat == nil || author == draftAuthorUser {
 			return nil
 		}
 		if err != nil {
@@ -296,7 +299,7 @@ func (s *Service) Correct(ctx context.Context, ref string, actor uuid.UUID, c Co
 			return err
 		}
 		// The wording is unchanged, so whatever the system flagged about it still applies.
-		return s.saveDraft(ctx, tx, id, version+1, template, rendered, quote, "AI", nil, deref(flag))
+		return s.saveDraft(ctx, tx, id, version+1, template, rendered, quote, draftAuthorAI, nil, deref(flag))
 	})
 }
 
@@ -315,7 +318,7 @@ func (s *Service) EditDraft(ctx context.Context, ref string, actor uuid.UUID, bo
 		if err != nil {
 			return err
 		}
-		return s.saveDraft(ctx, tx, id, next, body, body, nil, "USER", &actor, "")
+		return s.saveDraft(ctx, tx, id, next, body, body, nil, draftAuthorUser, &actor, "")
 	})
 }
 
@@ -337,7 +340,7 @@ func (s *Service) Send(ctx context.Context, ref string, actor uuid.UUID) error {
 		if p.signOff, err = signOffFor(ctx, tx, actor); err != nil {
 			return err
 		}
-		if !useMail || p.channel != domain.OutboxEmail {
+		if !useMail || p.channel != domain.OutboxEmail || domain.ReservedAddress(p.recipient) {
 			p.simulated = true
 			return p.record(ctx, tx, actor, domain.OutboxSimulated, domain.SentMail{})
 		}
@@ -546,6 +549,9 @@ func (s *Service) Stats(ctx context.Context) (Stats, error) {
 	if err != nil {
 		return st, err
 	}
+	if st.Overdue, st.OverdueCount, err = s.overdue(ctx); err != nil {
+		return st, err
+	}
 	var routed, corrected int
 	if err := s.pool.QueryRow(ctx, `SELECT
 		count(*) FILTER (WHERE type = $1), count(*) FILTER (WHERE type IN ($2, $3) AND actor = $4)
@@ -558,6 +564,27 @@ func (s *Service) Stats(ctx context.Context) (Stats, error) {
 		st.AICorrectionRate = &r
 	}
 	return st, nil
+}
+
+// overdue lists open enquiries still waiting for a first reply past the target: urgent ones
+// first, then the longest waiting. The window count reports the total despite the limit.
+func (s *Service) overdue(ctx context.Context) ([]Waiting, int, error) {
+	rows, err := s.pool.Query(ctx, `SELECT ref, lane, category, priority, received_at, left(raw_text, $5), count(*) OVER ()
+		FROM enquiries WHERE status IN ($1, $2) AND first_response_at IS NULL AND received_at < $3
+		ORDER BY priority = 'HIGH' DESC, received_at LIMIT $4`,
+		domain.EnquiryNew, domain.EnquiryInProgress, s.now().Add(-FirstReplyTarget), overdueShown, snippetSourceChars)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := 0
+	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Waiting, error) {
+		var w Waiting
+		var text string
+		err := r.Scan(&w.Ref, &w.Lane, &w.Category, &w.Priority, &w.ReceivedAt, &text, &total)
+		w.Snippet = snippet(text)
+		return w, err
+	})
+	return list, total, err
 }
 
 // ---- helpers

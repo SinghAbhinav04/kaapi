@@ -2,6 +2,7 @@ package enquiry
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -140,8 +141,26 @@ type Stats struct {
 	AICorrectionRate        *float64 // share of AI-routed enquiries staff re-routed this week
 	DirectBookingsThisWeek  int
 	DirectRevenueThisWeek   int64
-	Overbookings            int // always 0: the database refuses them
+	Overbookings            int       // always 0: the database refuses them
+	Overdue                 []Waiting // open, unanswered past the first-reply target; complaints first
+	OverdueCount            int
 }
+
+// Waiting is an enquiry still owed its first reply.
+type Waiting struct {
+	Ref        string
+	Lane       *domain.Lane
+	Category   *domain.Category
+	Priority   domain.Priority
+	ReceivedAt time.Time
+	Snippet    string
+}
+
+// FirstReplyTarget is the brief's success measure for enquiries.
+const FirstReplyTarget = 30 * time.Minute
+
+// overdueShown: the Today page lists this many; the count covers the rest.
+const overdueShown = 6
 
 const (
 	DefaultListLimit   = 100
@@ -149,7 +168,9 @@ const (
 	snippetRunes       = 140
 	snippetSourceChars = 400 // read this much of each message for the list's snippet
 	maxDraftRunes      = 4000
-	intakePerHour      = 5 // per sender, against spam floods
+	maxIntakeRunes     = 5000 // longer messages are cut, not refused
+	intakePerHour      = 5    // per sender, against spam floods
+	intakeWindow       = time.Hour
 	dedupeWindow       = 24 * time.Hour
 	firstRefNumber     = 4410
 	refAttempts        = 5
@@ -161,11 +182,24 @@ const (
 	sendClaimTTL = 2 * time.Minute
 )
 
-// Offer kinds as promo_codes stores them; a percentage is held in basis points.
+// The plans a quote names: room only, and with breakfast.
 const (
-	offerPercent  = "PERCENT"
-	bpsPerPercent = 100
+	roomOnlyPlan  = "RO-FLEX"
+	breakfastPlan = "BB-FLEX"
 )
+
+// A percentage offer is held in basis points.
+const bpsPerPercent = 100
+
+// Who wrote a draft. The table's CHECK knows only AI and USER; a template is stored as AI.
+const (
+	draftAuthorAI       = "AI"
+	draftAuthorUser     = "USER"
+	draftAuthorTemplate = "TEMPLATE"
+)
+
+// likeEscaper makes a search term literal inside ILIKE (Postgres's default escape is \).
+var likeEscaper = strings.NewReplacer(`\`, `\`, `%`, `\%`, `_`, `\_`)
 
 // alertRoles are emailed about every complaint: the GM owns it, and the administrators (the
 // owner) hear of it too, so a complaint reaches a real person even with no GM on the team.

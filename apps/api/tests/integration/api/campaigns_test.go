@@ -45,7 +45,9 @@ func TestOffersReachOnlyGuestsWhoOptedIn(t *testing.T) {
 		t.Fatalf("dispatch queued %d (err %v), want 1", n, err)
 	}
 	mails := outboxTo(t, s, domain.OutboxPromotion, guest.Email)
-	if len(mails) != 1 || !strings.Contains(mails[0].Body, "DIWALI26") || mails[0].Status != domain.OutboxQueued {
+	// An automatic offer needs no code, and the email says so rather than asking for one.
+	if len(mails) != 1 || !strings.Contains(mails[0].Body, "no code needed") || strings.Contains(mails[0].Body, "Use code") ||
+		mails[0].Status != domain.OutboxQueued {
 		t.Fatalf("offer email: %+v", mails)
 	}
 	if got := outboxTo(t, s, domain.OutboxPromotion, "quiet@example.test"); len(got) != 0 {

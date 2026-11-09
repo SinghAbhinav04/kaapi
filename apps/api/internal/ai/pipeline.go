@@ -36,7 +36,7 @@ func NewClassifier(p Provider) *Classifier { return &Classifier{provider: p} }
 func (c *Classifier) Enabled() bool { return c.provider != nil }
 
 // Classify never fails: if the model is unavailable or returns nonsense, the keyword
-// classifier's answer is used and the status says so. The caller retries FALLBACK later.
+// classifier's answer is used and the status says so (staff can retry it from the inbox).
 func (c *Classifier) Classify(ctx context.Context, text, senderName string, today time.Time) (Result, error) {
 	runes := []rune(text)
 	if len(runes) > maxMessageRunes {
@@ -67,7 +67,7 @@ func (c *Classifier) Classify(ctx context.Context, text, senderName string, toda
 
 func fallback(kw Classification) Result {
 	r := Result{Classification: kw, Status: domain.AIFallback, KeywordSaid: kw.Category}
-	r.ComplaintHit = kw.Category == domain.CategoryComplaint || (kw.Secondary != nil && *kw.Secondary == domain.CategoryComplaint)
+	r.ComplaintHit = sawComplaint(kw)
 	r.Summary = ""
 	return r
 }
@@ -89,9 +89,15 @@ func combine(m, kw Classification, model string, latency int) Result {
 		r.Reason = "AI only; keyword rules had no strong view"
 	}
 	r.ModelConfidence = r.Confidence
-	r.ModelComplaint = m.Category == domain.CategoryComplaint || (m.Secondary != nil && *m.Secondary == domain.CategoryComplaint)
-	r.ComplaintHit = r.ModelComplaint || kw.Category == domain.CategoryComplaint
+	r.ModelComplaint = sawComplaint(m)
+	r.ComplaintHit = r.ModelComplaint || sawComplaint(kw)
 	return r
+}
+
+// sawComplaint counts a complaint as either the main or the secondary category: a booking
+// request that mentions a bad last stay must still reach the GM.
+func sawComplaint(c Classification) bool {
+	return c.Category == domain.CategoryComplaint || (c.Secondary != nil && *c.Secondary == domain.CategoryComplaint)
 }
 
 // Validate drops extracted values that can't be right instead of trusting them.

@@ -3,7 +3,7 @@ package outbox_test
 import (
 	"testing"
 
-	"kaapi/api/internal/outbox"
+	"kaapi/api/internal/domain"
 )
 
 func TestReservedAddressesAreNeverSent(t *testing.T) {
@@ -17,7 +17,7 @@ func TestReservedAddressesAreNeverSent(t *testing.T) {
 		"asha@company.in":                  false,
 		"me@test.com":                      false,
 	} {
-		if got := outbox.Reserved(addr); got != want {
+		if got := domain.ReservedAddress(addr); got != want {
 			t.Errorf("Reserved(%q) = %v, want %v", addr, got, want)
 		}
 	}

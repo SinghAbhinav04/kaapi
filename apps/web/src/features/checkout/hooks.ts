@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useCreateBooking } from '@/apis/booking';
 import { STORAGE_KEY, bookingTokens, holdTickets, type HoldTicket } from '@/features/booking-flow';
@@ -24,6 +24,15 @@ export function useCheckout(ticket: HoldTicket | null | undefined) {
   const [clientErrors, setClientErrors] = useState<FormErrors>({});
   const createBooking = useCreateBooking();
   const displayCurrency = useDisplayCurrency();
+  // The ticket is cleared only once this page has gone: clearing it while still mounted
+  // flashes "this booking isn't open in this tab" during the move to payment.
+  const booked = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      if (booked.current) holdTickets.remove(booked.current);
+    },
+    [],
+  );
 
   const update = <K extends keyof GuestForm>(key: K, value: GuestForm[K]) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -37,7 +46,7 @@ export function useCheckout(ticket: HoldTicket | null | undefined) {
       {
         onSuccess: ({ booking }) => {
           bookingTokens.save(booking.ref, ticket.token);
-          holdTickets.remove(ticket.holdId);
+          booked.current = ticket.holdId;
           if (booking.payment) router.push(ROUTES.pay(booking.payment.order_id));
           else router.push(ROUTES.booking(booking.ref));
         },

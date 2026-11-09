@@ -52,7 +52,7 @@ func (s *Service) Send(ctx context.Context, actor uuid.UUID, c Compose) (Message
 	e := emailtpl.Reply(c.Subject, c.Body, emailtpl.SignOff(name, team), s.links)
 	c.Body = e.Text
 	status, sent := domain.OutboxSimulated, domain.SentMail{}
-	if s.mailer != nil && s.mailer.Connected(ctx) {
+	if s.mailer != nil && !domain.ReservedAddress(c.To) && s.mailer.Connected(ctx) {
 		if sent, err = s.mailer.Send(ctx, domain.Mail{To: c.To, Subject: c.Subject, Body: e.Text, HTML: e.HTML}); err != nil {
 			return Message{}, err
 		}
@@ -82,7 +82,7 @@ func (s *Service) Deliver(ctx context.Context, limit int) (DeliverResult, error)
 		rec := context.WithoutCancel(ctx)
 		// Demo and test addresses can never receive mail; sending them would only bounce back
 		// into the inbox (and be polled in as enquiries).
-		if !connected || Reserved(m.Recipient) {
+		if !connected || domain.ReservedAddress(m.Recipient) {
 			r.Simulated++
 			if err := s.store.markSent(rec, s.pool, m.ID, domain.OutboxSimulated, nil); err != nil {
 				return r, err
