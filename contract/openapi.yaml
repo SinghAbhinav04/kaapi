@@ -163,10 +163,13 @@ paths:
     post:
       tags: [auth]
       summary: Staff sign-in, step 1. A correct password emails a 6-digit code (never returned in the response); step 2 is /v1/auth/staff/verify.
+      description: Accounts configured as password-only (STAFF_PASSWORD_ONLY, the reviewers' account) are signed in at once with 200.
+      parameters: [{ $ref: "#/components/parameters/XClient" }]
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/StaffLoginRequest" } } }
       responses:
+        "200": { $ref: "#/components/responses/SignedIn" }
         "202":
           description: Code emailed.
           content:

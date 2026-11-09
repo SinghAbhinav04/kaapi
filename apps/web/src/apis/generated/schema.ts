@@ -420,11 +420,17 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Staff sign-in, step 1. A correct password emails a 6-digit code (never returned in the response); step 2 is /v1/auth/staff/verify. */
+        /**
+         * Staff sign-in, step 1. A correct password emails a 6-digit code (never returned in the response); step 2 is /v1/auth/staff/verify.
+         * @description Accounts configured as password-only (STAFF_PASSWORD_ONLY, the reviewers' account) are signed in at once with 200.
+         */
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description Send `native` to receive tokens in the body instead of cookies. */
+                    "X-Client"?: components["parameters"]["XClient"];
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -434,6 +440,7 @@ export interface paths {
                 };
             };
             responses: {
+                200: components["responses"]["SignedIn"];
                 /** @description Code emailed. */
                 202: {
                     headers: {

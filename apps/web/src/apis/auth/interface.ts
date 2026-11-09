@@ -6,8 +6,8 @@ import type {
  * tokens in httpOnly cookies the API sets; nothing here touches a token directly.
  */
 export interface AuthApi {
-  /** Step 1: a correct password emails a code (returned too in demo mode). */
-  staffLogin(email: string, password: string): Promise<StaffChallenge>;
+  /** Step 1: a correct password emails a code, or signs a password-only account in at once. */
+  staffLogin(email: string, password: string): Promise<StaffChallenge | AuthResponse>;
   /** Step 2: the emailed code signs the staff member in. */
   staffVerify(email: string, code: string): Promise<AuthResponse>;
   requestOtp(email: string): Promise<OtpRequestResponse>;

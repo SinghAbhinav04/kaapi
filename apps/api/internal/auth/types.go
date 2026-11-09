@@ -81,7 +81,11 @@ const (
 )
 
 // StaffChallenge is the result of a correct staff password: a code was emailed to SentTo
-// (masked for display).
+// (masked for display), or, for a password-only account, SignedIn is set and the session
+// is already open.
 type StaffChallenge struct {
-	SentTo string
+	SentTo   string
+	SignedIn bool
+	User     User
+	Tokens   Tokens
 }

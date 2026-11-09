@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { authApi } from './auth.api';
 import { authKeys } from './const';
+import { isSignedIn } from './lib';
 import { authQueries } from './queries';
 import type { Permission, User } from './types';
 
@@ -19,9 +20,16 @@ export function hasPermission(user: User | null, permission: Permission): boolea
   return user?.permissions.includes(permission) ?? false;
 }
 
-/** Staff sign-in step 1: checks the password and emails a code. */
-export const useStaffLogin = () =>
-  useMutation({ mutationFn: ({ email, password }: { email: string; password: string }) => authApi.staffLogin(email, password) });
+/** Staff sign-in step 1: checks the password and emails a code (or signs a password-only account in). */
+export function useStaffLogin() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ email, password }: { email: string; password: string }) => authApi.staffLogin(email, password),
+    onSuccess: (data) => {
+      if (isSignedIn(data)) queryClient.setQueryData(authKeys.me(), data.user);
+    },
+  });
+}
 
 /** Staff sign-in step 2: the emailed code. */
 export function useStaffVerify() {

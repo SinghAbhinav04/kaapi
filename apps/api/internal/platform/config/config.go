@@ -41,6 +41,7 @@ const (
 	EnvTrustedProxyHops  = "TRUSTED_PROXY_HOPS"      // proxies in front of the API that append X-Forwarded-For; default 1 (the web proxy)
 	EnvPIIKey            = "PII_KEY"                 // encrypts guests' personal data at rest; 32+ bytes, required in production
 	EnvAnalyticsCacheSec = "ANALYTICS_CACHE_SECONDS" // how long a computed analytics report is kept (the change feed drops it sooner); 0 = off
+	EnvStaffPasswordOnly = "STAFF_PASSWORD_ONLY"     // comma-separated staff emails that sign in without the emailed code; empty = none
 
 	// Gmail: the inbox reads and replies from a real mailbox once an admin connects it.
 	EnvGoogleClientID     = "GOOGLE_CLIENT_ID"
@@ -99,7 +100,14 @@ type Config struct {
 	PIIKey []byte
 	// AnalyticsCacheTTL keeps computed analytics reports; zero turns the cache off (tests).
 	AnalyticsCacheTTL time.Duration
+	// StaffPasswordOnly lists staff accounts that sign in with the password alone, skipping the
+	// emailed code: the shared reviewer account, whose mailbox the reviewers don't have.
+	StaffPasswordOnly []string
 }
+
+// defaultStaffPasswordOnly is the reviewers' administrator account. Set STAFF_PASSWORD_ONLY
+// to an empty value to make every account use the code again.
+const defaultStaffPasswordOnly = "admin.kaapi@gmail.com"
 
 func (c Config) IsProduction() bool { return c.Environment == EnvProduction }
 
@@ -120,6 +128,15 @@ func Load() (Config, error) {
 	c.BrowserAPIPrefix = defaultBrowserAPIPrefix
 	if v, ok := os.LookupEnv(EnvBrowserAPIPrefix); ok {
 		c.BrowserAPIPrefix = strings.TrimRight(v, "/")
+	}
+	passwordOnly := defaultStaffPasswordOnly
+	if v, ok := os.LookupEnv(EnvStaffPasswordOnly); ok {
+		passwordOnly = v
+	}
+	for _, e := range strings.Split(passwordOnly, ",") {
+		if e = strings.ToLower(strings.TrimSpace(e)); e != "" {
+			c.StaffPasswordOnly = append(c.StaffPasswordOnly, e)
+		}
 	}
 	c.CookieSecure = get(EnvCookieSecure, strconv.FormatBool(c.IsProduction())) == "true"
 	c.WorkerInProcess = get(EnvWorkerInProcess, strconv.FormatBool(!c.IsProduction())) == "true"

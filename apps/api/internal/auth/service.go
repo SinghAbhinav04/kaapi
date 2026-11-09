@@ -34,6 +34,16 @@ type Service struct {
 
 	mu       sync.Mutex
 	sessions map[uuid.UUID]time.Time // session id → live until (a cached check)
+
+	passwordOnly map[string]bool // staff emails that skip the emailed code (config.StaffPasswordOnly)
+}
+
+// SkipCodeFor lets these staff accounts sign in with the password alone. Set once at start-up.
+func (s *Service) SkipCodeFor(emails []string) {
+	s.passwordOnly = make(map[string]bool, len(emails))
+	for _, e := range emails {
+		s.passwordOnly[strings.ToLower(strings.TrimSpace(e))] = true
+	}
 }
 
 func NewService(pool *pgxpool.Pool, secret []byte, now func() time.Time) *Service {
@@ -59,8 +69,9 @@ var dummyHash = sync.OnceValue(func() string {
 
 // StaffLogin checks a staff member's password. It doesn't sign them in: it emails a one-time
 // code (the second factor) and says where it went; VerifyStaffCode finishes. A leaked
-// password alone is no longer enough to get into the console.
-func (s *Service) StaffLogin(ctx context.Context, email, password string) (StaffChallenge, error) {
+// password alone is no longer enough to get into the console, except for the accounts
+// configured as password-only, which are signed in at once.
+func (s *Service) StaffLogin(ctx context.Context, email, password string, client ClientInfo) (StaffChallenge, error) {
 	a, err := s.store.accountByEmail(ctx, s.pool, email)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return StaffChallenge{}, err
@@ -74,11 +85,20 @@ func (s *Service) StaffLogin(ctx context.Context, email, password string) (Staff
 	if err != nil || !ok {
 		return StaffChallenge{}, ErrBadCredentials
 	}
+	addr := strings.ToLower(u.Email)
+	if s.passwordOnly[addr] {
+		var t Tokens
+		err := db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+			var err error
+			t, _, err = s.newSession(ctx, tx, u, client)
+			return err
+		})
+		return StaffChallenge{SignedIn: true, User: u, Tokens: t}, err
+	}
 	code, err := randomDigits(OTPLength)
 	if err != nil {
 		return StaffChallenge{}, err
 	}
-	addr := strings.ToLower(u.Email)
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		recent, err := s.store.recentOTPs(ctx, tx, domain.OTPStaff2FA, addr, OTPWindow)
 		if err != nil {

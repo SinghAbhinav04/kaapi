@@ -37,9 +37,13 @@ func (a *API) staffLogin(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.DecodeJSON(w, r, &body); err != nil {
 		return err
 	}
-	ch, err := a.auth.StaffLogin(r.Context(), body.Email, body.Password)
+	ch, err := a.auth.StaffLogin(r.Context(), body.Email, body.Password, clientInfo(r))
 	if err != nil {
 		return err
+	}
+	if ch.SignedIn { // a password-only account (config.StaffPasswordOnly)
+		a.signedIn(w, r, ch.User, ch.Tokens)
+		return nil
 	}
 	// The code goes by email only, never in the response: that's what makes it a second factor.
 	httpx.WriteJSON(w, http.StatusAccepted, StaffChallengeResponse{CodeSent: true, SentTo: ch.SentTo})

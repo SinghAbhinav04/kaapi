@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 
-import { useStaffLogin, useStaffVerify } from '@/apis/auth';
+import { isSignedIn, useStaffLogin, useStaffVerify } from '@/apis/auth';
 import { Button, Logo, TextField } from '@/shared/ui';
 
 import { safeNext } from '../lib';
@@ -11,7 +11,7 @@ import styles from './StaffLoginPage.module.css';
 
 const CODE_LENGTH = 6;
 
-/** Two steps: the password, then a code emailed to the staff member. */
+/** Two steps: the password, then a code emailed to the staff member (password-only accounts skip the code). */
 export function StaffLoginPage() {
   const router = useRouter();
   const params = useSearchParams();
@@ -20,15 +20,16 @@ export function StaffLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
-  const challenge = login.data;
+  const challenge = login.data && !isSignedIn(login.data) ? login.data : undefined;
+  const done = () => router.replace(safeNext(params.get('next')));
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!challenge) {
-      login.mutate({ email: email.trim(), password });
+      login.mutate({ email: email.trim(), password }, { onSuccess: (data) => isSignedIn(data) && done() });
       return;
     }
-    verify.mutate({ email: email.trim(), code: code.trim() }, { onSuccess: () => router.replace(safeNext(params.get('next'))) });
+    verify.mutate({ email: email.trim(), code: code.trim() }, { onSuccess: done });
   };
 
   const error = login.isError

@@ -84,7 +84,7 @@ func New(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, now func() tim
 		Access:    access.NewService(pool, now),
 		Admin:     admin.NewService(pool),
 		Analytics: analytics.NewService(pool, now),
-		Auth:      auth.NewService(pool, cfg.JWESecret, now),
+		Auth:      newAuth(pool, cfg, now),
 		Bookings:  booking.NewService(pool, now),
 		Catalog:   catalog.NewService(pool),
 		Inventory: inv,
@@ -155,4 +155,10 @@ type offerWatcher struct{ c *campaign.Service }
 func (w offerWatcher) OfferPublished(ctx context.Context, tx pgx.Tx, o admin.Offer, by uuid.UUID) error {
 	return w.c.OfferPublished(ctx, tx, campaign.Offer{ID: o.ID, Code: o.Code, Description: o.Description,
 		StayFrom: o.StayFrom, StayTo: o.StayTo, BookTo: o.BookTo, MinNights: o.MinNights}, by)
+}
+
+func newAuth(pool *pgxpool.Pool, cfg config.Config, now func() time.Time) *auth.Service {
+	s := auth.NewService(pool, cfg.JWESecret, now)
+	s.SkipCodeFor(cfg.StaffPasswordOnly)
+	return s
 }

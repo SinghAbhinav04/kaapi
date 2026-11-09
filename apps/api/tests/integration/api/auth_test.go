@@ -245,3 +245,41 @@ func TestSignInCodesAreNeverInResponses(t *testing.T) {
 		}
 	}
 }
+
+// The reviewers' account signs in with its password alone; everyone else still gets a code.
+func TestPasswordOnlyStaffAccountSkipsTheCode(t *testing.T) {
+	cfg := apitest.TestConfig()
+	cfg.StaffPasswordOnly = []string{"admin@kaapiestate.test"}
+	s := apitest.NewWith(t, cfg)
+
+	if e := s.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: "admin@kaapiestate.test", Password: "wrong"}, nil).Error(t); e.Code != apperr.CodeUnauthenticated {
+		t.Fatalf("the password is still checked: %s", e.Code)
+	}
+	res := s.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: "Admin@KaapiEstate.test", Password: staffPassword}, nil)
+	if res.Status != http.StatusOK {
+		t.Fatalf("password-only login: %d %s", res.Status, res.Body)
+	}
+	var out api.AuthResponse
+	res.JSON(t, &out)
+	if out.User.Role != domain.RoleAdmin || out.AccessToken != nil {
+		t.Fatalf("signed in with cookies: %+v", out)
+	}
+	if res := s.Do(http.MethodGet, "/v1/me", nil, nil); res.Status != http.StatusOK {
+		t.Fatalf("cookie session: %d", res.Status)
+	}
+	if mails := outboxTo(t, s, domain.OutboxStaffCode, "admin@kaapiestate.test"); len(mails) != 0 {
+		t.Fatalf("no code is emailed: %d", len(mails))
+	}
+
+	native := s.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: "admin@kaapiestate.test", Password: staffPassword}, map[string]string{"X-Client": "native"})
+	var nat api.AuthResponse
+	native.JSON(t, &nat)
+	if native.Status != http.StatusOK || nat.AccessToken == nil {
+		t.Fatalf("native gets tokens in the body: %d %s", native.Status, native.Body)
+	}
+
+	gm := apitest.NewWith(t, cfg)
+	if r := gm.Do(http.MethodPost, "/v1/auth/staff/login", api.StaffLoginRequest{Email: "gm@kaapiestate.test", Password: staffPassword}, nil); r.Status != http.StatusAccepted {
+		t.Fatalf("other staff still get a code: %d", r.Status)
+	}
+}
