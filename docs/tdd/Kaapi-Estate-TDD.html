@@ -158,7 +158,7 @@
 <h2 class="pb">6. Security and privacy</h2>
 <ul>
   <li><b>Sessions:</b> a 15-minute encrypted access token (JWE) plus a rotating refresh token stored hashed; reusing an old refresh token revokes the whole session chain. Every request also checks the session is live, so signing out or deactivating someone takes effect at once. Browser tabs refresh one at a time, so they can’t trip the reuse detector.</li>
-  <li><b>Staff sign-in</b> is a password plus an emailed 6-digit code (5 minutes, 5 attempts). <span class="tag assume">TRADE-OFF</span> One reviewer account signs in with the password alone (<code>STAFF_PASSWORD_ONLY</code>), because reviewers don’t have its mailbox; an empty setting turns this off.</li>
+  <li><b>Staff sign-in</b> is a password plus an emailed 6-digit code (5 minutes, 5 attempts). <span class="tag assume">TRADE-OFF</span> One reviewer account signs in with the password alone (<code>STAFF_PASSWORD_ONLY</code>), because reviewers don’t have its mailbox; an empty setting turns this off. It holds a Reviewer role, not Administrator: it can use every page and action but can’t manage people, the mailbox connection or data deletion, so a leaked password can’t take over the console.</li>
   <li><b>Guests</b> sign in with an emailed code that is never shown on screen or returned by the API. Booking requires a verified email, so a typo can’t lose the confirmation.</li>
   <li><b>Access control:</b> permissions are a closed set in code, granted per role in the database and checked on every route. Only an Administrator can grant the Administrator role or change an Administrator’s account; nobody can grant permissions they don’t hold; the last Administrator can’t be removed.</li>
   <li><b>Gateway:</b> client IPs from <code>X-Forwarded-For</code> counted from the right (a forged entry is ignored); CORS per route group; rate limits per group (sign-in, codes, holds, bookings, enquiries shared across instances in Postgres; the rest in memory). <span class="tag assume">ASSUMPTION</span> The limits are sized for one resort (e.g. staff login 10 per 15 minutes per IP).</li>
@@ -197,7 +197,7 @@
   <tr><td>Rate limits (e.g. 10 logins / 15 min per IP, 20 holds / 10 min)</td><td>Sized for one resort’s traffic.</td></tr>
   <tr><td>Enquiry text stored in plaintext</td><td>Needed for AI classification (after redaction) and inbox search.</td></tr>
   <tr><td>Gateway inside the API</td><td>One service doesn’t justify a second hop; split out when a second service exists.</td></tr>
-  <tr><td>Password-only reviewer account</td><td>Reviewers can’t receive its sign-in codes.</td></tr>
+  <tr><td>Password-only reviewer account, with a limited Reviewer role</td><td>Reviewers can’t receive its sign-in codes; the role keeps people, the mailbox and deletion with the Administrator.</td></tr>
   <tr><td>Reminder timings (1–3 days before, 8 am on arrival day, …)</td><td>Common hotel practice.</td></tr>
   <tr><td>Placeholder imagery, UPI merchant and estate map pin</td><td>Until the resort supplies its own.</td></tr>
   <tr><td>Exchange-rate estimates from ECB rates, shown only while under 48 hours old</td><td>Guests read prices in their own currency but are always charged in INR.</td></tr>

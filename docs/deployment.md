@@ -9,10 +9,10 @@
 
 | Who | How |
 |---|---|
-| Reviewer (staff, Administrator) | `admin.kaapi@gmail.com` with the password given in the submission. This one account signs in with the password alone (`STAFF_PASSWORD_ONLY`), because reviewers don't have its mailbox. Every other staff account gets a 6-digit code by email after the password. |
+| Reviewer (staff) | `admin.kaapi@gmail.com` with the password given in the submission. This one account signs in with the password alone (`STAFF_PASSWORD_ONLY`), because reviewers don't have its mailbox. Every other staff account gets a 6-digit code by email after the password. |
 | Guest | Any real email address on the site: a one-time code is emailed to it (codes are never shown on screen). Booking needs a signed-in guest, so the email is verified before payment. |
 
-The Administrator sees every console page: Today, Inbox, Rates & allotment, Bookings, Outbox, Analytics, Offers, and Team & access.
+The account has a **Reviewer** role: every console page and action (Today, Inbox and replies, Rates & allotment, Bookings, Outbox, Analytics, Offers), but not Team & access, the mailbox connection or data deletion, which stay with the resort's Administrator. A leaked reviewer password can't take over the console.
 
 ## A five-minute tour
 
