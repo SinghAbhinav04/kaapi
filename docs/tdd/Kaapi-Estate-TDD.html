@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kaapi Estate: Technical Design Document</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+  :root { --ink:#141210; --paper:#fffdf9; --green:#3f6b4a; --cherry:#a5432f; --grey:#6b655c; --line:#e4ddd1; --panel:#f5f1ea; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 10.5pt/1.55 "Segoe UI", system-ui, -apple-system, sans-serif; color: var(--ink); background: var(--paper); }
+  h1 { font: 800 30pt/1.05 "Segoe UI", system-ui, sans-serif; letter-spacing: -.01em; margin: 0 0 6px; }
+  h1 em { font-family: Georgia, serif; font-weight: 400; color: var(--green); }
+  h2 { font-size: 15pt; margin: 26px 0 8px; padding-top: 10px; border-top: 2px solid var(--ink); break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 16px 0 4px; break-after: avoid; }
+  p { margin: 6px 0; }
+  ul, ol { margin: 6px 0; padding-left: 20px; }
+  li { margin: 2px 0; }
+  code, .mono { font-family: Consolas, "Cascadia Mono", monospace; font-size: 9.2pt; }
+  code { background: var(--panel); padding: 0 4px; border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 9.6pt; break-inside: avoid; }
+  th, td { text-align: left; vertical-align: top; padding: 5px 7px; border-bottom: 1px solid var(--line); }
+  th { font-size: 8.6pt; text-transform: uppercase; letter-spacing: .06em; color: var(--grey); border-bottom: 1.5px solid var(--ink); }
+  .eyebrow { font: 700 8.5pt Consolas, monospace; letter-spacing: .18em; text-transform: uppercase; color: var(--green); }
+  .links { display: grid; grid-template-columns: 120px 1fr; gap: 3px 12px; margin: 14px 0 6px; padding: 12px 14px; background: var(--panel); border-radius: 10px; font-size: 10pt; }
+  .links b { color: var(--grey); font-weight: 600; }
+  a { color: var(--green); }
+  .tag { display: inline-block; padding: 0 6px; border-radius: 99px; font: 700 7.6pt Consolas, monospace; letter-spacing: .06em; vertical-align: 1px; }
+  .assume { background: #f3e6c8; color: #6b4c10; }
+  .rule { background: #dcebdf; color: #24452c; }
+  .note { padding: 9px 12px; border-left: 3px solid var(--green); background: #f1f6f1; margin: 8px 0; break-inside: avoid; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .figure { margin: 10px 0; break-inside: avoid; }
+  .small { font-size: 9pt; color: var(--grey); }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0; }
+  .kpis div { padding: 10px; border-radius: 10px; background: var(--panel); }
+  .kpis strong { display: block; font-size: 17pt; line-height: 1.1; color: var(--green); }
+  .kpis span { font-size: 8.6pt; color: var(--grey); }
+  .pb { break-before: page; }
+</style>
+</head>
+<body>
+
+<div class="eyebrow">Isocode SWE intern assessment · Brief 4 · 9 November 2026</div>
+<h1>Kaapi Estate: <em>technical design</em></h1>
+<p>A direct-booking website and an AI-routed enquiry inbox for a 76-key coffee-estate resort in Chikkamagaluru, Karnataka (64 rooms and 12 villas). “Kaapi Estate” is a working name; the brief calls the client “Company A”.</p>
+
+<div class="links">
+  <b>Code</b><a href="https://github.com/SinghAbhinav04/kaapi">github.com/SinghAbhinav04/kaapi</a>
+  <b>Live site</b><a href="https://kaapi-estate.vercel.app">kaapi-estate.vercel.app</a>
+  <b>Staff console</b><span><a href="https://kaapi-estate.vercel.app/staff/login">kaapi-estate.vercel.app/staff/login</a> (reviewer sign-in in <span class="mono">deployment.md</span>)</span>
+  <b>Author</b>Abhinav Singh
+</div>
+
+<p class="small">Throughout, <span class="tag assume">ASSUMPTION</span> marks anything not stated in the brief, and <span class="tag rule">BRIEF</span> marks a rule taken from it. Only facts from the problem statement are treated as facts.</p>
+
+<h2>1. The problem and what was built</h2>
+<p><span class="tag rule">BRIEF</span> About 68% of room nights come through agencies at around 20% commission, so direct bookings are the goal. Enquiries arrive scattered across the web form, email, WhatsApp and an event form, and replies are slow. Agencies hold the rest of the 76 keys: the website may sell only its allotment, and must <b>never overbook</b>.</p>
+<table>
+  <tr><th style="width:24%">Area</th><th>What it does</th></tr>
+  <tr><td>Guest site</td><td>Home with a CSS scroll-story hero; room pages with a nightly price calendar and GST per night; a 3-step booking (room → details → payment) with a 10-minute hold; a test payment gateway (UPI QR, card, net banking, wallet); confirmation; “My bookings” by email code; enquiry form; privacy page; prices shown as an estimate in the guest’s own currency (always charged in INR).</td></tr>
+  <tr><td>Booking engine</td><td>Holds that lock inventory, idempotent bookings, HMAC-signed payment webhooks, a late-payment refund path, background expiry, automatic festive offers and promo codes (the guest always gets the best one).</td></tr>
+  <tr><td>Enquiry inbox</td><td>Every channel lands in one inbox. AI classifies, extracts dates and party, routes to a lane and drafts a reply whose prices the server fills in. People edit and press Send; nothing is sent automatically.</td></tr>
+  <tr><td>Staff console</td><td>Today (what needs a reply now, the week’s arrivals and departures), Inbox, Rates &amp; allotment heat map with bulk edits, Bookings (+ daily CSV), Outbox, Analytics, Offers, Team &amp; access (database-backed roles).</td></tr>
+  <tr><td>Email</td><td>One connected Gmail mailbox: incoming mail becomes enquiries (guest replies join their thread), and replies, confirmations, reminders and opted-in offer emails go out from it, queued and retried.</td></tr>
+  <tr><td>Privacy</td><td>Personal data encrypted at rest (AES-256-GCM) with blind indexes for lookups, redaction before any AI call, DPDP consent and a retention schedule.</td></tr>
+</table>
+
+<h3>The brief’s rules, and where each is enforced</h3>
+<table>
+  <tr><th style="width:36%">Rule</th><th>How it holds</th></tr>
+  <tr><td><span class="tag rule">BRIEF</span> Never overbook</td><td>Three layers: <code>FOR UPDATE</code> row locks in date order, live hold counting, and a database <code>CHECK (sold &lt;= allotment)</code>. A test races 25 buyers for the last villa: exactly one wins.</td></tr>
+  <tr><td>Prices come from the rate table, never the AI</td><td>The model writes wording with a <code>{{QUOTE}}</code> placeholder; the server fills it from the same search the website uses. Any money the model writes is deleted and flagged.</td></tr>
+  <tr><td>Drafts are never auto-sent</td><td>Only <code>POST /v1/staff/enquiries/{ref}/send</code>, pressed by a person, sends a reply.</td></tr>
+  <tr><td>Unsure enquiries go to Unsorted; re-routing is one click</td><td>Confidence below 0.6 → the Unsorted lane, which the GM sees. Re-routing is one optimistic click and is logged.</td></tr>
+  <tr><td>Complaints always alert the GM</td><td>If either the model or the keyword rules sees a complaint (main or secondary category), the enquiry goes to the GM lane at high priority, the console’s bell alerts, and fresh complaints are emailed to every GM and administrator, once per enquiry.</td></tr>
+  <tr><td>Booking in 3 steps or fewer, fast on slow mobile</td><td>Room → details → payment. Pages are server-rendered with data; photos are pre-sized AVIF (480/960/1600 px) chosen per device.</td></tr>
+</table>
+
+<h2>2. Architecture</h2>
+<div class="figure">
+<svg viewBox="0 0 720 250" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, sans-serif" font-size="11">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#141210"/></marker></defs>
+  <rect x="10" y="95" width="110" height="56" rx="10" fill="#f5f1ea" stroke="#141210"/>
+  <text x="65" y="119" text-anchor="middle" font-weight="700">Guest / staff</text><text x="65" y="136" text-anchor="middle" fill="#6b655c">browser</text>
+  <rect x="160" y="80" width="150" height="86" rx="10" fill="#fffdf9" stroke="#141210"/>
+  <text x="235" y="104" text-anchor="middle" font-weight="700">Next.js 16 on Vercel</text>
+  <text x="235" y="122" text-anchor="middle" fill="#6b655c">server-rendered pages</text>
+  <text x="235" y="138" text-anchor="middle" fill="#6b655c">/api/* proxy · cookies</text>
+  <text x="235" y="154" text-anchor="middle" fill="#6b655c">pre-sized AVIF photos</text>
+  <rect x="350" y="60" width="190" height="126" rx="10" fill="#dcebdf" stroke="#141210"/>
+  <text x="445" y="84" text-anchor="middle" font-weight="700">Go API on Railway</text>
+  <text x="445" y="102" text-anchor="middle" fill="#24452c">gateway: IP, CORS, auth, limits</text>
+  <text x="445" y="118" text-anchor="middle" fill="#24452c">booking · inventory · enquiry · admin</text>
+  <text x="445" y="134" text-anchor="middle" fill="#24452c">workers: AI queue, Gmail, outbox,</text>
+  <text x="445" y="150" text-anchor="middle" fill="#24452c">reminders, retention, FX, sweep</text>
+  <text x="445" y="170" text-anchor="middle" fill="#24452c">SSE: live inbox + change feed</text>
+  <rect x="580" y="96" width="130" height="56" rx="10" fill="#fffdf9" stroke="#141210"/>
+  <text x="645" y="119" text-anchor="middle" font-weight="700">Supabase Postgres</text><text x="645" y="136" text-anchor="middle" fill="#6b655c">Mumbai · RLS on all</text>
+  <rect x="350" y="206" width="90" height="36" rx="8" fill="#f5f1ea" stroke="#141210"/><text x="395" y="228" text-anchor="middle">Gmail API</text>
+  <rect x="450" y="206" width="110" height="36" rx="8" fill="#f5f1ea" stroke="#141210"/><text x="505" y="228" text-anchor="middle">Gemini → Groq</text>
+  <rect x="350" y="8" width="190" height="34" rx="8" fill="#f5f1ea" stroke="#141210"/><text x="445" y="29" text-anchor="middle">ECB rates (Frankfurter)</text>
+  <line x1="120" y1="123" x2="158" y2="123" stroke="#141210" marker-end="url(#a)"/>
+  <line x1="310" y1="123" x2="348" y2="123" stroke="#141210" marker-end="url(#a)"/>
+  <line x1="540" y1="123" x2="578" y2="123" stroke="#141210" marker-end="url(#a)"/>
+  <line x1="395" y1="186" x2="395" y2="204" stroke="#141210" marker-end="url(#a)"/>
+  <line x1="505" y1="186" x2="505" y2="204" stroke="#141210" marker-end="url(#a)"/>
+  <line x1="445" y1="60" x2="445" y2="44" stroke="#141210" marker-end="url(#a)"/>
+  <text x="560" y="88" fill="#6b655c" font-size="9.5">LISTEN/NOTIFY</text>
+</svg>
+</div>
+<ul>
+  <li><b>One Go service plus in-process workers.</b> The API (chi, pgx, hand-written SQL, goose migrations embedded in the binary) also runs the background jobs; <code>cmd/worker</code> can run them separately. A gateway layer inside the API (trusted client IP, CORS and rate limits per route group, live-session token checks, CSRF by <code>Origin</code>) was chosen over a separate gateway service: one service doesn’t earn a second hop or trusting identity headers between processes.</li>
+  <li><b>Contract-first.</b> <code>contract/openapi.yaml</code> is written by hand. The integration tests validate <i>every</i> real response against it, and the web app’s types are generated from it, so the three can’t drift.</li>
+  <li><b>Package layout.</b> Each domain package has <code>service.go</code> (rules and transaction boundaries), <code>store.go</code> (every query), types and errors. Money is <code>int64</code> paise; stay dates are IST calendar dates; IDs are UUIDv7; booking refs are <code>KS-XXXXXX</code>.</li>
+  <li><b>Frontend.</b> Next.js 16 App Router with React 19 (React Compiler on), TanStack Query, CSS Modules with design tokens, no UI library. Server components prefetch data and hydrate the client cache; filtered views keep the previous data on screen while new data loads.</li>
+  <li><b>Live data without polling.</b> Statement-level triggers send a topic through <code>pg_notify</code> on changes to bookings, inventory, rates, holds, offers and enquiries. The API streams topics to staff consoles over server-sent events, and each page refetches only what the topic affects. The same feed clears the analytics cache.</li>
+</ul>
+
+<h2>3. The booking engine: never overbook</h2>
+<ol>
+  <li><code>SELECT … FROM night_inventory … ORDER BY date FOR UPDATE</code>: locking nights in date order means two overlapping holds can’t deadlock.</li>
+  <li>Check stop-sell, minimum stay, closed-to-arrival and closed-to-departure.</li>
+  <li>Count live holds (<code>status = 'ACTIVE' AND expires_at &gt; now()</code>), so expired holds stop counting with no cron job.</li>
+  <li>Require <code>sold + held + rooms ≤ allotment</code> for every night; insert the hold with a frozen quote and a hashed token.</li>
+  <li>A verified payment webhook (HMAC, idempotent per event id) re-locks, increments <code>sold</code>, writes the booking’s nights and confirms. A payment that arrives after the room went takes the <code>REFUND_PENDING</code> path, alerts the GM and tells the guest; later events for that order change nothing.</li>
+  <li>Last line of defence: <code>CHECK (sold &lt;= allotment)</code> in the database.</li>
+</ol>
+<p><b>Pricing</b> is a pure package (no I/O): nightly price by plan, offers (percent in basis points capped at 50%, or flat), and GST per night. The search and the hold use the same function, and a test keeps their numbers equal. A search runs seven queries however many rooms and plans there are.</p>
+<p><span class="tag assume">ASSUMPTION</span> GST is shown per night at the tariff slab: 5% up to ₹7,500 a night, 18% above, on the price after discount. <span class="tag assume">ASSUMPTION</span> The hold lasts 10 minutes (a property setting). <span class="tag assume">ASSUMPTION</span> The roughly 20% commission saved is an estimate from the brief’s figure, used in analytics.</p>
+
+<h2>4. The AI enquiry pipeline</h2>
+<ol>
+  <li><b>Intake</b> from any channel stores the enquiry as pending; duplicates per sender per day are merged, with at most 5 per sender per hour from the web form.</li>
+  <li><b>Redaction</b> removes emails, phone numbers (10+ digits) and the sender’s name, in any script, before any model sees the text.</li>
+  <li><b>Classification</b> runs a model chain (fast Gemini models round-robin, then Gemini Pro, then Groq), each paced to its rate limit and rested after errors. A keyword classifier (English, Hinglish and Kannada-English) always runs too: it answers when every model is down and acts as the complaint safety net.</li>
+  <li><b>Routing</b> is a rule table, not a model decision: complaint → GM (high priority, alert); confidence &lt; 0.6 → Unsorted; room → Reservations; wedding or offsite → Sales. A person’s re-route is never undone by a retry.</li>
+  <li><b>Drafting:</b> the model writes wording only, with placeholders. The server fills the quote from live availability (saying what it assumed when the guest didn’t give a party), and signs the reply as whoever presses Send.</li>
+</ol>
+<div class="kpis">
+  <div><strong>59/60</strong><span>categories correct (model chain + rules)</span></div>
+  <div><strong>60/60</strong><span>routed to the right team</span></div>
+  <div><strong>0</strong><span>sent to the wrong team</span></div>
+  <div><strong>11/11</strong><span>complaints reached the GM</span></div>
+</div>
+<p class="small">From <code>go run ./cmd/eval</code> on 60 hand-labelled enquiries (including the brief’s examples, Hinglish, Kannada-English, a politely disguised complaint, mixed intent and spam); full report in <code>docs/ai-eval-report.md</code>. Keyword rules alone: 57/60, 3 to the wrong team, 10/11 complaints. A confidence blend with the keyword rules was removed because the evaluation showed it changed no routing.</p>
+
+<h2>5. Data</h2>
+<table>
+  <tr><th style="width:28%">Tables</th><th>Purpose</th></tr>
+  <tr><td><code>room_types</code>, <code>rate_plans</code>, <code>night_rates</code>, <code>night_inventory</code></td><td>Catalogue; price per plan per night; the website’s allotment, sold count and restrictions per room type per night.</td></tr>
+  <tr><td><code>holds</code>, <code>bookings</code>, <code>booking_nights</code>, <code>payments</code>, <code>payment_events</code></td><td>The booking flow; events are stored once per provider event id (idempotency).</td></tr>
+  <tr><td><code>enquiries</code>, <code>enquiry_drafts</code>, <code>enquiry_events</code>, <code>enquiry_messages</code></td><td>The inbox: classification, versioned drafts with a send claim, an audit trail, and guest follow-ups in a thread.</td></tr>
+  <tr><td><code>outbox_messages</code>, <code>notifications</code>, <code>campaigns</code>, <code>booking_reminders</code></td><td>Every message sent or simulated (queued, retried, never lost); console alerts; offer emails; reminders sent exactly once.</td></tr>
+  <tr><td><code>users</code>, <code>roles</code>, <code>permissions</code>, <code>sessions</code>, <code>otp_codes</code>, <code>audit_logs</code></td><td>Accounts, database-backed access control, rotating sessions, one-time codes, and an audit of every administrative change.</td></tr>
+</table>
+<p>19 migrations; every table has row-level security, so Supabase’s public key exposes nothing (a test fails if a table lacks it). Hot queries were checked with <code>EXPLAIN ANALYZE</code> at production scale and indexed (inbox, analytics covering index, thread lookups).</p>
+
+<h2 class="pb">6. Security and privacy</h2>
+<ul>
+  <li><b>Sessions:</b> a 15-minute encrypted access token (JWE) plus a rotating refresh token stored hashed; reusing an old refresh token revokes the whole session chain. Every request also checks the session is live, so signing out or deactivating someone takes effect at once. Browser tabs refresh one at a time, so they can’t trip the reuse detector.</li>
+  <li><b>Staff sign-in</b> is a password plus an emailed 6-digit code (5 minutes, 5 attempts). <span class="tag assume">TRADE-OFF</span> One reviewer account signs in with the password alone (<code>STAFF_PASSWORD_ONLY</code>), because reviewers don’t have its mailbox; an empty setting turns this off.</li>
+  <li><b>Guests</b> sign in with an emailed code that is never shown on screen or returned by the API. Booking requires a verified email, so a typo can’t lose the confirmation.</li>
+  <li><b>Access control:</b> permissions are a closed set in code, granted per role in the database and checked on every route. Only an Administrator can grant the Administrator role or change an Administrator’s account; nobody can grant permissions they don’t hold; the last Administrator can’t be removed.</li>
+  <li><b>Gateway:</b> client IPs from <code>X-Forwarded-For</code> counted from the right (a forged entry is ignored); CORS per route group; rate limits per group (sign-in, codes, holds, bookings, enquiries shared across instances in Postgres; the rest in memory). <span class="tag assume">ASSUMPTION</span> The limits are sized for one resort (e.g. staff login 10 per 15 minutes per IP).</li>
+  <li><b>Personal data encrypted at rest:</b> names, emails, phones and outbox copies use AES-256-GCM through a query-argument interceptor (<code>pii.Text</code>), so domain code only sees plain strings. Lookups use keyed blind indexes (HMAC). <span class="tag assume">ASSUMPTION</span> Enquiry text stays plaintext on purpose: the AI needs it (after redaction) and inbox search uses it.</li>
+  <li><b>DPDP:</b> consent at checkout, minimal fields, no passport details online, redaction before any AI call, and offer emails only with opt-in and a one-click unsubscribe.</li>
+  <li><b>Retention</b> (a job at start-up and every 6 hours, audit-logged): archive finished bookings after check-out; anonymise contact details 12 months after the stay; delete bookings once 8 full financial years have passed; delete enquiries, outbox copies and alerts at 12 months. <span class="tag assume">ASSUMPTION</span> 8 financial years follows Companies Act s.128, which outlasts GST’s 72 months.</li>
+  <li><b>Mail safety:</b> mail to reserved test domains is never handed to Gmail; the poller skips bounces and auto-replies.</li>
+</ul>
+
+<h2>7. Frontend and performance</h2>
+<ul>
+  <li>Design tokens (paper, ink, one estate-green accent, cherry for alerts), Anton / Instrument Serif / Manrope / Space Mono. Motion uses only transform and opacity and switches off under <code>prefers-reduced-motion</code>.</li>
+  <li>The hero is a pinned scroll story in pure CSS (<code>animation-timeline</code>): no JavaScript runs while scrolling, nothing repaints per frame (no SVG filters on moving things).</li>
+  <li>Photos are AVIF in pre-built sizes chosen by a custom image loader. Vercel’s optimizer had been passing AVIF through at full size, so phones downloaded 2400-pixel photos. On the mobile home page (Lighthouse, slow 4G simulation), this took Performance from 75 to 85, the largest paint from 5.7 s to 4.3 s, and page weight from 983 KB to 548 KB. Desktop home: 95. Privacy page on mobile: 98. Accessibility: 100.</li>
+  <li>Accessibility: 44 px tap targets, labelled controls, errors linked with <code>aria-describedby</code>, correct alert and status roles; charts have a table view.</li>
+  <li><code>Server-Timing</code> on every response (except sign-in routes, where a query count would reveal whether an account exists) reports database time and query count, so latency is read in the browser rather than guessed.</li>
+</ul>
+
+<h2>8. Quality</h2>
+<ul>
+  <li><b>Tests:</b> unit tests for pricing, redaction, the keyword classifier, tokens and money; integration tests against a real Postgres (embedded locally) covering the booking race, holds, payments and refunds, routing, Gmail (against a fake Google server), access control, retention, encryption at rest and the gateway. Every API response in the tests is validated against the OpenAPI contract.</li>
+  <li><b>Checks before merging:</b> <code>go vet</code>, <code>gofmt</code>, the full test suite; <code>tsc</code>, <code>eslint --max-warnings=0</code> and <code>next build</code> for the web app.</li>
+  <li><b>Review on 9 November:</b> three review passes and a browser/performance pass found 63 issues. All the serious ones are fixed with tests (for example: a payment event could overwrite a refund in progress; a complaint mentioned in a booking request didn’t reach the GM; non-Latin names reached the model; a team manager could make themselves Administrator; the Gmail import could stall). The rest are fixed or recorded with a reason in <code>docs/notes/code-review-2026-11-09.md</code>.</li>
+</ul>
+
+<h2>9. Assumptions</h2>
+<table>
+  <tr><th style="width:30%">Assumption</th><th>Why</th></tr>
+  <tr><td>Working name “Kaapi Estate”</td><td>The brief says only “Company A”.</td></tr>
+  <tr><td>GST per night: 5% to ₹7,500, 18% above</td><td>The tariff slabs for hotel rooms, applied to the price after discount.</td></tr>
+  <tr><td>~20% agency commission saved per direct booking</td><td>The brief’s figure, used to estimate commission saved in analytics.</td></tr>
+  <tr><td>10-minute room hold</td><td>Long enough to pay on a slow phone, short enough not to block inventory.</td></tr>
+  <tr><td>First-reply target: 30 minutes</td><td>The success measure the Today page and the sidebar track.</td></tr>
+  <tr><td>Unsorted below 0.6 confidence</td><td>Chosen from the evaluation’s threshold sweep (no wrong-team routings at 0.5–0.8).</td></tr>
+  <tr><td>Retention: 12 months for enquiries and contact details; 8 financial years for bookings</td><td>DPDP data minimisation against tax and company-law record keeping.</td></tr>
+  <tr><td>Rate limits (e.g. 10 logins / 15 min per IP, 20 holds / 10 min)</td><td>Sized for one resort’s traffic.</td></tr>
+  <tr><td>Enquiry text stored in plaintext</td><td>Needed for AI classification (after redaction) and inbox search.</td></tr>
+  <tr><td>Gateway inside the API</td><td>One service doesn’t justify a second hop; split out when a second service exists.</td></tr>
+  <tr><td>Password-only reviewer account</td><td>Reviewers can’t receive its sign-in codes.</td></tr>
+  <tr><td>Reminder timings (1–3 days before, 8 am on arrival day, …)</td><td>Common hotel practice.</td></tr>
+  <tr><td>Placeholder imagery, UPI merchant and estate map pin</td><td>Until the resort supplies its own.</td></tr>
+  <tr><td>Exchange-rate estimates from ECB rates, shown only while under 48 hours old</td><td>Guests read prices in their own currency but are always charged in INR.</td></tr>
+</table>
+
+<h2>10. Trade-offs and what’s next</h2>
+<ul>
+  <li><b>Real payment gateway.</b> The provider boundary (signed events, idempotency, late-payment refunds) is built; a gateway such as Razorpay plugs in behind it.</li>
+  <li><b>WhatsApp</b> replies are recorded as simulated until a WhatsApp Business API account exists; email is live.</li>
+  <li><b>Scale-out.</b> Analytics cache and some rate-limit counters are per process; Redis (behind the existing interfaces) is the step when several API instances must share them. Gmail push (Pub/Sub) can replace the 5-second poll.</li>
+  <li><b>Guest data requests.</b> “Delete my data” requests (OTP-verified, a staff queue, export) are designed but not built.</li>
+  <li><b>Sessions</b> renew for 30 days on use, with no absolute cap yet; an administrator cap (e.g. 12 hours) is a small change.</li>
+  <li><b>Mobile app.</b> The API already issues Bearer tokens to native clients (<code>X-Client: native</code>); a Capacitor shell over the site is the planned app.</li>
+</ul>
+
+</body>
+</html>
